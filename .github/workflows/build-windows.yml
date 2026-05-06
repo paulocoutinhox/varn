@@ -1,0 +1,57 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  BUILD_TYPE: Release
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+
+jobs:
+  build:
+    name: Windows (x86_64)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CPM_SOURCE_CACHE }}
+            build/release/_deps
+          key: cpm-windows-${{ hashFiles('cmake/cpm/varn-dependencies.cmake', 'CMakeLists.txt', 'cmake/varn-libffi.cmake', 'cmake/varn-libffi/varn-vendor-libffi.cmake', 'cmake/varn-libffi/fficonfig.h.in') }}
+          restore-keys: cpm-windows-
+
+      - name: Configure
+        run: cmake -B build/release -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build build/release --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          Set-Content -Path $env:TEMP/varn-smoke.lua -Value 'print("ok")'
+          & ./build/release/bin/varn.exe $env:TEMP/varn-smoke.lua
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/varn-windows-x86_64 | Out-Null
+          Copy-Item build/release/bin/varn.exe dist/varn-windows-x86_64/
+          Copy-Item LICENSE.md dist/varn-windows-x86_64/
+          Compress-Archive -Path dist/varn-windows-x86_64 -DestinationPath varn-windows-x86_64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: varn-windows-x86_64
+          path: varn-windows-x86_64.zip

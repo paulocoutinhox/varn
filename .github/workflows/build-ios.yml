@@ -1,0 +1,54 @@
+name: Build iOS
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  BUILD_TYPE: Release
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+
+jobs:
+  build:
+    name: iOS (device arm64)
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CPM_SOURCE_CACHE }}
+            build/ios-arm64/_deps
+          key: cpm-ios-${{ hashFiles('cmake/cpm/varn-dependencies.cmake', 'CMakeLists.txt') }}
+          restore-keys: cpm-ios-
+
+      - name: Configure
+        run: |
+          cmake -B build/ios-arm64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DVARN_ENABLE_TLS=OFF
+
+      - name: Build
+        run: cmake --build build/ios-arm64 --config ${{ env.BUILD_TYPE }} -j$(sysctl -n hw.ncpu)
+
+      - name: Verify binary
+        run: file build/ios-arm64/bin/varn
+
+      - name: Package
+        run: |
+          mkdir -p dist/varn-ios-arm64
+          cp build/ios-arm64/bin/varn dist/varn-ios-arm64/
+          cp LICENSE.md dist/varn-ios-arm64/
+          tar -czf varn-ios-arm64.tar.gz -C dist varn-ios-arm64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: varn-ios-arm64
+          path: varn-ios-arm64.tar.gz

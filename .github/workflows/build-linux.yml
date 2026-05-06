@@ -1,0 +1,50 @@
+name: Build Linux
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  BUILD_TYPE: Release
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+
+jobs:
+  build:
+    name: Linux (x86_64)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CPM_SOURCE_CACHE }}
+            build/release/_deps
+          key: cpm-linux-${{ hashFiles('cmake/cpm/varn-dependencies.cmake', 'CMakeLists.txt') }}
+          restore-keys: cpm-linux-
+
+      - name: Configure
+        run: cmake -B build/release -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build build/release --config ${{ env.BUILD_TYPE }} -j$(nproc)
+
+      - name: Smoke test
+        run: |
+          echo 'print("ok")' > /tmp/varn-smoke.lua
+          ./build/release/bin/varn /tmp/varn-smoke.lua
+
+      - name: Package
+        run: |
+          mkdir -p dist/varn-linux-x86_64
+          cp build/release/bin/varn dist/varn-linux-x86_64/
+          cp LICENSE.md dist/varn-linux-x86_64/
+          tar -czf varn-linux-x86_64.tar.gz -C dist varn-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: varn-linux-x86_64
+          path: varn-linux-x86_64.tar.gz

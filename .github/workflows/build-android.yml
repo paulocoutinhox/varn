@@ -1,0 +1,57 @@
+name: Build Android
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  BUILD_TYPE: Release
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+
+jobs:
+  build:
+    name: Android (arm64-v8a)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        run: |
+          NDK_VERSION=$(ls -1 "$ANDROID_HOME/ndk" | sort -V | tail -1)
+          echo "ANDROID_NDK=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "Using NDK: $NDK_VERSION"
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CPM_SOURCE_CACHE }}
+            build/android-arm64-v8a/_deps
+          key: cpm-android-${{ hashFiles('cmake/cpm/varn-dependencies.cmake', 'CMakeLists.txt') }}
+          restore-keys: cpm-android-
+
+      - name: Configure and build
+        run: |
+          cmake -B build/android-arm64-v8a -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DVARN_ENABLE_TLS=OFF
+          cmake --build build/android-arm64-v8a --config ${{ env.BUILD_TYPE }} -j$(nproc)
+
+      - name: Verify binary
+        run: file build/android-arm64-v8a/bin/varn
+
+      - name: Package
+        run: |
+          mkdir -p dist/varn-android-arm64-v8a
+          cp build/android-arm64-v8a/bin/varn dist/varn-android-arm64-v8a/
+          cp LICENSE.md dist/varn-android-arm64-v8a/
+          tar -czf varn-android-arm64-v8a.tar.gz -C dist varn-android-arm64-v8a
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: varn-android-arm64-v8a
+          path: varn-android-arm64-v8a.tar.gz

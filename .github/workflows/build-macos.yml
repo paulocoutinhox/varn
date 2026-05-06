@@ -1,0 +1,68 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  BUILD_TYPE: Release
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (arm64)
+            arch: arm64
+            artifact: varn-macos-arm64
+            cmake_extra: ""
+          - name: macOS (x86_64)
+            arch: x86_64
+            artifact: varn-macos-x86_64
+            cmake_extra: -DCMAKE_OSX_ARCHITECTURES=x86_64
+
+    name: ${{ matrix.name }}
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CPM_SOURCE_CACHE }}
+            build/release/_deps
+          key: cpm-macos-${{ matrix.arch }}-${{ hashFiles('cmake/cpm/varn-dependencies.cmake', 'CMakeLists.txt') }}
+          restore-keys: cpm-macos-${{ matrix.arch }}-
+
+      - name: Configure
+        run: cmake -B build/release -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ${{ matrix.cmake_extra }}
+
+      - name: Build
+        run: cmake --build build/release --config ${{ env.BUILD_TYPE }} -j$(sysctl -n hw.ncpu)
+
+      - name: Smoke test
+        if: matrix.cmake_extra == ''
+        run: |
+          echo 'print("ok")' > /tmp/varn-smoke.lua
+          ./build/release/bin/varn /tmp/varn-smoke.lua
+
+      - name: Verify binary architecture
+        if: matrix.cmake_extra != ''
+        run: file build/release/bin/varn
+
+      - name: Package
+        run: |
+          mkdir -p dist/${{ matrix.artifact }}
+          cp build/release/bin/varn dist/${{ matrix.artifact }}/
+          cp LICENSE.md dist/${{ matrix.artifact }}/
+          tar -czf ${{ matrix.artifact }}.tar.gz -C dist ${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
