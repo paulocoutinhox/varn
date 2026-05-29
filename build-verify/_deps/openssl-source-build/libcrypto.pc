@@ -1,0 +1,13 @@
+prefix=/Users/paulo/Developer/workspaces/cpp/varn/build-verify/_deps/openssl-source-build
+exec_prefix=${prefix}
+libdir=${exec_prefix}
+includedir=${prefix}/include ${prefix}/../../../../../../../.cache/CPM/openssl-source/f9ec/include 
+enginesdir=${libdir}/engines
+modulesdir=${libdir}/providers
+
+Name: OpenSSL-libcrypto
+Description: OpenSSL cryptography library
+Version: 3.6.1
+Libs: -L${libdir} -lcrypto
+Libs.private: 
+Cflags: -I${prefix}/include  -I${prefix}/../../../../../../../.cache/CPM/openssl-source/f9ec/include 

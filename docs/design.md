@@ -1,41 +1,49 @@
 # Varn design
 
-High-level overview and **documentation index**. Deeper guides live in **this directory** (`docs/`), linked below.
+A short overview of how the pieces fit together. For details, follow the links below.
 
-## Documentation index
+## How it fits together
 
-| Subject | Document |
-|---------|----------|
-| Threads, loop, HTTP dispatch | [architecture.md](architecture.md) |
-| CMake, drivers, WASM | [build.md](build.md) |
-| `Promise`, `:await()`, task pool | [async.md](async.md) |
-| C++ modules and drivers | [native-modules.md](native-modules.md) |
-| Lua `http`, `async`, `fs`, `log`, `crypto`, `platform`, `zip` | [lua-api.md](lua-api.md) |
-| Vendored libraries ↔ modules | [official-libraries.md](official-libraries.md) |
-| Trust boundaries (high level) | [security.md](security.md) |
-| WASM HTTP client (current + follow-ups) | [wasm-http-roadmap.md](wasm-http-roadmap.md) |
+Varn runs your Lua code on a single thread. That thread owns the one and only `lua_State` and runs the event loop.
 
-## Main idea (summary)
+Anything that would block (file reads, network calls, CPU-heavy work) is sent to a pool of worker threads. When a worker finishes, it hands the result back through a `Promise`, which resumes your Lua code on the main thread. Workers never call Lua directly.
 
-Varn keeps **one Lua state** on the **main event-loop thread**. Blocking work runs on a **task pool**; completion is delivered through **`Promise`** objects that resume waiters on the main loop. The **HTTP** module uses a **transport driver** that may run I/O on its own threads; each request handler is scheduled as a **Lua coroutine** on the main loop.
+So the flow is always:
 
 ```text
-HTTP transport thread(s)  →  post(handler job)  →  EventLoop (main)  →  lua_resume(coroutine)
-Task pool workers          →  Promise::resolve   →  post(resume job)  →  EventLoop  →  lua_resume(waiters)
+worker thread  →  Promise::resolve  →  post to EventLoop  →  resume Lua on main thread
 ```
 
-## CMake drivers (summary)
+HTTP requests work the same way. The transport may use its own threads to accept and parse requests, then posts each one to the main loop, where your handler runs as a Lua coroutine.
 
-Each concern (`http`, `json`, `xml`, `crypto`, `fs`, `log`, …) selects **one** active **driver id** via cache variables. Rules and layout: [build.md](build.md). Which **vendor packages** those ids map to: [official-libraries.md](official-libraries.md).
+## Modules
+
+The code is organized as self-contained modules under `modules/<module>/`. Each module declares its sources in `<module>.cmake` and keeps headers in `include/`, code in `src/`, and runnable scripts in `lua/examples/`.
+
+`modules/core/` is the dependency-free nucleus: the runtime, event loop, task pool, Lua engine, and logging. Other modules (`http`, `fs`, `crypto`, `ffi`, `zip`, and so on) build on top of it.
+
+Each module can have several backends. A backend lives in `src/drivers/<id>/`, and CMake picks one driver per module. See [build.md](build.md) for how drivers are chosen and [official-libraries.md](official-libraries.md) for which library backs each one.
+
+## Library and executable
+
+The same C++ core powers two things:
+
+- The `varn` command-line executable.
+- An embeddable library with a small C API in `modules/api/include/varn/varn.h` (`varn_runtime_new`, `varn_runtime_run_file`, `varn_runtime_run_string`, `varn_runtime_stop`, `varn_runtime_free`, `varn_version`).
 
 ## WebAssembly
 
-The `varn_wasm` target is a browser Lua host in **`apps/wasm`**: no POCO HTTP server, **no OpenSSL-linked `crypto`** (CMake forces **`DUMMY`**; see [build.md](build.md#emscripten-wasm)), **libzip** + **zlib** when **`VARN_ENABLE_ZIP=ON`** (default), and no raw TCP **`socket`**. Outbound **`http.client.request`** uses the browser **`fetch()`** bridge (**`EM_JS`**, driver id **`EMSCRIPTEN_FETCH`**) and the same **`Promise`** / **`VARN/1`** wire as desktop. **`TaskPool`** work is **queued** and drained after each embedded Lua chunk (with **`EventLoop`** jobs and in-flight **`fetch`**); **`Promise`** always settles via **`EventLoop::post`**, matching the desktop model. **`-s ASYNCIFY`** remains for paths such as **`async.sleep`** and the shell line hook. **`log`**, JSON, and XML follow the same **spdlog / nlohmann / pugixml** defaults as desktop where enabled. Optional HTTP client follow-ups (credentials, streaming, …) are listed in [wasm-http-roadmap.md](wasm-http-roadmap.md). See also [architecture.md](architecture.md) and [async.md](async.md#emscripten-varn_wasm).
+There is also a browser build (`varn_wasm`) under `apps/wasm`. It uses the same core, but with browser-friendly drivers: outbound HTTP goes through the browser `fetch()` API, TLS is off, and there is no HTTP server or raw socket. See [build.md](build.md#webassembly) and [wasm-http-roadmap.md](wasm-http-roadmap.md).
 
-## Source layout
+## Where to read more
 
-- `src/varn/<module>/` — runtime and Lua bindings.
-- `src/varn/<module>/drivers/<name>/` — driver implementations for that module.
-- `include/varn/` — shared C++ APIs between drivers and modules.
-- `apps/lua/` — sample Lua under **`examples/`** (see **`apps/lua/examples/README.md`**), static tree under **`public/`** (paths assume **cwd = repo root**).
-- `apps/wasm/` — browser shell (Vite); `npm run build` writes `dist/`, and `scripts/copy-wasm.mjs` stages `varn_wasm.{js,wasm}` into `public/wasm/` before the Vite build.
+| Topic | Document |
+|-------|----------|
+| Threads and the event loop | [architecture.md](architecture.md) |
+| Promises, `:await()`, the task pool | [async.md](async.md) |
+| Adding a C++ module | [native-modules.md](native-modules.md) |
+| Lua API (`http`, `async`, `fs`, `log`, `crypto`, `platform`, `zip`) | [lua-api.md](lua-api.md) |
+| Building and drivers | [build.md](build.md) |
+| Which library backs each driver | [official-libraries.md](official-libraries.md) |
+| Trust boundaries | [security.md](security.md) |
+| Browser HTTP client roadmap | [wasm-http-roadmap.md](wasm-http-roadmap.md) |

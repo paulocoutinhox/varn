@@ -1,90 +1,96 @@
-# Official third-party libraries by module
+# Third-party libraries by module
 
-This file is the **only** place we list concrete vendor libraries and versions that ship with Varn today. Elsewhere, documentation describes **modules** (`http`, `socket`, `ffi`, `json`, `xml`, `crypto`, `fs`, `log`, …) and **CMake driver ids**; see [build.md](build.md) for how to select drivers.
+This is the one place that lists the concrete vendor libraries and versions Varn ships today. Other docs talk about modules and CMake driver ids without versions. See [build.md](build.md) for how to choose drivers.
 
-Dependencies are pulled with **CPM** on first configure unless noted. Versions match the tags in `cmake/cpm/varn-dependencies.cmake` (adjust there if you bump a pin).
-
-The embedded **Lua language** release is documented **only** in the table below; other docs refer to **Lua** without a version number.
+Dependencies are pulled with CPM on first configure, unless noted. Versions match the tags in `cmake/dependencies.cmake`. A dependency is only fetched when a chosen driver sets a `VARN_NEEDS_<dep>` flag.
 
 ## Lua runtime
 
-| Piece | Library | Version / source |
-|-------|---------|-------------------|
+| Piece | Library | Version |
+|-------|---------|---------|
 | Embedded Lua | [lua/lua](https://github.com/lua/lua) | 5.5.0 (`v5.5.0`) |
 
 ## FFI (`VARN_FFI_DRIVER`)
 
-| Driver id | Official backing (today) | Notes |
-|-----------|---------------------------|--------|
-| `LIBFFI` | [**libffi**](https://github.com/libffi/libffi) (upstream mirrors [Sourceware](https://sourceware.org/libffi/)). CMake **`cmake/varn-libffi.cmake`** prefers **pkg-config / `find_library` / iOS SDK**, then (when **`VARN_FETCH_LIBFFI=ON`**, default) downloads the **GitHub release tarball** and builds **static libffi** via **ExternalProject** (Unix: autotools; Windows: **`msvcc.sh` + Git `sh.exe` + `nmake`**). Lua parser/runtime is adapted from [zhaojh329/lua-ffi](https://github.com/zhaojh329/lua-ffi) (MIT) under `src/varn/ffi/vendor/`; dynamic loading is **`src/varn/ffi/platform/varn_ffi_dl.c`**. | See [build.md — Supported platforms](build.md#supported-platforms). |
-| `DUMMY` | — | `require("ffi")` loads a stub table; all operations error with the active driver id |
+| Driver | Library | Notes |
+|--------|---------|-------|
+| `LIBFFI` | [libffi](https://github.com/libffi/libffi) | CMake (`modules/ffi/libffi.cmake`) prefers a system libffi, then downloads and builds a static copy when `VARN_FETCH_LIBFFI=ON` (default). The Lua parser is adapted from [zhaojh329/lua-ffi](https://github.com/zhaojh329/lua-ffi) (MIT). See [build.md](build.md#platforms). |
+| `DUMMY` | — | `require("ffi")` loads a stub; all calls error. |
 
 ## HTTP server (`VARN_HTTP_SERVER_DRIVER`)
 
-| Driver id | Official backing (today) | Notes |
-|-----------|---------------------------|--------|
-| `POCO` | [pocoproject/poco](https://github.com/pocoproject/poco) `poco-1.15.2-release` | Foundation, Net, Util, optional TLS pieces as configured |
-| `DUMMY` | — | Stub `http` module (`createServer` errors); **`http.client`** may still be present and follows the client driver |
+| Driver | Library | Notes |
+|--------|---------|-------|
+| `POCO` | [pocoproject/poco](https://github.com/pocoproject/poco) `poco-1.15.2-release` | Foundation, Net, Util, and optional TLS pieces. |
+| `DUMMY` | — | Stub server. `createServer` errors. The client may still work. |
 
 ## HTTP client (`VARN_HTTP_CLIENT_DRIVER`)
 
-| Driver id | Official backing (today) | Notes |
-|-----------|---------------------------|--------|
-| `POCO` | Same Poco Net package as the server when enabled | `http.client.request` (blocking work on the runtime task pool) |
-| `DUMMY` | — | `http.client.request` throws at perform time |
-| `EMSCRIPTEN_FETCH` | Browser **`fetch()`** from **`EM_JS`** (no **`-s FETCH=1`**) | **WebAssembly only** (CMake rejects on native). Non-blocking `http.client.request` settling the same **`Promise`** / **`VARN/1`** wire as desktop. |
+| Driver | Library | Notes |
+|--------|---------|-------|
+| `POCO` | Poco Net | `http.client.request` runs on the task pool. |
+| `DUMMY` | — | `http.client.request` errors. |
+| `EMSCRIPTEN_FETCH` | Browser `fetch()` | WebAssembly only. Non-blocking, settling the same `Promise` and `VARN/1` wire as desktop. |
 
 ## TCP sockets (`VARN_SOCKET_DRIVER`)
 
-| Driver id | Official backing (today) | Notes |
-|-----------|---------------------------|--------|
-| `POCO` | Same Poco Net package when enabled | `socket.tcp.connect` / `listen` / `send` / `receive` (blocking work on the task pool) |
-| `DUMMY` | — | `socket.tcp.connect` / `listen` throw |
+| Driver | Library | Notes |
+|--------|---------|-------|
+| `POCO` | Poco Net | `socket.tcp` connect, listen, send, receive. Runs on the task pool. |
+| `DUMMY` | — | Connect and listen error. |
 
-## JSON for `http` responses (`VARN_JSON_DRIVER`)
+## JSON (`VARN_JSON_DRIVER`)
 
-| Driver id | Official backing (today) | Notes |
-|-----------|---------------------------|--------|
-| `DUMMY` | — | In-tree **dummy** serializer is linked; `res:json` is only registered when the full HTTP stack and **`NLOHMANN`** are enabled (see build rules) |
-| `NLOHMANN` | [nlohmann/json](https://github.com/nlohmann/json) **3.11.3** (`v3.11.3`) | **Default** JSON driver on **desktop** and **Emscripten**; **`res:json()`** with **`VARN_HTTP_SERVER_DRIVER=POCO`**. Pulled via **CPM** in **`cmake/cpm/varn-dependencies.cmake`**. **Poco is not a JSON driver** (HTTP/socket only). |
+| Driver | Library | Notes |
+|--------|---------|-------|
+| `NLOHMANN` | [nlohmann/json](https://github.com/nlohmann/json) 3.11.3 (`v3.11.3`) | Default on desktop and WASM. Backs `res:json()` when the HTTP server is `POCO`. |
+| `DUMMY` | — | In-tree stub serializer. `res:json` is only registered with the full HTTP stack and `NLOHMANN`. |
 
-## XML for `http` responses (`VARN_XML_DRIVER`)
+## XML (`VARN_XML_DRIVER`)
 
-| Driver id | Official backing (today) | Notes |
-|-----------|---------------------------|--------|
-| `DUMMY` | — | In-tree **dummy** serializer; **`res:xml()`** is not registered (use **`PUGIXML`** for XML responses). |
-| `PUGIXML` | [zeux/pugixml](https://github.com/zeux/pugixml) **1.14** (`v1.14`) | **Default** XML driver on **desktop** and **Emscripten**. Pulled via **CPM**. The removed id **`NATIVE`** is remapped to **`PUGIXML`** at configure time (see **`CMakeLists.txt`**). |
+| Driver | Library | Notes |
+|--------|---------|-------|
+| `PUGIXML` | [zeux/pugixml](https://github.com/zeux/pugixml) 1.14 (`v1.14`) | Default on desktop and WASM. The old id `NATIVE` is remapped to `PUGIXML`. |
+| `DUMMY` | — | In-tree stub. `res:xml()` is not registered. |
 
-## Crypto / TLS material (`VARN_CRYPTO_DRIVER` and TLS option)
+## Crypto and TLS (`VARN_CRYPTO_DRIVER`)
 
-| Driver id | Official backing (today) | Notes |
-|-----------|---------------------------|--------|
-| `OPENSSL` | OpenSSL via [openssl-cmake](https://github.com/jimmy-park/openssl-cmake) | Used for `crypto.*` and for TLS when enabled |
-| `DUMMY` | — | **Dummy** implementation (`drivers/dummy`); primitives throw; TLS off unless you change rules |
+| Driver | Library | Notes |
+|--------|---------|-------|
+| `OPENSSL` | OpenSSL via [openssl-cmake](https://github.com/jimmy-park/openssl-cmake) | Used for `crypto.*` and for TLS. |
+| `DUMMY` | — | Primitives error; TLS off. |
 
-When `VARN_ENABLE_TLS=ON`, CMake requires `VARN_CRYPTO_DRIVER=OPENSSL` so the stack can load key material.
+TLS is on by default. With `VARN_ENABLE_TLS=ON`, CMake requires `VARN_CRYPTO_DRIVER=OPENSSL`. TLS is forced off only on WebAssembly.
 
-## Lua `log` (`VARN_LOG_DRIVER`)
+## Logging (`VARN_LOG_DRIVER`)
 
-| Driver id | Official backing (today) | Notes |
-|-----------|---------------------------|--------|
-| `STDOUT` | — | **`std::cout`** (line per record, flushed); no extra package |
-| `DUMMY` | — | No output |
-| `SPDLOG` | [gabime/spdlog](https://github.com/gabime/spdlog) **1.17.0** (`v1.17.0`) | **Default** log driver on **desktop** and **Emscripten**; sets the default **spdlog** logger used by **`varn::log::Log`**. Pulled via **CPM**. |
+| Driver | Library | Notes |
+|--------|---------|-------|
+| `SPDLOG` | [gabime/spdlog](https://github.com/gabime/spdlog) 1.17.0 (`v1.17.0`) | Default on desktop and WASM. |
+| `STDOUT` | — | Writes a line per record to `std::cout`. |
+| `DUMMY` | — | No output. |
 
-## `fs` storage (`VARN_FS_DRIVER`)
+## Filesystem (`VARN_FS_DRIVER`)
 
-| Driver id | Official backing (today) | Notes |
-|-----------|---------------------------|--------|
-| `STD` | — | Host `std::filesystem` I/O |
-| `DUMMY` | — | Rejects reads/writes; `exists` is always false |
+| Driver | Library | Notes |
+|--------|---------|-------|
+| `STD` | — | Host `std::filesystem` I/O. |
+| `DUMMY` | — | Reads and writes are rejected; `exists` is always false. |
 
-## Lua `zip` (`VARN_ENABLE_ZIP`)
+## Zip (`VARN_ENABLE_ZIP`)
 
-When **`VARN_ENABLE_ZIP=ON`**, **CPM** adds [**madler/zlib**](https://github.com/madler/zlib) **1.3.1** (`v1.3.1`) as a static dependency, then [**nih-at/libzip**](https://github.com/nih-at/libzip) **1.10.1** (`v1.10.1`) with optional backends disabled for predictable static linking; **`cmake/modules/FindZLIB.cmake`** wires **`find_package(ZLIB)`** to that vendored build so **libzip** sees **`ZLIB::ZLIB`**. The same stack links into **`varn_wasm`** when zip is enabled for **Emscripten**. The Lua surface is **`ZipModule`** (`zip.create` / `zip.extract`). There is no separate **`VARN_ZIP_DRIVER`** string today — only this on/off option.
+When `VARN_ENABLE_ZIP=ON` (default), CPM adds [madler/zlib](https://github.com/madler/zlib) 1.3.1 (`v1.3.1`) and [nih-at/libzip](https://github.com/nih-at/libzip) 1.10.1 (`v1.10.1`), built static. `cmake/modules/FindZLIB.cmake` wires the vendored zlib so libzip can find it. The Lua surface is `zip.create` and `zip.extract`. There is no separate driver string, only this on/off option. The same stack links into `varn_wasm` when zip is enabled.
 
 ## WebAssembly (`varn_wasm`)
 
-The WASM target links **vendored Lua**, the **browser** entry (`src/varn/wasm/`), and the same **Varn** sources as the desktop host for modules that have Emscripten backends. It does **not** link **POCO**, **OpenSSL**, or **libffi** on the **default** Emscripten configure. With **`VARN_ENABLE_ZIP=ON`** (the default), it also links **libzip** and **zlib** from **CPM**, same as native builds. **OpenSSL can be built for WASM**, but this project **does not** add that dependency to **`varn_wasm`**; **`CMakeLists.txt`** forces **`DUMMY`** for **crypto** (among other stubs). Emscripten **`CMakeLists.txt`** also forces **`DUMMY`** for **HTTP server**, **TCP socket**, and **`ffi`**; **`EMSCRIPTEN_FETCH`** for the HTTP client; and matches desktop defaults for **`log`** / JSON / XML (**`SPDLOG`**, **`NLOHMANN`**, **`PUGIXML`**) and **`fs`** (**`STD`**). **`VARN_ENABLE_TLS=OFF`**. **spdlog**, **nlohmann/json**, and **pugixml** are added with **CPM** for **all** configures (see **`cmake/cpm/varn-dependencies.cmake`**).
+The WASM target links the vendored Lua, the browser entry point, and the same Varn sources as desktop for modules that have an Emscripten backend.
 
-Upstream **libffi** includes a **WASM** port ([`src/wasm`](https://github.com/libffi/libffi/tree/master/src/wasm)); **`varn_wasm` does not compile or link it today**, so the Lua **`require("ffi")`** surface remains a stub in the WASM host despite libffi’s own wasm support.
+On the default WASM configure, CMake forces:
+
+- `crypto`, HTTP server, TCP socket, and `ffi` to `DUMMY`.
+- The HTTP client to `EMSCRIPTEN_FETCH`.
+- TLS off.
+
+It keeps the desktop defaults for `log`, JSON, XML (`SPDLOG`, `NLOHMANN`, `PUGIXML`), and `fs` (`STD`). It does not link POCO, OpenSSL, or libffi.
+
+OpenSSL and libffi both have WASM ports, but this project does not build them into `varn_wasm` today, so `crypto` and `require("ffi")` remain stubs in the browser.

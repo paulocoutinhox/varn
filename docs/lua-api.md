@@ -1,186 +1,155 @@
 # Lua API reference
 
-Built-in modules are preloaded by the **desktop** host (`varn` binary) and by the **WebAssembly** host (`varn_wasm`, loaded from **`apps/wasm`**). Names follow a small Node-like set: **`http`**, **`socket`**, **`ffi`**, **`async`**, **`fs`**, **`log`**, **`crypto`**, **`platform`**, **`zip`**.
+Every built-in module is available with `require`. The modules are: `http`, `socket`,
+`async`, `fs`, `crypto`, `zip`, `ffi`, `platform`, and `log`.
 
-Runnable examples are grouped by module under **`apps/lua/examples/`**; see **[apps/lua/examples/README.md](../apps/lua/examples/README.md)** (run with **`cwd`** at the repository root unless a script notes otherwise).
+Runnable examples live next to each module under `modules/<module>/lua/examples/` (run them
+from the repository root). Some modules depend on the backend chosen at build time; if a
+module's backend is `DUMMY`, the module still loads but its functions return an error when
+used. See [build.md](build.md).
 
-Which methods exist on **`http`** responses (for example `res:json`) depends on **driver ids** selected at CMake configure time; see [build.md](build.md). The **`http.client`** surface depends on **`VARN_HTTP_CLIENT_DRIVER`**. **`socket`** depends on **`VARN_SOCKET_DRIVER`**. **`ffi`** depends on **`VARN_FFI_DRIVER`**. Vendor libraries are listed in **[official-libraries.md](official-libraries.md)**.
+## http
 
-### WebAssembly (`varn_wasm`)
+### Server
 
-Emscripten **`CMakeLists.txt`** forces **`DUMMY`** only where the browser cannot match the desktop stack: **`VARN_HTTP_SERVER_DRIVER`** (no in-page **`http.createServer`**), **`VARN_SOCKET_DRIVER`**, **`VARN_CRYPTO_DRIVER`**, and **`VARN_FFI_DRIVER`**. It sets **`VARN_HTTP_CLIENT_DRIVER=EMSCRIPTEN_FETCH`** (non-blocking browser **`fetch()`** via **`EM_JS`**, same **`Promise`** / **`VARN/1`** wire as desktop). **`log`**, JSON, and XML use the same **vendor** paths as a typical native configure (**`SPDLOG`**, **`NLOHMANN`**, **`PUGIXML`**); **`fs`** is **`STD`** (MEMFS / normal I/O in the worker). Because there is no HTTP server on WASM, **`res:json` / `res:xml`** do not appear in practice (no **`http.createServer`** handler path). **`async.sleep`** uses **`emscripten_sleep`** inside a **queued** task-pool job; **`Promise`** and **`EventLoop`** draining are described in [async.md](async.md#emscripten-varn_wasm). Cooperative stop and **`print`** capture: **`src/varn/wasm/VarnWasm.cpp`**.
+```lua
+local http = require("http")
 
-## `http`
+http.createServer(function(req, res)
+    res:json({ hello = req.query.name or "world" })
+end):listen(3000)
+```
 
-### When the stack is fully enabled
+`http.createServer(handler)` returns a builder. The handler runs as a coroutine for each
+request with `(req, res)`.
 
-If your build selected a **full HTTP transport** and matching serializers, `http.createServer` runs a real server.
+`req` fields: `host`, `method`, `path`, `target`, `queryString`, `body`, `remoteAddress`,
+`headers`, `cookies`, and `query` (the parsed query string as a table).
 
-#### `http.createServer(handler) -> builder`
+`res` methods:
 
-- `handler` is a Lua function invoked as a **coroutine** with `(req, res)` for each request.
-- **Request (`req`)** — table fields: `host`, `method`, `path`, `target`, `queryString`, `body`, `remoteAddress`, `headers`, `cookies`, `query` (string map for query parameters).
-- **Response (`res`)** — userdata with methods:
-  - **`res:status(code)`** — set HTTP status.
-  - **`res:setHeader(name, value)`** — set a response header.
-  - **`res:finish(body?)`** — send optional body and end the response.
-  - **`res:json(table)`** — present with **`VARN_HTTP_SERVER_DRIVER=POCO`** and **`VARN_JSON_DRIVER=NLOHMANN`**; serializes a **flat** table and sets a JSON `Content-Type`.
-  - **`res:xml(table)`** — present with **`VARN_HTTP_SERVER_DRIVER=POCO`** and **`VARN_XML_DRIVER=PUGIXML`**; serializes a **flat** table to XML.
+- `res:status(code)` — set the HTTP status.
+- `res:setHeader(name, value)` — set a header.
+- `res:finish(body?)` — send an optional body and end the response.
+- `res:json(table)` — send a table as JSON.
+- `res:xml(table)` — send a table as XML.
 
-If the handler returns without ending the response, the server may send **204 No Content** when the coroutine completes successfully.
+If the handler returns without ending the response, the server sends `204 No Content`.
 
-#### `builder:listen(port)` / `builder:listen(options)`
+`builder:listen(port)` or `builder:listen(options)` starts the server. Options: `host`,
+`port`, `publicDir`, `servePublic`, `tls`, `certFile`, `keyFile`. The environment variables
+`VARN_PORT`, `VARN_TLS_CERT`, and `VARN_TLS_KEY` override the matching options. When
+`servePublic` is on and `publicDir` is omitted, it defaults to `apps/lua/public`.
 
-- Integer port, or a table: `host`, `port`, `publicDir`, `servePublic`, `tls`, `certFile`, `keyFile`.
-- If `publicDir` is omitted, the native host default is **`apps/lua/public`** (relative to the process **current working directory**), matching the sample layout under **`apps/lua/`**.
-- Environment overrides: `VARN_PORT`, `VARN_TLS_CERT`, `VARN_TLS_KEY`.
+### Client
 
-### `http.client` (outbound HTTP)
+```lua
+local wire = http.client.request({ url = "https://example.com" }):await()
+```
 
-Always registered on the **`http`** table. Behavior is selected by **`VARN_HTTP_CLIENT_DRIVER`** (see [build.md](build.md)).
+`http.client.request(options)` returns a promise. Options: `url` (required), `method`
+(default `"GET"`), `headers` (table), `body` (string), `timeoutSeconds` (default `60`).
 
-#### `http.client.request(options) -> Promise`
+On success it resolves to a wire string: `VARN/1 <status> <length>\n` followed by the raw
+body. See `modules/http/lua/examples/client_request.lua` for a parser. On failure it rejects
+with a message.
 
-- `options` is a table: **`url`** (string, required), **`method`** (string, default `"GET"`), **`headers`** (optional string→string map), **`body`** (optional string), **`timeoutSeconds`** (optional integer, default `60`).
-- On success the promise resolves to a single **wire string**: `VARN/1 <status> <bodyByteLength>\n` immediately followed by the raw response body (binary-safe framing). Parse it in Lua or see **`apps/lua/examples/http/client_request.lua`** (or the root forwarder **`apps/lua/examples/http_client_request.lua`**).
-- On failure the promise rejects with a string message.
+## socket
 
-With **`VARN_HTTP_CLIENT_DRIVER=POCO`**, the request runs on the **task pool** and settles via the **`EventLoop`**. With **`EMSCRIPTEN_FETCH`** (WASM), **`fetch()`** runs in the browser worker; completion still goes through the same **`Promise`** / **`EventLoop::post`** path after the chunk host drains queued work (see [async.md](async.md#emscripten-varn_wasm)).
+```lua
+local socket = require("socket")
+local async = require("async")
 
-### Stub / disabled server transport
+async.spawn(function()
+    local conn = socket.tcp.connect("127.0.0.1", 9000):await()
+    conn:send("hello"):await()
+    local reply = conn:receive():await()
+    conn:close():await()
+end)
+```
 
-The **`http`** module is always registered. If **`VARN_HTTP_SERVER_DRIVER`** is not the full POCO server, `http.createServer` **errors at call time** with a message that includes the active server driver id. **`http.client`** is independent; see **`VARN_HTTP_CLIENT_DRIVER`** in [build.md](build.md).
+- `socket.tcp.connect(host, port)` → promise resolving to a socket.
+- `socket.tcp.listen(host, port, backlog?)` → promise resolving to a listener (`backlog`
+  defaults to `64`).
+- Socket: `sock:send(data)`, `sock:receive(maxBytes?)` (default `65536`), and `sock:close()`
+  all return promises.
+- Listener: `listener:accept()` (resolves to a socket) and `listener:close()`.
 
-## `socket`
+## async
 
-Registered when the native host loads. **`VARN_SOCKET_DRIVER`** selects the implementation (see [build.md](build.md)).
+- `async.sleep(ms)` → a promise that resolves after `ms` milliseconds.
+- `async.spawn(fn)` → run `fn` in a new coroutine. Use it to call `:await()` outside an HTTP
+  handler.
 
-### `socket.tcp.connect(host, port) -> Promise`
+See [async.md](async.md).
 
-Resolves to a **TCP socket userdata** with methods below. Rejects if the connect fails.
+## fs
 
-### `socket.tcp.listen(host, port, backlog?) -> Promise`
+- `fs.readFile(path)` → promise resolving to the file contents (binary-safe).
+- `fs.writeFile(path, content)` → promise resolving to `"ok"`.
+- `fs.exists(path)` → boolean, checked synchronously.
 
-`backlog` defaults to `64`. Resolves to a **TCP listener userdata** with methods below.
+## crypto
 
-### Socket methods
+- `crypto.digest(algorithm, data, format?)` → a digest of `data`. `algorithm` is a name like
+  `"SHA256"` or `"SHA512"`. `format` is `"hex"` (default) or `"raw"`.
+- `crypto.hmac(algorithm, key, data, format?)` → an HMAC, with the same `format` options.
+- `crypto.randomBytes(n)` → `n` random bytes as a string.
 
-- **`sock:send(data) -> Promise`** — `data` is a string; resolves to `"ok"` on success.
-- **`sock:receive(maxBytes?) -> Promise`** — `maxBytes` defaults to `65536`; resolves to a string (possibly empty when the peer closed cleanly).
-- **`sock:close() -> Promise`** — shuts down the connection; resolves to `"ok"` on success.
+## zip
 
-### Listener methods
+All three return promises (the work runs on the task pool).
 
-- **`listener:accept() -> Promise`** — resolves to a new **socket userdata** for an accepted client.
-- **`listener:close() -> Promise`** — closes the listening socket.
+- `zip.create(archivePath, entries)` — `entries` is an array of `{ file = "...", entry = "..." }`.
+- `zip.extract(archivePath, destDir)` — extracts under `destDir` and rejects unsafe paths.
+- `zip.list(archivePath)` → resolves to an array of entry names.
 
-On **native** builds with **`VARN_SOCKET_DRIVER=POCO`**, blocking socket work runs on the runtime **task pool**; use **`async.spawn`** in scripts so you can call **`:await()`** outside an **`http`** handler. Example: **`apps/lua/examples/socket/echo_server.lua`** (or **`apps/lua/examples/tcp_echo_server.lua`**). On **Emscripten**, **`VARN_SOCKET_DRIVER`** is **`DUMMY`**; **`connect` / `listen`** reject at perform time.
+## ffi
 
-## `ffi`
+A LuaJIT-style FFI (`ffi.cdef`, `ffi.new`, `ffi.C`, `ffi.load`, …). Declare C functions, then
+call them:
 
-Lua-facing API follows **[lua-ffi](https://github.com/zhaojh329/lua-ffi)** (LuaJIT-style `ffi.cdef`, `ffi.new`, `ffi.C`, `ffi.load`, …). CMake selects **`VARN_FFI_DRIVER`**; see [build.md](build.md) and [official-libraries.md](official-libraries.md).
+```lua
+local ffi = require("ffi")
+ffi.cdef [[ unsigned long strlen(const char *s); ]]
+print(ffi.C.strlen("hello")) -- 5
+```
 
-When **`LIBFFI`** is active, the module is the vendored C implementation linked into the host. When **`DUMMY`** is active, `require("ffi")` succeeds but every exported function errors.
+More in `modules/ffi/lua/examples/`.
 
-Examples (desktop, **`LIBFFI`**): **`apps/lua/examples/ffi/puts.lua`** (libc), **`apps/lua/examples/ffi/sqlite3.lua`** (SQLite3 types: INTEGER, REAL, TEXT, BLOB, NULL).
+## platform
 
-## `async`
+- `platform.os()` → e.g. `"linux"`, `"macos"`, `"windows"`, `"ios"`, `"android"`, `"wasm"`.
+- `platform.arch()` → e.g. `"arm64"`, `"x86_64"`, `"wasm32"`.
+- `platform.hostVersion()` → the Varn version string.
+- `platform.cpuCount()` → the number of CPUs.
+- `platform.pointerSize()` → `4` or `8`.
+- `platform.endianness()` → `"little"` or `"big"`.
+- `platform.libPrefix()` and `platform.shlibSuffix()` → the shared-library naming pieces.
+- `platform.libraryFilename(name)` → e.g. `libz.so` for `"z"`.
+- `platform.getLibraryPathByName(name, subdir?)` → builds `subdir/filename` (a dev helper).
 
-### `async.sleep(ms) -> Promise`
+## log
 
-Resolves after `ms` milliseconds. On **native** hosts the delay is driven by the **task pool** worker path. On **Emscripten** (`varn_wasm`), **`emscripten_sleep`** is used instead (see [async.md](async.md#emscripten-varn_wasm)).
+`log.debug(...)`, `log.info(...)`, `log.warn(...)`, and `log.error(...)`. Each takes any
+number of values, like `print`: they are converted with `tostring`, joined by tabs, and
+written as one line with the level tag.
 
-### `async.spawn(fn)`
+## Promises
 
-Starts `fn` in a new coroutine. Used for advanced control flow; most server code relies on the **`http`** handler coroutine instead.
+Async functions return a promise:
 
-## `fs`
+- `promise:await()` — pauses the current coroutine until the promise settles, then returns
+  the value (or `nil, err` on failure).
+- `promise:isDone()` → boolean. Treat it as a hint, not as synchronization.
 
-Behavior depends on **`VARN_FS_DRIVER`** (see [build.md](build.md)); **`STD`** uses the host filesystem (in the browser, Emscripten’s virtual filesystem / **MEMFS** when configured), **`DUMMY`** rejects reads/writes and makes `exists` always false.
+## The `arg` global
 
-### `fs.readFile(path) -> Promise`
+The host sets `arg` to the command-line arguments (the script path and its parameters), like
+standard Lua. In the browser build it is usually empty.
 
-Resolves to file contents as a string (binary-safe). Rejects on I/O error.
+## WebAssembly notes
 
-### `fs.writeFile(path, content) -> Promise`
-
-Writes binary-safe string `content`. Resolves to `"ok"` on success.
-
-### `fs.exists(path) -> boolean`
-
-Synchronous existence check.
-
-## `log`
-
-Behavior depends on **`VARN_LOG_DRIVER`** (see [build.md](build.md)): default **`SPDLOG`** routes records through **spdlog**’s default logger; **`STDOUT`** writes leveled lines to **stdout**; **`DUMMY`** discards them.
-
-### `log.debug(...)`, `log.info(...)`, `log.warn(...)`, `log.error(...)`
-
-Each accepts **zero or more** arguments, like **`print`**: every value is converted with `tostring` (same rules as Lua’s `print`), joined by **tab**, then one line is emitted with the level tag.
-
-## `crypto`
-
-Behavior depends on the **crypto** driver id for your build (see [build.md](build.md)); with **`DUMMY`**, primitives throw when called.
-
-### `crypto.digest(algorithm, data, format?) -> string`
-
-When **`OPENSSL`** is active, computes a message digest using **OpenSSL 3** `EVP_MD_fetch` when available (algorithm names such as **`SHA256`**, **`SHA512`**, **`SHA3-256`** — see OpenSSL docs). Leading/trailing whitespace on **`algorithm`** is stripped; **casing** is not normalized by Varn, but common digests are usually accepted in several forms (e.g. **`SHA256`** and **`sha256`** both work with typical OpenSSL builds). **`format`** is optional: **`"hex"`** (default) for lowercase hex, or **`"raw"`** for raw digest bytes. For SHA-256 hex specifically, use **`crypto.digest("SHA256", str, "hex")`** (or **`"sha256"`** if your OpenSSL accepts it).
-
-Known-value checks for **SHA-256** (empty string and **`abc`**) live in **`apps/lua/examples/crypto/digest_vectors.lua`** (prints **`SKIP`** and exits **0** when **`crypto.digest`** is unavailable).
-
-### `crypto.hmac(digestAlgorithm, key, data, format?) -> string`
-
-When **`OPENSSL`** is active, **HMAC** with the inner digest chosen by name (same style and naming rules as **`crypto.digest`**, e.g. **`SHA256`**, **`SHA512`**). **`format`** is optional: **`"hex"`** (default) or **`"raw"`**. RFC 4231 coverage: **`apps/lua/examples/crypto/hmac_vectors.lua`**.
-
-### `crypto.randomBytes(n) -> string`
-
-Returns `n` random bytes as a string when the driver provides a CSPRNG.
-
-## `platform`
-
-Host and naming helpers (not a CMake driver matrix).
-
-### `platform.os() -> string`
-
-Stable OS id, for example **`linux`**, **`macos`**, **`windows`**, **`ios`**, **`ios-simulator`**, **`android`**, **`wasm`**, etc.
-
-### `platform.arch() -> string`
-
-CPU id when detected, for example **`arm64`**, **`x86_64`**, **`wasm32`**.
-
-### `platform.hostVersion() -> string`
-
-Semver string of the **Varn host binary** (from **`project(... VERSION)`** in **`CMakeLists.txt`**, generated into **`VarnVersion.h`** at configure time).
-
-### `platform.libPrefix()`, `platform.shlibSuffix() -> string`
-
-Shared-library conventions (`lib` / `` and `.so` / `.dylib` / `.dll`).
-
-### `platform.libraryFilename(name) -> string`
-
-Returns a **filename** heuristic such as **`libz.so`** / **`libz.dylib`** / **`z.dll`** for logical name **`z`**.
-
-### `platform.getLibraryPathByName(name, subdir?) -> string`
-
-Builds **`subdir`/`filename`** (default **`./`**). This is a **development heuristic**, not a substitute for **`dlopen`** / **`ffi.load`** resolution on real systems.
-
-## `zip`
-
-When **`VARN_ENABLE_ZIP=ON`** and **libzip** is linked (**native** and **`varn_wasm`**), **`zip.extract`**, **`zip.create`**, and **`zip.list`** return **`Promise`** objects (work runs on the **task pool**).
-
-- **`zip.extract(archivePath, destDir)`** — extracts all entries under **`destDir`**, rejecting **zip slip** paths (`..`, absolute entries, paths escaping the destination).
-- **`zip.create(archivePath, entries)`** — **`entries`** is a non-empty array of **`{ file = "...", entry = "..." }`** (each **`entry`** must be a safe relative path).
-- **`zip.list(archivePath)`** — resolves to an **array** of entry names (strings). Unsafe entry names cause rejection (same rules as **`extract`**).
-
-When zip is disabled (**`VARN_ENABLE_ZIP=OFF`**), these functions error at call time.
-
-## `Promise` userdata
-
-Methods:
-
-- **`promise:await()`** — if pending, yields the current coroutine until settled; then returns the value, or `nil, err` on rejection.
-- **`promise:isDone()`** — boolean, true if resolved or rejected. On **native** hosts this reads cross-thread-visible state without blocking; another thread may still settle the promise immediately after, so use it only as a hint, not for synchronization. On **`varn_wasm`**, the runtime is single-threaded, but **task-pool** jobs are still **queued** and run after **`async.sleep(...)`** returns the promise—so **`isDone()`** can be **`false`** immediately after **`async.sleep`** until **`await`**, matching the usual mental model (see [async.md](async.md#emscripten-varn_wasm)).
-
-## `arg` global
-
-The host sets `arg` to a Lua array of command-line arguments (script path and parameters), similar to standard Lua. The WASM worker constructs **`Runtime`** with an **empty** argv list, so **`arg`** is typically an empty table there unless the embedding changes.
+In the browser build (`varn_wasm`) there is no HTTP server or raw socket, `crypto` and `ffi`
+are stubs, and `http.client` uses the browser `fetch()`. JSON, XML, logging, `fs`, and
+`async` behave the same. See [build.md](build.md#webassembly).

@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/CMakeFiles/openssl-populate"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/CMakeFiles/openssl-populate.rule"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/CMakeFiles/openssl-populate-complete.rule"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/openssl-populate-prefix/src/openssl-populate-stamp/openssl-populate-build.rule"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/openssl-populate-prefix/src/openssl-populate-stamp/openssl-populate-configure.rule"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/openssl-populate-prefix/src/openssl-populate-stamp/openssl-populate-download.rule"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/openssl-populate-prefix/src/openssl-populate-stamp/openssl-populate-install.rule"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/openssl-populate-prefix/src/openssl-populate-stamp/openssl-populate-mkdir.rule"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/openssl-populate-prefix/src/openssl-populate-stamp/openssl-populate-patch.rule"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/openssl-populate-prefix/src/openssl-populate-stamp/openssl-populate-test.rule"
+		},
+		{
+			"file" : "/Users/paulo/Developer/workspaces/cpp/varn/build-baseline/_deps/openssl-subbuild/openssl-populate-prefix/src/openssl-populate-stamp/openssl-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"openssl-populate"
+		],
+		"name" : "openssl-populate"
+	}
+}

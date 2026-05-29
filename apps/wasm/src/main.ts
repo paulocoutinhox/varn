@@ -16,6 +16,96 @@ for i = 1, 4 do
 end
 `;
 
+// one runnable example per module, tuned for the browser build. crypto/ffi are stubs in wasm
+// and the examples show that caveat instead of failing silently.
+const EXAMPLES: ReadonlyArray<{ label: string; code: string }> = [
+  { label: "Lua — fibonacci", code: DEFAULT_LUA },
+  {
+    label: "platform — system info",
+    code: `local p = require("platform")
+print("os", p.os())
+print("arch", p.arch())
+print("cpus", p.cpuCount())
+print("pointer bytes", p.pointerSize())
+print("endianness", p.endianness())
+print("host version", p.hostVersion())
+`,
+  },
+  {
+    label: "log — levels",
+    code: `local log = require("log")
+log.debug("debug", 1)
+log.info("info", "hello")
+log.warn("careful")
+log.error("boom", { code = 7 })
+print("log lines were emitted")
+`,
+  },
+  {
+    label: "async — sleep & spawn",
+    code: `local async = require("async")
+async.spawn(function()
+  print("start")
+  async.sleep(300):await()
+  print("woke up after 300ms")
+end)
+print("spawned; the main chunk returns first")
+`,
+  },
+  {
+    label: "fs — read & write (MEMFS)",
+    code: `local async = require("async")
+local fs = require("fs")
+async.spawn(function()
+  fs.writeFile("demo.txt", "hello from lua\\n"):await()
+  local content = fs.readFile("demo.txt"):await()
+  print("read back:", content)
+end)
+`,
+  },
+  {
+    label: "zip — create & list",
+    code: `local async = require("async")
+local zip = require("zip")
+async.spawn(function()
+  local f = io.open("hello.txt", "w"); f:write("zipped!\\n"); f:close()
+  local _, err = zip.create("demo.zip", { { file = "hello.txt", entry = "a/hello.txt" } }):await()
+  if err then print("zip error:", err); return end
+  local entries = zip.list("demo.zip"):await()
+  print("entries:", table.concat(entries, ", "))
+end)
+`,
+  },
+  {
+    label: "http.client — fetch",
+    code: `local async = require("async")
+local http = require("http")
+async.spawn(function()
+  local wire, err = http.client.request({ url = "https://httpbin.org/get" }):await()
+  if err then print("request failed:", err); return end
+  print("status", wire:match("^VARN/1 (%d+)"))
+end)
+`,
+  },
+  {
+    label: "crypto — stubbed in browser",
+    code: `local crypto = require("crypto")
+local ok, result = pcall(crypto.digest, "SHA256", "varn", "hex")
+if ok then
+  print("sha256", result)
+else
+  print("crypto is a stub in the browser build:", result)
+end
+`,
+  },
+  {
+    label: "ffi — stubbed in browser",
+    code: `local ffi = require("ffi")
+print("ffi is a stub in the browser build; native calls are unavailable.")
+`,
+  },
+];
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className: string,
@@ -56,6 +146,20 @@ function mount(): void {
   const editorCard = el("section", "flex flex-col gap-3 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-4 shadow-xl shadow-black/40 backdrop-blur");
   editorCard.appendChild(el("h2", "text-sm font-medium text-zinc-300", "Editor"));
 
+  const exampleRow = el("div", "flex items-center gap-2");
+  exampleRow.appendChild(el("label", "text-xs font-medium text-zinc-400", "Example"));
+  const exampleSelect = document.createElement("select");
+  exampleSelect.className =
+    "flex-1 rounded-lg border border-zinc-800 bg-zinc-950/80 px-2 py-1.5 text-sm text-zinc-200 outline-none transition focus:border-cyan-600/60";
+  for (const ex of EXAMPLES) {
+    const opt = document.createElement("option");
+    opt.value = ex.label;
+    opt.textContent = ex.label;
+    exampleSelect.appendChild(opt);
+  }
+  exampleRow.appendChild(exampleSelect);
+  editorCard.appendChild(exampleRow);
+
   const textarea = document.createElement("textarea");
   textarea.rows = 16;
   textarea.spellcheck = false;
@@ -63,6 +167,13 @@ function mount(): void {
   textarea.className =
     "min-h-[220px] w-full resize-y rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2 font-mono text-sm leading-relaxed text-cyan-50 outline-none ring-cyan-500/40 transition focus:border-cyan-600/60 focus:ring-2";
   textarea.value = DEFAULT_LUA;
+
+  exampleSelect.addEventListener("change", () => {
+    const chosen = EXAMPLES.find((ex) => ex.label === exampleSelect.value);
+    if (chosen) {
+      textarea.value = chosen.code;
+    }
+  });
 
   const toolbar = el("div", "flex flex-wrap gap-2");
   const btnPrimary =

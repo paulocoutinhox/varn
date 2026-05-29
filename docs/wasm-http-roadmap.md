@@ -2,24 +2,26 @@
 
 ## Current behavior
 
-**`VARN_HTTP_CLIENT_DRIVER=EMSCRIPTEN_FETCH`** (Emscripten-only) implements **`http.client.request`** with the browser **`fetch()`** API from **`EM_JS`** in **`src/varn/http/drivers/emscripten_fetch/EmscriptenFetchHttpClient.cpp`**. Headers are serialized as JSON from C++ and parsed in JS into a **`Headers`**-compatible plain object (empty maps become **`{}`**, never **`null`**, so **`RequestInit`** stays valid). The Lua-facing contract is unchanged: a **`Promise`** that resolves to the **`VARN/1 <status> <len>\n` + body** wire string or rejects with a string.
+In the browser, `http.client.request` uses the `EMSCRIPTEN_FETCH` driver, which calls the browser `fetch()` API. The code is in `modules/http/src/drivers/emscripten_fetch/EmscriptenFetchHttpClient.cpp`.
 
-The WASM build links **`-s ASYNCIFY`** for **`async.sleep`**, cooperative stop, and related paths; the HTTP client does **not** use **`-s FETCH=1`** / **`emscripten_fetch`**.
+Headers are sent from C++ to JS as JSON and parsed there into a plain object (an empty map becomes `{}`, never `null`, so `RequestInit` stays valid). The Lua contract is the same as desktop: you get a `Promise` that resolves to the `VARN/1 <status> <len>\n` plus body wire string, or rejects with an error string.
 
-In-flight **`fetch`** calls are tracked so **`varnRunChunk`** can keep pumping the worker until they finish (see **`include/varn/wasm/WasmAsyncHost.h`**).
+The WASM build uses `-s ASYNCIFY` for `async.sleep`, cooperative stop, and similar paths. The HTTP client does not use `-s FETCH=1`.
+
+In-flight `fetch` calls are tracked so the host can keep pumping the worker until they finish. See `modules/core/include/varn/wasm/WasmAsyncHost.h`.
 
 ## Possible follow-ups (not committed)
 
-- **`credentials` / `redirect`** policies aligned with embedding needs.
-- **`AbortController`** surfaced from Lua (beyond fixed **`timeoutSeconds`**).
-- **Streaming** bodies (`ReadableStream` → chunked bridge) instead of buffering the full response in WASM memory.
+- `credentials` and `redirect` policies that match embedding needs.
+- An `AbortController` exposed to Lua, beyond the fixed `timeoutSeconds`.
+- Streaming bodies (`ReadableStream` to a chunked bridge) instead of buffering the whole response in WASM memory.
 
 ## Security
 
-Never **`eval`** URL or header strings from untrusted input. Document **SSRF** when server-side Lua calls user-controlled URLs (see [security.md](security.md)).
+Never `eval` URL or header strings from untrusted input. Server-side Lua that calls user-controlled URLs risks SSRF. See [security.md](security.md).
 
 ## References
 
-- [build.md — Emscripten](build.md#emscripten-wasm)
-- [lua-api.md — `http.client`](lua-api.md)
-- [async.md — Emscripten](async.md#emscripten-varn_wasm)
+- [build.md — WebAssembly](build.md#webassembly)
+- [lua-api.md — http.client](lua-api.md)
+- [async.md — Emscripten](async.md)

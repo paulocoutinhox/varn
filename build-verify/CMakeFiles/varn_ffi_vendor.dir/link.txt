@@ -1,0 +1,2 @@
+/usr/bin/ar qc lib/libvarn_ffi_vendor.a CMakeFiles/varn_ffi_vendor.dir/modules/ffi/vendor/ffi.c.o CMakeFiles/varn_ffi_vendor.dir/modules/ffi/vendor/lex.c.o CMakeFiles/varn_ffi_vendor.dir/modules/ffi/platform/varn_ffi_dl.c.o
+/usr/bin/ranlib lib/libvarn_ffi_vendor.a

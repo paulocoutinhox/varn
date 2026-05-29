@@ -1,0 +1,42 @@
+crypto/ml_dsa/libcrypto-lib-ml_dsa_sample.o: \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/crypto/ml_dsa/ml_dsa_sample.c \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/byteorder.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/e_os2.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/macros.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/opensslconf.h \
+  include/openssl/configuration.h include/openssl/opensslv.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/crypto/ml_dsa/ml_dsa_local.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/crypto/ml_dsa.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/types.h \
+  include/openssl/safestack.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/stack.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/crypto/types.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/internal/constant_time.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/internal/packet.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/bn.h \
+  include/openssl/crypto.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/cryptoerr.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/symhacks.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/cryptoerr_legacy.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/core.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/bnerr.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/buffer.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/buffererr.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/internal/numbers.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/crypto/ml_dsa/ml_dsa_vector.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/crypto/ml_dsa/ml_dsa_poly.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/crypto/ml_dsa/ml_dsa_matrix.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/crypto/ml_dsa/ml_dsa_hash.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/evp.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/core_dispatch.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/indicator.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/params.h \
+  include/openssl/bio.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/bioerr.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/evperr.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/objects.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/obj_mac.h \
+  include/openssl/asn1.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/asn1err.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/openssl/objectserr.h \
+  ../../../../../../../.cache/CPM/openssl-source/f9ec/include/internal/sha3.h

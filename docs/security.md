@@ -1,30 +1,33 @@
-# Security notes (high level)
+# Security notes
 
-This document is **not** a full audit. It records known **trust boundaries** and **sharp edges** for embedders and operators. For build-time knobs, see [build.md](build.md); for Lua surfaces, see [lua-api.md](lua-api.md).
+This is not a full audit. It records known trust boundaries and sharp edges for people embedding or running Varn. For build options see [build.md](build.md). For Lua APIs see [lua-api.md](lua-api.md).
 
-## `crypto`
+## crypto
 
-- **Timing**: Lua scripts are not written for constant-time comparison of secrets. Use established libraries at the edge (TLS termination, HSMs) for high-assurance crypto; treat **`crypto.digest`** (and **`crypto.hmac`**) as convenience primitives, not as side-channel–hardened building blocks.
-- **Algorithms**: **`crypto.digest`** forwards algorithm names to **OpenSSL** when **`VARN_CRYPTO_DRIVER=OPENSSL`**. Invalid or legacy names fail at runtime; do not pass untrusted strings as algorithms without validation in your own code.
+`crypto.digest` and `crypto.hmac` are convenience primitives, not side-channel-hardened building blocks. Lua scripts are not written for constant-time secret comparison. For high-assurance work, use established tools at the edge, such as TLS termination or an HSM.
 
-## `zip`
+With `VARN_CRYPTO_DRIVER=OPENSSL`, `crypto.digest` passes algorithm names straight to OpenSSL. Invalid names fail at runtime. Do not pass untrusted strings as algorithm names without validating them yourself.
 
-- **Zip slip**: **`zip.extract`** rejects **`..`**, absolute entries, and paths that escape the destination directory after canonicalization. Do not disable review for archives from untrusted sources.
-- **Resource limits**: Large entries are read in chunks on disk, but **total archive size** and **entry count** are not hard-capped at the Lua layer today; host disk quotas still apply.
+## zip
 
-## `platform`
+`zip.extract` rejects `..`, absolute entries, and paths that escape the destination after canonicalization (zip slip). Still review archives from untrusted sources.
 
-- **Information disclosure**: **`platform.os`**, **`platform.arch`**, and filename heuristics expose **non-secret** host facts useful for **`ffi.load`** paths. They are not a substitute for secure packaging or attestation.
+Large entries are read in chunks, but total archive size and entry count are not capped at the Lua layer today. Host disk quotas still apply.
 
-## `http` / `http.client`
+## platform
 
-- **SSRF**: Server-side Lua that calls **`http.client.request`** with user-controlled URLs can reach internal networks from the host process. Restrict URLs in application policy or network egress rules.
-- **WASM**: Outbound **`http.client.request`** uses the worker’s **`fetch()`** (see [wasm-http-roadmap.md](wasm-http-roadmap.md)); **CORS**, **cookies**, and **redirect** behavior follow the browser (see [build.md — Emscripten](build.md#emscripten-wasm)).
+`platform.os`, `platform.arch`, and the filename helpers expose non-secret host facts, useful for `ffi.load` paths. They are not a substitute for secure packaging or attestation.
 
-## `ffi`
+## http and http.client
 
-- **Native code**: **`ffi`** can call arbitrary native symbols available to the process. Treat Lua with **`ffi`** as **equivalent to native code** from a sandboxing perspective.
+Server-side Lua that calls `http.client.request` with user-controlled URLs can reach internal networks from the host process (SSRF). Restrict URLs in your application or with network egress rules.
+
+In the browser, `http.client.request` uses the worker's `fetch()`, so CORS, cookies, and redirects follow the browser. See [wasm-http-roadmap.md](wasm-http-roadmap.md) and [build.md](build.md#webassembly).
+
+## ffi
+
+`ffi` can call any native symbol available to the process. Treat Lua that uses `ffi` as equivalent to native code for sandboxing purposes.
 
 ## Reporting
 
-Use the repository issue templates for vulnerabilities you believe should be handled privately; follow any **security policy** published on the project’s GitHub org if present.
+Use the repository issue templates for vulnerabilities that should be handled privately. Follow any security policy published on the project's GitHub org.

@@ -1,0 +1,52 @@
+#pragma once
+
+#include <map>
+#include <memory>
+#include <string>
+
+namespace varn::http {
+
+struct HttpRequest {
+    std::string host;
+    std::string method;
+    std::string path;
+    std::string target;
+    std::string queryString;
+    std::string body;
+    std::string remoteAddress;
+    std::map<std::string, std::string> headers;
+    std::map<std::string, std::string> cookies;
+    std::map<std::string, std::string> query;
+};
+
+class HttpResponse {
+public:
+    virtual ~HttpResponse() = default;
+    virtual void setStatus(int statusCode) = 0;
+    virtual void setHeader(const std::string& name, const std::string& value) = 0;
+    virtual void end(const std::string& body) = 0;
+    virtual bool ended() const = 0;
+};
+
+class HttpServer {
+public:
+    virtual ~HttpServer() = default;
+    virtual void start() = 0;
+    virtual void stop() = 0;
+};
+
+struct HttpServerOptions {
+    std::string host = "0.0.0.0";
+    int port = 3000;
+    bool tls = false;
+    std::string certFile;
+    std::string keyFile;
+    std::string publicDir = "apps/lua/public";
+    bool servePublic = true;
+    int maxQueued = 65536;
+    int maxThreads = 0;
+    int keepAliveTimeoutSeconds = 30;
+    int maxRequestBodyBytes = 16 * 1024 * 1024;
+};
+
+} // namespace varn::http

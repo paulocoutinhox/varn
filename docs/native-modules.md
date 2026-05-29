@@ -1,18 +1,10 @@
 # Native modules (C++)
 
-## Registration
+This is a short guide to adding a built-in C++ module that exposes functions to Lua.
 
-All built-in modules are installed from `varn::lua::NativeModuleRegistry::installAll` in `src/varn/lua/NativeModules.cpp`.
+## The shape of a module
 
-1. Add a **C++ class** for your Lua surface (for example `FsModule`, `CryptoModule`, `LogModule`, `FfiModule`) with `static void install(struct lua_State* L)` and **private** `static int lua*(struct lua_State* L)` callbacks (same shape as `AsyncModule`). Avoid the identifier `register` as a method name (storage-class history in C++). Keep small helpers as **private static** methods on that class (not free functions in the `.cpp`) so the module stays a single cohesive type.
-2. Call `YourModule::install(L)` from `NativeModuleRegistry::installAll` in the right order.
-3. Ensure any global Lua infrastructure your module depends on is initialized **before** modules that need it. `Promise::installMetatable(L)` runs first so `fs` and others can return promises even if Lua never `require("async")`.
-
-## Synchronous bindings
-
-Use normal `lua_CFunction` rules on **private static** members of your module class: read arguments with `luaL_check*` (or `varn::lua::LuaHelpers::checkString`), push results, return the result count. Only call Lua from the thread that owns `L` (the main runtime thread when invoked from a main-loop job).
-
-Example sketch:
+A module is a C++ class with a `static void install(lua_State* L)` method and `private static int lua*(lua_State* L)` callbacks for each Lua function. Keep small helpers as private static methods on the class so the module stays one cohesive type. Avoid naming a method `register` (it is a reserved word in older C++).
 
 ```cpp
 class ExampleModule {
@@ -30,51 +22,50 @@ private:
 };
 ```
 
-## Async C functions
+## Registering it
 
-Follow the pattern in `src/varn/fs/FsModule.cpp`:
+All built-in modules are installed from `varn::lua::NativeModuleRegistry::installAll` in `modules/core/src/lua/NativeModules.cpp`.
 
-- Obtain `Runtime&` from the Lua registry (`varn::lua::LuaHelpers::getRuntime(L)`).
-- Create a `Promise`, post work to `runtime.taskPool()`, and from the worker call `promise->resolve` / `resolveCustom` / `reject`. Use **`resolveCustom`** only to push values on the **main Lua state** (for example TCP socket userdata); the closure must be safe to run on the main loop thread.
-- Push the promise with `Promise::push(L, promise)` and return `1`.
+1. Write your module class as above.
+2. Call `YourModule::install(L)` from `NativeModuleRegistry::installAll`.
+3. Mind the order. Anything your module depends on must be installed first. For example, `Promise::installMetatable(L)` runs early so modules like `fs` can return promises even before Lua calls `require("async")`.
 
-On **Emscripten**, **`TaskPool::post`** runs the job **immediately** on the calling thread (no background workers), and **`Promise`** resumption does not go through **`EventLoop::post`**—still call **`resolve` / `reject`** from outside the Lua stack that invoked the binding if your code would otherwise recurse into Lua.
+## Synchronous functions
 
-See [Concurrency and async](async.md) for threading constraints.
+Follow the normal `lua_CFunction` rules. Read arguments with `luaL_check*` (or `varn::lua::LuaHelpers::checkString`), push results, and return the result count. Only call Lua from the thread that owns `L`, which is the main runtime thread.
 
-## `platform` module
+## Async functions
 
-`PlatformModule::install` registers **`require("platform")`** with **`os`**, **`arch`**, **`hostVersion`**, **`libPrefix`**, **`shlibSuffix`**, **`libraryFilename`**, and **`getLibraryPathByName`** (see [lua-api.md](lua-api.md)). Implementation: `src/varn/platform/PlatformInfo.cpp` + `PlatformModule.cpp`; **`hostVersion`** comes from **`cmake/VarnVersion.h.in`** (configured at CMake time from **`project(... VERSION)`**).
+Follow the pattern in `modules/fs/src/FsModule.cpp`:
 
-## `zip` module
+1. Get the runtime: `varn::lua::LuaHelpers::getRuntime(L)`.
+2. Create a `Promise` and post the blocking work to `runtime.taskPool()`.
+3. From the worker, call `promise->resolve`, `resolveCustom`, or `reject`. Use `resolveCustom` when the result is a Lua value such as userdata, not a plain string. Its closure runs on the main loop.
+4. Push the promise with `Promise::push(L, promise)` and return `1`.
 
-`ZipModule::install` registers **`require("zip")`** when **`VARN_ENABLE_ZIP`** is on and **libzip** is linked (`src/varn/zip/ZipModule.cpp`). **`zip.extract`**, **`zip.create`**, and **`zip.list`** use **`Promise`** + **`TaskPool`** like **`fs`**. When zip is disabled, these functions error with a clear message.
+On Emscripten there are no worker threads, so `TaskPool::post` queues the job instead of running it on a background thread. See [async.md](async.md) for the threading rules.
 
-## HTTP module
+## Examples of existing modules
 
-`HttpServerModule::install` is **always** called from `NativeModuleRegistry::installAll`. It registers **`http.createServer`** (server driver) and **`http.client.request`** (client driver) on the same **`http`** table. CMake chooses the **server** implementation (`HttpServerModule.cpp` vs a stub under `src/varn/http/drivers/dummy/`) and a separate **client** transport (`PocoHttpClient`, `DummyHttpClient`, or **`EmscriptenFetchHttpClient`** under `src/varn/http/drivers/emscripten_fetch/`). Rules and driver ids: [build.md](build.md). Libraries: [official-libraries.md](official-libraries.md).
+- `platform`: `PlatformModule::install` registers `require("platform")` with fields like `os`, `arch`, `cpuCount`, and `getLibraryPathByName`. Code is in `modules/platform/src/`. See [lua-api.md](lua-api.md).
+- `zip`: `ZipModule::install` registers `require("zip")` when `VARN_ENABLE_ZIP` is on. `zip.extract`, `zip.create`, and `zip.list` use `Promise` and `TaskPool` like `fs`. When zip is off, the functions error with a clear message.
+- `http`: `HttpServerModule::install` is always called. It registers `http.createServer` and `http.client.request` on the `http` table. CMake picks the server and client backends.
+- `socket`: `SocketModule::install` registers `require("socket")` with `socket.tcp.connect`, `socket.tcp.listen`, and socket/listener methods. On native builds, I/O runs on the task pool. On Emscripten it is a `DUMMY` stub.
+- `ffi`: `FfiModule::install` registers `require("ffi")`. With `VARN_FFI_DRIVER=LIBFFI` it links libffi for real calls. With `DUMMY` it exposes the same names but every call errors.
 
-## Socket module
+## HTTP handlers run as coroutines
 
-`SocketModule::install` registers **`require("socket")`** with **`socket.tcp.connect`**, **`socket.tcp.listen`**, and userdata methods **`send`**, **`receive`**, **`close`** (sockets) and **`accept`**, **`close`** (listeners). On **native POCO** builds, blocking I/O runs on the task pool; results surface on the main loop via **`Promise`** (including **`Promise::resolveCustom`** when the resolved value is Lua userdata, not a string). On **Emscripten**, the socket driver is **`DUMMY`** (stubs that error when used).
+When the full HTTP stack is active, the runtime pushes `req` and `res` and resumes your callback as a coroutine. Use `Promise:await()` for async work inside it. While the coroutine is yielded, the request stays open until it finishes and the response is sent.
 
-## FFI module
+## Dummy drivers
 
-`FfiModule::install` registers **`require("ffi")`**. With **`VARN_FFI_DRIVER=LIBFFI`**, the host loads the **vendored C** implementation (lexer + parser) and links **[Sourceware libffi](https://sourceware.org/libffi/)** for calls/closures behind **`extern "C" int luaopen_ffi`**, wired from **`FfiModule.cpp`**. With **`DUMMY`**, **`DummyFfiModule.cpp`** provides **`luaopen_ffi_dummy`** with the same Lua surface names but every call errors.
-
-## Dummy and in-tree drivers
-
-Every concern that has a **CMake driver** also has a **no-vendor** implementation under `drivers/dummy/` so the link always resolves exactly one implementation: crypto **`DUMMY`** → `DummyCryptoPrimitives`, JSON **`DUMMY`** → `DummyJsonSerializer`, XML **`DUMMY`** → `DummyXmlSerializer`, HTTP **server `DUMMY`** → `HttpServerModuleStub`, HTTP **client `DUMMY`** → `DummyHttpClient`, **socket `DUMMY`** → `DummySocketModule`, **FFI `DUMMY`** → `DummyFfiModule` (Lua stub; no libffi), `fs` **`DUMMY`** → `DummyFsStorage`, `log` **`DUMMY`** → no-op sink. **Vendor-backed** paths **`NLOHMANN`**, **`PUGIXML`**, and **`SPDLOG`** are used on **native and WASM** defaults; **`EMSCRIPTEN_FETCH`** is **WASM-only** for the HTTP client—see [build.md](build.md#emscripten-wasm). The obsolete id **`NONE`** is mapped to **`DUMMY`** in `CMakeLists.txt` with a deprecation warning.
-
-The **`async`** module has no CMake driver matrix; it is always the same in-tree implementation on top of **`Promise`** and **`TaskPool`** ( **`emscripten_sleep`** inside the posted job on Emscripten for **`async.sleep`**; see [async.md](async.md#emscripten-varn_wasm)).
-
-When the full stack is active, the handler runs as a **coroutine** on the main loop: the runtime pushes `req` and `res`, then `lua_resume`s your callback. Use `Promise:await()` for async work; when the coroutine yields, the HTTP request stays open until the coroutine completes and the response is finished.
+Every module that has a CMake driver also ships a no-vendor `DUMMY` backend under `src/drivers/dummy/`, so the link always resolves exactly one implementation. The dummy backends compile and load, but their operations error when used. This keeps the build working on platforms where a real backend is not available.
 
 ## Adding a new CMake driver
 
-See [Build and CMake drivers](build.md#adding-a-new-driver).
+See [build.md](build.md#adding-a-driver).
 
 ## Headers and layout
 
-- Lua-facing registration and `lua_CFunction` implementations usually live under `src/varn/<area>/`.
-- Shared declarations used by multiple translation units live under `include/varn/`.
+- Lua registration and `lua_CFunction` code live under `modules/<module>/src/`.
+- Public headers live under `modules/<module>/include/varn/<module>/`, listed by `modules/<module>/<module>.cmake`.
