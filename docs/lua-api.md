@@ -75,6 +75,22 @@ end)
   all return promises.
 - Listener: `listener:accept()` (resolves to a socket) and `listener:close()`.
 
+```lua
+async.spawn(function()
+    local sock = socket.udp.bind("127.0.0.1", 9000):await()
+    sock:sendTo("127.0.0.1", 9001, "ping"):await()
+    local packet = sock:recvFrom():await()
+    print(packet.data, packet.host, packet.port)
+    sock:close():await()
+end)
+```
+
+- `socket.udp.bind(host, port)` → promise resolving to a UDP socket bound to the address.
+- UDP socket: `sock:sendTo(host, port, data)`, `sock:recvFrom(maxBytes?)` (default `65536`),
+  and `sock:close()` all return promises.
+- `recvFrom` resolves to a table `{ data, host, port }` carrying the payload and the
+  sender's address.
+
 ## async
 
 - `async.sleep(ms)` → a promise that resolves after `ms` milliseconds.
