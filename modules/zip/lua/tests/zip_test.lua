@@ -1,7 +1,7 @@
 -- zip: create an archive, list it, extract it, and verify the entry round-trips.
 local async = require("async")
 
-async.spawn(function()
+async.run(function()
     local zip = require("zip")
 
     local src = "build/_zip_src.txt"
@@ -34,5 +34,4 @@ async.spawn(function()
     os.remove(src)
 
     print("zip ok")
-    os.exit(0)
 end)

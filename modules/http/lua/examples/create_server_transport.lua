@@ -1,18 +1,11 @@
--- introspects whether listen entrypoints are active or stubbed
+-- creates an HTTP server and binds it to a local port using explicit transport options.
 local http = require("http")
 
-local ok, serverOrErr = pcall(function()
-    return http.createServer(function(_, res)
-        res:finish("ok")
-    end)
-end)
+local port = 8080
 
-if ok then
-    print("http.createServer available (full HTTP server transport).")
-    os.exit(0)
-end
+http.createServer(function(_, res)
+    res:finish("ok")
+end):listen({ host = "127.0.0.1", port = port })
 
-local msg = tostring(serverOrErr)
-assert(msg:find("not available") or msg:find("transport"), "unexpected error: " .. msg)
-print("expected: http server stub —", msg)
+print("http server listening on http://127.0.0.1:" .. port)
 os.exit(0)

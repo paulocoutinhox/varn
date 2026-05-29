@@ -29,23 +29,16 @@ local function get(path)
     }):await()
 end
 
-async.spawn(function()
-    local ok, err = pcall(function()
-        local wire, requestErr = get("/text")
-        assert(not requestErr, requestErr)
-        local status, body = parseWire(wire)
-        assert(status == 200, "expected 200, got " .. status)
-        assert(body == "hello-http", "unexpected body: " .. body)
+async.run(function()
+    local wire, requestErr = get("/text")
+    assert(not requestErr, requestErr)
+    local status, body = parseWire(wire)
+    assert(status == 200, "expected 200, got " .. status)
+    assert(body == "hello-http", "unexpected body: " .. body)
 
-        local missingWire, missingErr = get("/missing")
-        assert(not missingErr, missingErr)
-        assert(parseWire(missingWire) == 404, "expected 404")
-    end)
+    local missingWire, missingErr = get("/missing")
+    assert(not missingErr, missingErr)
+    assert(parseWire(missingWire) == 404, "expected 404")
 
-    if not ok then
-        print("http FAIL: " .. tostring(err))
-        os.exit(1)
-    end
     print("http ok")
-    os.exit(0)
 end)

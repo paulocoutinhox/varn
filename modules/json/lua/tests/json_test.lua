@@ -17,26 +17,19 @@ http.createServer(function(_, res)
     res:json({ ok = true, name = "varn", count = 42 })
 end):listen({ host = "127.0.0.1", port = port })
 
-async.spawn(function()
-    local ok, err = pcall(function()
-        local wire, requestErr = http.client.request({
-            url = "http://127.0.0.1:" .. port .. "/api/data",
-            method = "GET",
-            headers = {},
-            timeoutSeconds = 10,
-        }):await()
-        assert(not requestErr, requestErr)
+async.run(function()
+    local wire, requestErr = http.client.request({
+        url = "http://127.0.0.1:" .. port .. "/api/data",
+        method = "GET",
+        headers = {},
+        timeoutSeconds = 10,
+    }):await()
+    assert(not requestErr, requestErr)
 
-        local payload = body(wire)
-        assert(payload:find('"name"', 1, true) and payload:find("varn", 1, true), "name field")
-        assert(payload:find('"count"', 1, true) and payload:find("42", 1, true), "count field")
-        assert(payload:find("true", 1, true), "ok field")
-    end)
+    local payload = body(wire)
+    assert(payload:find('"name"', 1, true) and payload:find("varn", 1, true), "name field")
+    assert(payload:find('"count"', 1, true) and payload:find("42", 1, true), "count field")
+    assert(payload:find("true", 1, true), "ok field")
 
-    if not ok then
-        print("json FAIL: " .. tostring(err))
-        os.exit(1)
-    end
     print("json ok")
-    os.exit(0)
 end)

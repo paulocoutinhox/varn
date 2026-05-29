@@ -17,25 +17,18 @@ http.createServer(function(_, res)
     res:xml({ message = "varn-xml" })
 end):listen({ host = "127.0.0.1", port = port })
 
-async.spawn(function()
-    local ok, err = pcall(function()
-        local wire, requestErr = http.client.request({
-            url = "http://127.0.0.1:" .. port .. "/api/data",
-            method = "GET",
-            headers = {},
-            timeoutSeconds = 10,
-        }):await()
-        assert(not requestErr, requestErr)
+async.run(function()
+    local wire, requestErr = http.client.request({
+        url = "http://127.0.0.1:" .. port .. "/api/data",
+        method = "GET",
+        headers = {},
+        timeoutSeconds = 10,
+    }):await()
+    assert(not requestErr, requestErr)
 
-        local payload = body(wire)
-        assert(payload:find("<root>", 1, true), "root element")
-        assert(payload:find("<message>varn-xml</message>", 1, true), "message element")
-    end)
+    local payload = body(wire)
+    assert(payload:find("<root>", 1, true), "root element")
+    assert(payload:find("<message>varn-xml</message>", 1, true), "message element")
 
-    if not ok then
-        print("xml FAIL: " .. tostring(err))
-        os.exit(1)
-    end
     print("xml ok")
-    os.exit(0)
 end)

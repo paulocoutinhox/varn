@@ -1,6 +1,8 @@
--- walks sqlite create and select on unix desktop with native bindings then exits explicitly
+-- walks sqlite create and select with native ffi bindings, then exits explicitly.
+-- the library name is resolved per platform through platform.libraryFilename.
 
 local ffi = require("ffi")
+local platform = require("platform")
 
 local SQLITE_OK = 0
 local SQLITE_ROW = 100
@@ -50,25 +52,7 @@ const void *sqlite3_column_blob(sqlite3_stmt *pStmt, int iCol);
 int sqlite3_column_bytes(sqlite3_stmt *pStmt, int iCol);
 ]]
 
-local function load_sqlite()
-  local names = {
-    "libsqlite3.0.dylib",
-    "libsqlite3.dylib",
-    "libsqlite3.so.0",
-    "libsqlite3.so",
-  }
-  local last
-  for _, n in ipairs(names) do
-    local ok, lib = pcall(ffi.load, n)
-    if ok then
-      return lib
-    end
-    last = lib
-  end
-  error("ffi.load sqlite3 failed (install libsqlite3 / Xcode CLT). Last error: " .. tostring(last))
-end
-
-local S = load_sqlite()
+local S = ffi.load(platform.libraryFilename("sqlite3"))
 
 local function must(rc, ctx)
   if rc ~= SQLITE_OK then

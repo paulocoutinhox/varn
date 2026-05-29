@@ -22,25 +22,18 @@ async.spawn(function()
 end)
 
 -- client: connect once the listener is bound, send, and verify the echo.
-async.spawn(function()
-    local ok, err = pcall(function()
-        async.sleep(50):await()
+async.run(function()
+    async.sleep(50):await()
 
-        local conn, cerr = socket.tcp.connect(host, port):await()
-        assert(not cerr, cerr)
+    local conn, cerr = socket.tcp.connect(host, port):await()
+    assert(not cerr, cerr)
 
-        conn:send("ping"):await()
-        local reply, rerr = conn:receive(4096):await()
-        assert(not rerr, rerr)
-        assert(reply == "echo:ping", "unexpected reply: " .. tostring(reply))
+    conn:send("ping"):await()
+    local reply, rerr = conn:receive(4096):await()
+    assert(not rerr, rerr)
+    assert(reply == "echo:ping", "unexpected reply: " .. tostring(reply))
 
-        conn:close():await()
-    end)
+    conn:close():await()
 
-    if not ok then
-        print("socket FAIL: " .. tostring(err))
-        os.exit(1)
-    end
     print("socket ok")
-    os.exit(0)
 end)

@@ -38,6 +38,9 @@ public:
     void addServer(std::shared_ptr<varn::http::HttpServer> server);
     void stop();
 
+    // reports the outcome of an async entry coroutine. an uncaught error ends the program with a non-zero status.
+    void onAsyncComplete(bool ok, bool stopLoopOnSuccess, const std::string& error);
+
     void retainBackgroundDriver();
     void releaseBackgroundDriver();
 
@@ -52,6 +55,8 @@ private:
     std::vector<std::shared_ptr<varn::http::HttpServer>> servers_;
     std::atomic<bool> stopped_{false};
     std::atomic<int> backgroundDrivers_{0};
+    bool unhandledError_ = false;
+    bool entryRequestedStop_ = false;
 
     int finishAfterUserChunk(int loadRunExitCode);
 };

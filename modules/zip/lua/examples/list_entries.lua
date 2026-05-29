@@ -1,62 +1,32 @@
--- lists member names after writing a tiny archive on native builds with libzip
+-- writes a tiny archive and lists its member names.
 local async = require("async")
+local zip = require("zip")
 
-async.spawn(function()
-    local zip = require("zip")
+async.run(function()
+    local src = "build/_list_fixture.txt"
+    local archive = "build/_list_test.zip"
 
-    local zipPath = "build/_list_test.zip"
-    local srcPath = "build/_list_fixture.txt"
-
-    local f = io.open(srcPath, "w")
-    if not f then
-        print("SKIP zip.list (cwd not repo root?)")
-        os.exit(0)
-    end
+    local f = assert(io.open(src, "w"), "cannot write fixture")
     f:write("list-test\n")
     f:close()
 
-    local okCreate, createP = pcall(zip.create, zipPath, {
-        { file = srcPath, entry = "a/one.txt" },
-        { file = srcPath, entry = "b/two.txt" }
-    })
-    if not okCreate then
-        print("SKIP zip.list (create unavailable):", createP)
-        os.remove(srcPath)
-        os.exit(0)
-    end
+    local _, createErr = zip.create(archive, {
+        { file = src, entry = "a/one.txt" },
+        { file = src, entry = "b/two.txt" },
+    }):await()
+    assert(not createErr, createErr)
 
-    local _, errC = createP:await()
-    if errC then
-        print("SKIP zip.list (create failed):", errC)
-        os.remove(srcPath)
-        os.exit(0)
-    end
+    local entries, listErr = zip.list(archive):await()
+    assert(not listErr, listErr)
 
-    local okList, listP = pcall(zip.list, zipPath)
-    if not okList then
-        print("SKIP zip.list (list unavailable):", listP)
-        os.remove(zipPath)
-        os.remove(srcPath)
-        os.exit(0)
-    end
-
-    local entries, errL = listP:await()
-    if errL then
-        print("SKIP zip.list (list failed):", errL)
-        os.remove(zipPath)
-        os.remove(srcPath)
-        os.exit(0)
-    end
-
-    assert(type(entries) == "table", "list returns table")
     local names = {}
     for i = 1, #entries do
         names[entries[i]] = true
     end
     assert(names["a/one.txt"] and names["b/two.txt"], "expected entry names")
 
-    os.remove(zipPath)
-    os.remove(srcPath)
-    print("zip.list ok")
-    os.exit(0)
+    os.remove(archive)
+    os.remove(src)
+
+    print("zip.list ok: " .. table.concat(entries, ", "))
 end)

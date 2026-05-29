@@ -1,6 +1,6 @@
 #pragma once
 
-struct lua_State;
+#include <lua.hpp>
 
 namespace varn::runtime {
 class Runtime;
@@ -12,14 +12,19 @@ class AsyncModule {
 public:
     AsyncModule() = delete;
 
-    static void install(struct lua_State* L);
+    static void install(lua_State* L);
 
 private:
-    static varn::runtime::Runtime& luaRuntime(struct lua_State* L);
+    static varn::runtime::Runtime& luaRuntime(lua_State* L);
 
-    static int luaSleep(struct lua_State* L);
-    static int luaSpawn(struct lua_State* L);
-    static int luaOpen(struct lua_State* L);
+    static int startEntry(lua_State* L, bool stopLoopOnSuccess);
+    static int entryBody(lua_State* L);
+    static int entryContinuation(lua_State* L, int status, lua_KContext ctx);
+
+    static int luaSleep(lua_State* L);
+    static int luaSpawn(lua_State* L);
+    static int luaRun(lua_State* L);
+    static int luaOpen(lua_State* L);
 };
 
 } // namespace varn::async

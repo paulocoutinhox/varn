@@ -1,5 +1,6 @@
 #include "varn/runtime/Runtime.h"
 #include "varn/lua/LuaEngine.h"
+#include "varn/log/Log.h"
 #include "varn/http/HttpTypes.h"
 
 namespace varn::runtime {
@@ -37,13 +38,35 @@ int Runtime::finishAfterUserChunk(int loadRunExitCode) {
         return loadRunExitCode;
     }
 
+    // an async entry may have already failed or completed synchronously before the loop starts.
+    if (unhandledError_) {
+        return 1;
+    }
+    if (entryRequestedStop_) {
+        return 0;
+    }
+
     mainLoop_.setIdleExitPredicate([this] {
         return servers_.empty() && backgroundDrivers_.load(std::memory_order_acquire) == 0
             && workLedger_->depth() == 0;
     });
     mainLoop_.run();
     mainLoop_.setIdleExitPredicate({});
-    return 0;
+    return unhandledError_ ? 1 : 0;
+}
+
+void Runtime::onAsyncComplete(bool ok, bool stopLoopOnSuccess, const std::string& error) {
+    if (!ok) {
+        unhandledError_ = true;
+        log::Log::error("async", error.empty() ? "A task failed without a message." : error);
+        mainLoop_.stop();
+        return;
+    }
+
+    if (stopLoopOnSuccess) {
+        entryRequestedStop_ = true;
+        mainLoop_.stop();
+    }
 }
 
 EventLoop& Runtime::mainLoop() {

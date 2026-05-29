@@ -1,11 +1,7 @@
--- skips cleanly when the linked crypto stack rejects the algorithm
+-- hashes a string with SHA-512 and prints the start of the hex digest.
 local crypto = require("crypto")
 
-local ok, h = pcall(crypto.digest, "SHA512", "test", "hex")
-if not ok then
-    print("SKIP crypto.digest SHA512:", h)
-    os.exit(0)
-end
-assert(#h == 128, "sha512 hex length")
-print("crypto.digest SHA512 ok:", h:sub(1, 16), "...")
-os.exit(0)
+local hex = crypto.digest("SHA512", "test", "hex")
+assert(#hex == 128, "sha512 hex length")
+
+print("crypto.digest SHA512 ok:", hex:sub(1, 16) .. "...")

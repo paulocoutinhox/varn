@@ -178,7 +178,9 @@ else()
             "SHELL:-s ENVIRONMENT=web,worker"
             "SHELL:-s FILESYSTEM=1"
         )
-    else()
+    elseif(NOT CMAKE_SYSTEM_NAME MATCHES "^(iOS|tvOS|watchOS|visionOS)$")
+        # the host cli only makes sense on desktop. a mobile apple platform cannot run a plain
+        # executable, so a cli build there stops at the static core.
         add_executable(varn "${VARN_ROOT}/src/main.cpp")
         target_link_libraries(varn PRIVATE varn_core)
         install(TARGETS varn RUNTIME DESTINATION bin)

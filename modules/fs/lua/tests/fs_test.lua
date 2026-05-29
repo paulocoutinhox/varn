@@ -2,7 +2,7 @@
 local async = require("async")
 local fs = require("fs")
 
-async.spawn(function()
+async.run(function()
     local path = "build/_fs_test.txt"
     local payload = "varn-fs-test\n"
 
@@ -17,5 +17,4 @@ async.spawn(function()
     assert(not fs.exists(path), "file should be gone after remove")
 
     print("fs ok")
-    os.exit(0)
 end)
