@@ -6,16 +6,25 @@
 
 namespace varn::platform {
 
-std::string osId();
-std::string archId();
+class PlatformInfo final {
+public:
+    PlatformInfo() = delete;
 
-unsigned cpuCount();
-std::size_t pointerSize();
-std::string endianness();
+    static std::string osId();
+    static std::string archId();
 
-std::string libPrefix();
-std::string shlibSuffix();
+    static unsigned cpuCount();
+    static std::size_t pointerSize();
+    static std::string endianness();
 
-std::string libraryFilenameForName(std::string_view logicalName);
+    static std::string libPrefix();
+    static std::string shlibSuffix();
+
+    static std::string libraryFilenameForName(std::string_view logicalName);
+
+private:
+    static bool startsWith(std::string_view s, std::string_view p);
+    static std::string toLower(std::string s);
+};
 
 } // namespace varn::platform

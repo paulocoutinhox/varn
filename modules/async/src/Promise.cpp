@@ -160,7 +160,7 @@ void Promise::runPendingResumes() {
         lua_State* coroutine = lua_tothread(mainState, -1);
         lua_pop(mainState, 1);
         if (coroutine == nullptr) {
-            log::Log::error("Promise", "runPendingResumes", "registry ref is not a thread");
+            log::Log::error("async", "A pending task is no longer a valid coroutine.");
             luaL_unref(mainState, LUA_REGISTRYINDEX, ref);
             continue;
         }
@@ -188,8 +188,8 @@ void Promise::runPendingResumes() {
         int status = lua_resume(coroutine, mainState, argCount, &nres);
         if (status != LUA_OK && status != LUA_YIELD) {
             const char* message = lua_tostring(coroutine, -1);
-            std::string detail = message ? message : "No error message from coroutine.";
-            log::Log::error("Promise", "runPendingResumes", detail);
+            std::string detail = message ? message : "A task failed without a message.";
+            log::Log::error("async", detail);
             if (nres > 0) {
                 lua_pop(coroutine, nres);
             }
@@ -204,10 +204,6 @@ void Promise::resumeWaitersOnMainLoop() {
     runtime_.mainLoop().post([self] {
         self->runPendingResumes();
     });
-}
-
-Runtime& Promise::runtime() {
-    return runtime_;
 }
 
 Promise* Promise::check(lua_State* L, int index) {

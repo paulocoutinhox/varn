@@ -43,13 +43,14 @@ print("log lines were emitted")
   },
   {
     label: "async — sleep & spawn",
-    code: `local async = require("async")
+    code: `print("start")
+local async = require("async")
 async.spawn(function()
-  print("start")
-  async.sleep(300):await()
-  print("woke up after 300ms")
+  print("start spawn")
+  async.sleep(3000):await()
+  print("woke up after 3000ms")
 end)
-print("spawned; the main chunk returns first")
+print("spawned - the main chunk returns first")
 `,
   },
   {
@@ -81,29 +82,12 @@ end)
     code: `local async = require("async")
 local http = require("http")
 async.spawn(function()
-  local wire, err = http.client.request({ url = "https://httpbin.org/get" }):await()
+  local wire, err = http.client.request({ url = "https://httpbin.org/delay/3" }):await()
   if err then print("request failed:", err); return end
   print("status", wire:match("^VARN/1 (%d+)"))
 end)
 `,
-  },
-  {
-    label: "crypto — stubbed in browser",
-    code: `local crypto = require("crypto")
-local ok, result = pcall(crypto.digest, "SHA256", "varn", "hex")
-if ok then
-  print("sha256", result)
-else
-  print("crypto is a stub in the browser build:", result)
-end
-`,
-  },
-  {
-    label: "ffi — stubbed in browser",
-    code: `local ffi = require("ffi")
-print("ffi is a stub in the browser build; native calls are unavailable.")
-`,
-  },
+  }
 ];
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -215,14 +199,14 @@ function mount(): void {
     consolePre.scrollTop = consolePre.scrollHeight;
   };
 
-  const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+  let worker: Worker;
   let ready = false;
 
   const post = (msg: MainToWorker) => {
     worker.postMessage(msg);
   };
 
-  worker.onmessage = (ev: MessageEvent<WorkerToMain>) => {
+  const onMessage = (ev: MessageEvent<WorkerToMain>) => {
     const msg = ev.data;
     if (msg.type === "ready") {
       ready = true;
@@ -249,14 +233,22 @@ function mount(): void {
     }
   };
 
-  worker.onerror = (e) => {
+  const onError = (e: ErrorEvent) => {
     appendLine(`worker fault: ${e.message}`);
     status.textContent = "Worker fault.";
     runBtn.disabled = false;
   };
 
-  post({ type: "init" });
-  runBtn.disabled = true;
+  const spawnWorker = () => {
+    worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+    worker.onmessage = onMessage;
+    worker.onerror = onError;
+    ready = false;
+    runBtn.disabled = true;
+    post({ type: "init" });
+  };
+
+  spawnWorker();
 
   runBtn.addEventListener("click", () => {
     if (!ready) {
@@ -269,8 +261,12 @@ function mount(): void {
   });
 
   stopBtn.addEventListener("click", () => {
-    post({ type: "stop" });
-    status.textContent = "Stop requested (hook will abort Lua).";
+    // hard stop: terminate the worker so a sleeping or runaway chunk ends immediately, then
+    // bring up a fresh one so Run becomes available again.
+    worker.terminate();
+    appendLine("stopped.");
+    status.textContent = "Stopped.";
+    spawnWorker();
   });
 
   clearBtn.addEventListener("click", () => {

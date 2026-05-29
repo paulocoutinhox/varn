@@ -58,7 +58,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
     int err = 0;
     zip_t* za = zip_open(zipPath.c_str(), ZIP_RDONLY, &err);
     if (!za) {
-        throw std::runtime_error("zip_open failed (code " + std::to_string(err) + ")");
+        throw std::runtime_error("[zip] The archive could not be opened.");
     }
 
     fs::create_directories(destDir);
@@ -73,7 +73,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
         const std::string nm(name);
         if (!entryPathSafe(nm)) {
             zip_discard(za);
-            throw std::runtime_error("unsafe zip entry: " + nm);
+            throw std::runtime_error("[zip] The archive contains an unsafe entry name.");
         }
 
         const fs::path outFile = destRoot / nm;
@@ -83,7 +83,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
         const fs::path canonParent = fs::weakly_canonical(parentDir);
         if (!isSubpath(destRoot, canonParent)) {
             zip_discard(za);
-            throw std::runtime_error("zip slip blocked: " + nm);
+            throw std::runtime_error("[zip] An entry tried to escape the destination directory.");
         }
 
         if (!nm.empty() && nm.back() == '/') {
@@ -93,14 +93,14 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
         zip_file_t* zf = zip_fopen_index(za, i, 0);
         if (!zf) {
             zip_discard(za);
-            throw std::runtime_error("zip_fopen_index failed: " + nm);
+            throw std::runtime_error("[zip] An entry inside the archive could not be opened.");
         }
 
         std::ofstream out(outFile, std::ios::binary);
         if (!out) {
             zip_fclose(zf);
             zip_discard(za);
-            throw std::runtime_error("cannot open output file: " + outFile.string());
+            throw std::runtime_error("[zip] An output file could not be created.");
         }
 
         char buf[8192];
@@ -109,7 +109,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             if (r < 0) {
                 zip_fclose(zf);
                 zip_discard(za);
-                throw std::runtime_error("zip_fread failed: " + nm);
+                throw std::runtime_error("[zip] An entry could not be read from the archive.");
             }
             if (r == 0) {
                 break;
@@ -120,7 +120,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
     }
 
     if (zip_close(za) != 0) {
-        throw std::runtime_error("zip_close failed after extract");
+        throw std::runtime_error("[zip] The archive could not be closed after extraction.");
     }
 }
 
@@ -128,34 +128,34 @@ void ZipModule::performCreate(const std::string& zipPath, const std::vector<std:
     int err = 0;
     zip_t* za = zip_open(zipPath.c_str(), ZIP_CREATE | ZIP_TRUNCATE, &err);
     if (!za) {
-        throw std::runtime_error("zip_open(create) failed (code " + std::to_string(err) + ")");
+        throw std::runtime_error("[zip] The archive could not be created.");
     }
 
     for (const auto& [localPath, entryName] : items) {
         if (!entryPathSafe(entryName)) {
             zip_discard(za);
-            throw std::runtime_error("unsafe zip entry name: " + entryName);
+            throw std::runtime_error("[zip] An entry name is unsafe.");
         }
         if (!fs::is_regular_file(localPath)) {
             zip_discard(za);
-            throw std::runtime_error("not a regular file: " + localPath);
+            throw std::runtime_error("[zip] A source path is not a regular file.");
         }
 
         zip_source_t* s = zip_source_file(za, localPath.c_str(), 0, 0);
         if (!s) {
             zip_discard(za);
-            throw std::runtime_error("zip_source_file failed: " + localPath);
+            throw std::runtime_error("[zip] A source file could not be read.");
         }
         const zip_int64_t idx = zip_file_add(za, entryName.c_str(), s, ZIP_FL_ENC_UTF_8);
         if (idx < 0) {
             zip_source_free(s);
             zip_discard(za);
-            throw std::runtime_error("zip_file_add failed: " + entryName);
+            throw std::runtime_error("[zip] An entry could not be added to the archive.");
         }
     }
 
     if (zip_close(za) != 0) {
-        throw std::runtime_error("zip_close failed after create");
+        throw std::runtime_error("[zip] The archive could not be closed after creation.");
     }
 }
 
@@ -163,7 +163,7 @@ std::vector<std::string> ZipModule::performList(const std::string& zipPath) {
     int err = 0;
     zip_t* za = zip_open(zipPath.c_str(), ZIP_RDONLY, &err);
     if (!za) {
-        throw std::runtime_error("zip_open failed (code " + std::to_string(err) + ")");
+        throw std::runtime_error("[zip] The archive could not be opened.");
     }
 
     std::vector<std::string> names;
@@ -176,13 +176,13 @@ std::vector<std::string> ZipModule::performList(const std::string& zipPath) {
         const std::string nm(name);
         if (!entryPathSafe(nm)) {
             zip_discard(za);
-            throw std::runtime_error("unsafe zip entry: " + nm);
+            throw std::runtime_error("[zip] The archive contains an unsafe entry name.");
         }
         names.push_back(nm);
     }
 
     if (zip_close(za) != 0) {
-        throw std::runtime_error("zip_close failed after list");
+        throw std::runtime_error("[zip] The archive could not be closed after listing.");
     }
     return names;
 }
@@ -206,7 +206,7 @@ int ZipModule::luaExtract(lua_State* L) {
     Promise::push(L, promise);
     return 1;
 #else
-    return luaL_error(L, "zip.extract is unavailable (Emscripten or VARN_ENABLE_ZIP=OFF / libzip not linked)");
+    return luaL_error(L, "[zip] The zip module is not available in this build.");
 #endif
 }
 
@@ -216,7 +216,7 @@ int ZipModule::luaCreate(lua_State* L) {
     luaL_checktype(L, 2, LUA_TTABLE);
     const int len = static_cast<int>(lua_rawlen(L, 2));
     if (len <= 0) {
-        return luaL_error(L, "zip.create: entries array must be non-empty");
+        return luaL_error(L, "[zip] The list of entries must not be empty.");
     }
 
     std::vector<std::pair<std::string, std::string>> items;
@@ -226,7 +226,7 @@ int ZipModule::luaCreate(lua_State* L) {
         lua_rawgeti(L, 2, i);
         if (!lua_istable(L, -1)) {
             lua_pop(L, 1);
-            return luaL_error(L, "zip.create: each entry must be a table");
+            return luaL_error(L, "[zip] Each entry must be a table.");
         }
         lua_getfield(L, -1, "file");
         const std::string file = varn::lua::LuaHelpers::checkString(L, -1);
@@ -251,7 +251,7 @@ int ZipModule::luaCreate(lua_State* L) {
     Promise::push(L, promise);
     return 1;
 #else
-    return luaL_error(L, "zip.create is unavailable (Emscripten or VARN_ENABLE_ZIP=OFF / libzip not linked)");
+    return luaL_error(L, "[zip] The zip module is not available in this build.");
 #endif
 }
 
@@ -279,7 +279,7 @@ int ZipModule::luaList(lua_State* L) {
     Promise::push(L, promise);
     return 1;
 #else
-    return luaL_error(L, "zip.list is unavailable (Emscripten or VARN_ENABLE_ZIP=OFF / libzip not linked)");
+    return luaL_error(L, "[zip] The zip module is not available in this build.");
 #endif
 }
 

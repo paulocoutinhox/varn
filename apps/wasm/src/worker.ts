@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-export type MainToWorker = { type: "init" } | { type: "run"; source: string } | { type: "stop" };
+export type MainToWorker = { type: "init" } | { type: "run"; source: string };
 
 export type WorkerToMain =
   | { type: "ready" }
@@ -15,8 +15,6 @@ export interface RunResult {
 
 type WasmModule = {
   varnRunChunk(source: string): RunResult | Promise<RunResult>;
-  varnRequestStop(): void;
-  varnResetStopFlag(): void;
 };
 
 type WasmFactory = (opts?: { locateFile?: (path: string) => string }) => Promise<WasmModule>;
@@ -47,11 +45,6 @@ self.onmessage = async (event: MessageEvent<MainToWorker>) => {
       return;
     }
 
-    if (message.type === "stop") {
-      wasm?.varnRequestStop();
-      return;
-    }
-
     if (message.type === "run") {
       if (busy) {
         const err: WorkerToMain = { type: "error", message: "A run is already in progress." };
@@ -61,7 +54,6 @@ self.onmessage = async (event: MessageEvent<MainToWorker>) => {
 
       const mod = await loadWasm();
       busy = true;
-      mod.varnResetStopFlag();
       const result = await Promise.resolve(mod.varnRunChunk(message.source));
       busy = false;
       const done: WorkerToMain = { type: "done", result };

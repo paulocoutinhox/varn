@@ -10,8 +10,7 @@ std::string performRequestWire(
     const std::map<std::string, std::string>& /*headers*/,
     const std::string& /*body*/,
     int /*timeoutSeconds*/) {
-    throw std::runtime_error("HTTP client is not available in this build (VARN_HTTP_CLIENT_DRIVER="
-        VARN_HTTP_CLIENT_DRIVER_NAME ").");
+    throw std::runtime_error("[http] The HTTP client is not available in this build.");
 }
 
 } // namespace varn::http::client

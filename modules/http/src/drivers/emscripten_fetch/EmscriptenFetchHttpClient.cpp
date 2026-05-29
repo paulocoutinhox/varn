@@ -78,7 +78,7 @@ EMSCRIPTEN_KEEPALIVE void varn_fetch_js_on_error(uintptr_t ctxHandle, uintptr_t 
         copy.assign(reinterpret_cast<const char*>(msgPtr));
         std::free(reinterpret_cast<void*>(msgPtr));
     } else {
-        copy = "http.client: fetch failed";
+        copy = "[http] The request failed.";
     }
     if (ctx != nullptr) {
         try {
@@ -155,7 +155,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
             if (len > 0) {
                 ptr = _malloc(len);
                 if (!ptr) {
-                    throw new Error("malloc failed for response body");
+                    throw new Error("[http] The response body could not be allocated.");
                 }
                 HEAPU8.set(u8, ptr);
             }

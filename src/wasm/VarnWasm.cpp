@@ -49,8 +49,6 @@ void pumpRuntimeDeferredWork(varn::runtime::Runtime& rt) {
 
 namespace detail {
 
-std::atomic<bool> g_stop_requested{false};
-
 std::string* g_print_sink = nullptr;
 
 struct PrintSinkScope {
@@ -84,13 +82,10 @@ int lua_print_capture(lua_State* L) {
 }
 
 #if defined(__EMSCRIPTEN__)
-void line_hook(lua_State* L, lua_Debug*) {
+void line_hook(lua_State*, lua_Debug*) {
     ++g_hook_tick;
     if ((g_hook_tick % 32) == 0) {
         emscripten_sleep(0);
-    }
-    if (g_stop_requested.load(std::memory_order_acquire)) {
-        luaL_error(L, "Execution stopped.");
     }
 }
 
@@ -115,7 +110,6 @@ struct RunResult {
 
 RunResult run_chunk_impl(const std::string& source) {
     RunResult result;
-    detail::g_stop_requested.store(false, std::memory_order_release);
 
     auto& rtPtr = detail::wasmRuntime();
     if (!rtPtr) {
@@ -152,14 +146,6 @@ RunResult run_chunk_impl(const std::string& source) {
     return result;
 }
 
-void request_stop() {
-    detail::g_stop_requested.store(true, std::memory_order_release);
-}
-
-void reset_stop_flag() {
-    detail::g_stop_requested.store(false, std::memory_order_release);
-}
-
 } // namespace varn::wasm
 
 #if defined(__EMSCRIPTEN__)
@@ -170,7 +156,5 @@ EMSCRIPTEN_BINDINGS(varn_wasm) {
         .field("error", &varn::wasm::RunResult::error);
 
     emscripten::function("varnRunChunk", &varn::wasm::run_chunk_impl);
-    emscripten::function("varnRequestStop", &varn::wasm::request_stop);
-    emscripten::function("varnResetStopFlag", &varn::wasm::reset_stop_flag);
 }
 #endif

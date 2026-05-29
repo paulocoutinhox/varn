@@ -20,11 +20,7 @@ private:
 };
 
 int HttpServerLuaStub::luaStubCreateServer(lua_State* L) {
-    return luaL_error(
-        L,
-        "http server is not available in this build (VARN_HTTP_SERVER_DRIVER=" VARN_HTTP_SERVER_DRIVER_NAME "). "
-        "Select a full HTTP transport driver in CMake; see docs/build.md."
-    );
+    return luaL_error(L, "[http] The HTTP server is not available in this build.");
 }
 
 int HttpServerLuaStub::luaOpen(lua_State* L) {

@@ -43,7 +43,7 @@ bool StaticFileHandler::tryServe(const HttpRequest& request, HttpResponse& respo
     buffer << file.rdbuf();
 
     response.setStatus(200);
-    response.setHeader("Content-Type", mimeTypeForPath(candidate.string()));
+    response.setHeader("Content-Type", MimeTypes::forPath(candidate.string()));
     response.setHeader("Cache-Control", "public, max-age=3600");
 
     if (request.method == "HEAD") {

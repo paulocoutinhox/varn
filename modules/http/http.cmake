@@ -19,7 +19,6 @@ endif()
 list(APPEND VARN_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 list(APPEND VARN_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/src/HttpTypes.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/src/HttpServerFactory.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/src/HttpClientModule.cpp"
 )
 

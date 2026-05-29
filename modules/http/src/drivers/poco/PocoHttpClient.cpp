@@ -142,13 +142,13 @@ std::string performRequestWire(
     Poco::URI uri(url);
     const std::string scheme = uri.getScheme();
     if (scheme != "http" && scheme != "https") {
-        throw std::runtime_error("http.client: unsupported URL scheme (only http and https).");
+        throw std::runtime_error("[http] The URL scheme must be http or https.");
     }
     if (scheme == "https") {
 #if defined(VARN_ENABLE_TLS)
         return performHttps(method, uri, headers, body, timeoutSeconds);
 #else
-        throw std::runtime_error("http.client: https URLs require a TLS-enabled build (VARN_ENABLE_TLS=ON).");
+        throw std::runtime_error("[http] Secure URLs require a build with TLS support enabled.");
 #endif
     }
     return performHttp(method, uri, headers, body, timeoutSeconds);

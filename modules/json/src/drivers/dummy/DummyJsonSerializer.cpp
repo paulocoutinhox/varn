@@ -5,10 +5,8 @@
 
 namespace varn::json {
 
-std::string serializeLuaTable(lua_State* /*L*/, int /*index*/) {
-    throw std::runtime_error(
-        std::string("JSON serialization is unavailable in this build (VARN_JSON_DRIVER=") + VARN_JSON_DRIVER_NAME + ")."
-    );
+std::string JsonSerializer::serialize(lua_State* /*L*/, int /*index*/) {
+    throw std::runtime_error("[json] The JSON module is not available in this build.");
 }
 
 } // namespace varn::json

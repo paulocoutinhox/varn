@@ -3,26 +3,24 @@
 #include <stdexcept>
 #include <string>
 
-namespace varn::fs::storage {
+namespace varn::fs {
 
 namespace {
-[[noreturn]] void disabled(const char* what) {
-    throw std::runtime_error(
-        std::string("fs storage driver is ") + VARN_FS_DRIVER_NAME + ": " + what
-    );
+[[noreturn]] void disabled() {
+    throw std::runtime_error("[fs] The file system module is not available in this build.");
 }
 } // namespace
 
-std::string readAll(const std::string& /*path*/) {
-    disabled("readAll");
+std::string FsStorage::readAll(const std::string& /*path*/) {
+    disabled();
 }
 
-void writeAll(const std::string& /*path*/, const std::string& /*content*/) {
-    disabled("writeAll");
+void FsStorage::writeAll(const std::string& /*path*/, const std::string& /*content*/) {
+    disabled();
 }
 
-bool exists(const std::string& /*path*/) {
+bool FsStorage::exists(const std::string& /*path*/) {
     return false;
 }
 
-} // namespace varn::fs::storage
+} // namespace varn::fs

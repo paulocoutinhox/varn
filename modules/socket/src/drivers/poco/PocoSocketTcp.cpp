@@ -17,18 +17,6 @@ namespace varn::socket {
 
 namespace {
 
-void checkPort(int port) {
-    if (port <= 0 || port > 65535) {
-        throw std::runtime_error("socket: port must be between 1 and 65535.");
-    }
-}
-
-void checkBacklog(int backlog) {
-    if (backlog <= 0 || backlog > 4096) {
-        throw std::runtime_error("socket: backlog must be between 1 and 4096.");
-    }
-}
-
 class PocoTcpConnection final : public TcpConnection {
 public:
     explicit PocoTcpConnection(Poco::Net::StreamSocket socket) : socket_(std::move(socket)) {}
@@ -44,7 +32,7 @@ public:
             const int chunk = static_cast<int>(std::min(remaining, static_cast<std::size_t>(INT_MAX)));
             const int n = socket_.sendBytes(data.data() + offset, chunk);
             if (n <= 0) {
-                throw std::runtime_error("socket: send failed (short write or closed connection).");
+                throw std::runtime_error("[socket] The connection was closed before all data could be sent.");
             }
             offset += static_cast<std::size_t>(n);
         }
@@ -105,7 +93,19 @@ private:
 
 } // namespace
 
-std::shared_ptr<TcpConnection> connectBlocking(const std::string& host, int port) {
+void SocketTransport::checkPort(int port) {
+    if (port <= 0 || port > 65535) {
+        throw std::runtime_error("[socket] Port must be between 1 and 65535.");
+    }
+}
+
+void SocketTransport::checkBacklog(int backlog) {
+    if (backlog <= 0 || backlog > 4096) {
+        throw std::runtime_error("[socket] Backlog must be between 1 and 4096.");
+    }
+}
+
+std::shared_ptr<TcpConnection> SocketTransport::connectBlocking(const std::string& host, int port) {
     checkPort(port);
     Poco::Net::SocketAddress address(host, static_cast<std::uint16_t>(port));
     Poco::Net::StreamSocket socket;
@@ -113,7 +113,7 @@ std::shared_ptr<TcpConnection> connectBlocking(const std::string& host, int port
     return std::make_shared<PocoTcpConnection>(std::move(socket));
 }
 
-std::shared_ptr<TcpListener> listenBlocking(const std::string& host, int port, int backlog) {
+std::shared_ptr<TcpListener> SocketTransport::listenBlocking(const std::string& host, int port, int backlog) {
     checkPort(port);
     checkBacklog(backlog);
     Poco::Net::SocketAddress address(host, static_cast<std::uint16_t>(port));

@@ -3,12 +3,7 @@
 namespace {
 
 int ffiDisabled(lua_State* L) {
-    return luaL_error(
-        L,
-        "FFI is not available in this build (VARN_FFI_DRIVER=" VARN_FFI_DRIVER_NAME "). "
-        "On supported hosts install Sourceware libffi (https://sourceware.org/libffi/) and pkg-config, "
-        "then configure with -DVARN_FFI_DRIVER=LIBFFI. Cross-compiled and WebAssembly builds use "
-        "DUMMY by default; see docs/build.md.");
+    return luaL_error(L, "[ffi] The FFI module is not available in this build.");
 }
 
 constexpr luaL_Reg kFfiLib[] = {

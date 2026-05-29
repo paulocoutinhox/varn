@@ -13,9 +13,9 @@ public:
 
     static void emit(Level level, std::string_view message);
 
-    static void line(std::string_view className, std::string_view methodName, std::string message);
+    static void line(std::string_view module, std::string message);
 
-    static void error(std::string_view className, std::string_view methodName, std::string message);
+    static void error(std::string_view module, std::string message);
 };
 
 } // namespace varn::log

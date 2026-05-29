@@ -6,7 +6,7 @@
 
 namespace varn::http {
 
-std::string mimeTypeForPath(const std::string& path) {
+std::string MimeTypes::forPath(const std::string& path) {
     static const std::map<std::string, std::string> types = {
         {".html", "text/html; charset=utf-8"},
         {".htm", "text/html; charset=utf-8"},

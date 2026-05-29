@@ -25,7 +25,6 @@ public:
 
     void setIdleExitPredicate(IdleExitPredicate predicate);
 
-    bool isRunning() const;
     bool hasPendingJobs() const;
 
 #if defined(__EMSCRIPTEN__)

@@ -25,12 +25,14 @@ Runtime& luaRuntime(lua_State* L) {
 void readHeadersTable(lua_State* L, int absIndex, std::map<std::string, std::string>& out) {
     lua_pushnil(L);
     while (lua_next(L, absIndex) != 0) {
-        const char* key = lua_tostring(L, -2);
-        const char* val = lua_tostring(L, -1);
+        // coerce a copy of the key so lua_next still sees the original on the next step.
+        lua_pushvalue(L, -2);
+        const char* key = lua_tostring(L, -1);
+        const char* val = lua_tostring(L, -2);
         if (key != nullptr && val != nullptr) {
             out.emplace(key, val);
         }
-        lua_pop(L, 1);
+        lua_pop(L, 2);
     }
 }
 

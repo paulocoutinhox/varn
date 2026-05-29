@@ -6,10 +6,20 @@
 
 namespace varn::crypto {
 
-std::string digest(std::string_view algorithm, std::string_view data, bool outputHex);
+class CryptoPrimitives final {
+public:
+    CryptoPrimitives() = delete;
 
-std::string hmac(std::string_view digestAlgorithm, std::string_view key, std::string_view data, bool outputHex);
+    static std::string digest(std::string_view algorithm, std::string_view data, bool outputHex);
 
-std::string randomBytes(std::size_t count);
+    static std::string hmac(std::string_view digestAlgorithm, std::string_view key, std::string_view data, bool outputHex);
+
+    static std::string randomBytes(std::size_t count);
+
+private:
+    static std::string trimAlgo(std::string_view in);
+
+    static std::string toHex(const unsigned char* data, std::size_t len);
+};
 
 } // namespace varn::crypto

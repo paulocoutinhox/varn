@@ -32,9 +32,9 @@ int CryptoModule::luaDigest(lua_State* L) {
         const std::string data = varn::lua::LuaHelpers::checkString(L, 2);
         bool hexOut = true;
         if (!parseDigestFormat(L, 3, hexOut)) {
-            return luaL_error(L, "crypto.digest: third argument must be 'hex' or 'raw'");
+            return luaL_error(L, "[crypto] Output format must be hex or raw.");
         }
-        const std::string out = digest(algorithm, data, hexOut);
+        const std::string out = CryptoPrimitives::digest(algorithm, data, hexOut);
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
@@ -49,9 +49,9 @@ int CryptoModule::luaHmac(lua_State* L) {
         const std::string data = varn::lua::LuaHelpers::checkString(L, 3);
         bool hexOut = true;
         if (!parseDigestFormat(L, 4, hexOut)) {
-            return luaL_error(L, "crypto.hmac: fourth argument must be 'hex' or 'raw'");
+            return luaL_error(L, "[crypto] Output format must be hex or raw.");
         }
-        const std::string out = hmac(digestAlgo, key, data, hexOut);
+        const std::string out = CryptoPrimitives::hmac(digestAlgo, key, data, hexOut);
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
@@ -61,11 +61,11 @@ int CryptoModule::luaHmac(lua_State* L) {
 
 int CryptoModule::luaRandomBytes(lua_State* L) {
     try {
-        int count = luaL_checkinteger(L, 1);
+        lua_Integer count = luaL_checkinteger(L, 1);
         if (count < 0 || count > 1024 * 1024) {
-            return luaL_error(L, "invalid random byte count");
+            return luaL_error(L, "[crypto] Random byte count must be between zero and one million.");
         }
-        std::string bytes = randomBytes(static_cast<std::size_t>(count));
+        std::string bytes = CryptoPrimitives::randomBytes(static_cast<std::size_t>(count));
         lua_pushlstring(L, bytes.data(), bytes.size());
         return 1;
     } catch (const std::exception& ex) {

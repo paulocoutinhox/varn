@@ -2,6 +2,8 @@
 
 #include "varn/log/Log.h"
 
+#include <string>
+
 struct lua_State;
 
 namespace varn::log {
@@ -14,6 +16,9 @@ public:
 
 private:
     static void emitAt(struct lua_State* L, Level level);
+    static void appendValue(struct lua_State* L, int index, std::string& out, int depth, bool quoteStrings);
+    static void appendTable(struct lua_State* L, int index, std::string& out, int depth);
+    static void appendKey(struct lua_State* L, int index, std::string& out);
 
     static int luaDebug(struct lua_State* L);
     static int luaInfo(struct lua_State* L);

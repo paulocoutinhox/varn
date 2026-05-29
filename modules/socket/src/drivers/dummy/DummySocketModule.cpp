@@ -6,16 +6,12 @@
 
 namespace varn::socket {
 
-std::shared_ptr<TcpConnection> connectBlocking(const std::string& /*host*/, int /*port*/) {
-    throw std::runtime_error(
-        "TCP sockets are not available in this build (VARN_SOCKET_DRIVER=" VARN_SOCKET_DRIVER_NAME "). "
-        "Select VARN_SOCKET_DRIVER=POCO in CMake when the toolchain supports Poco Net; see docs/build.md.");
+std::shared_ptr<TcpConnection> SocketTransport::connectBlocking(const std::string& /*host*/, int /*port*/) {
+    throw std::runtime_error("[socket] The socket module is not available in this build.");
 }
 
-std::shared_ptr<TcpListener> listenBlocking(const std::string& /*host*/, int /*port*/, int /*backlog*/) {
-    throw std::runtime_error(
-        "TCP sockets are not available in this build (VARN_SOCKET_DRIVER=" VARN_SOCKET_DRIVER_NAME "). "
-        "Select VARN_SOCKET_DRIVER=POCO in CMake when the toolchain supports Poco Net; see docs/build.md.");
+std::shared_ptr<TcpListener> SocketTransport::listenBlocking(const std::string& /*host*/, int /*port*/, int /*backlog*/) {
+    throw std::runtime_error("[socket] The socket module is not available in this build.");
 }
 
 } // namespace varn::socket

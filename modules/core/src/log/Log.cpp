@@ -4,16 +4,16 @@
 
 namespace varn::log {
 
-void Log::line(std::string_view className, std::string_view methodName, std::string message) {
+void Log::line(std::string_view module, std::string message) {
     std::ostringstream o;
-    o << '[' << className << " : " << methodName << "] " << message;
+    o << '[' << module << "] " << message;
     const std::string line = o.str();
     emit(Level::Info, line);
 }
 
-void Log::error(std::string_view className, std::string_view methodName, std::string message) {
+void Log::error(std::string_view module, std::string message) {
     std::ostringstream o;
-    o << '[' << className << " : " << methodName << "] " << message;
+    o << '[' << module << "] " << message;
     const std::string line = o.str();
     emit(Level::Error, line);
 }

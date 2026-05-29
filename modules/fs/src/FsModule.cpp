@@ -23,7 +23,7 @@ int FsModule::luaReadFile(lua_State* L) {
 
     rt.taskPool().post([promise, path = std::move(path)] {
         try {
-            promise->resolve(storage::readAll(path));
+            promise->resolve(FsStorage::readAll(path));
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         }
@@ -41,7 +41,7 @@ int FsModule::luaWriteFile(lua_State* L) {
 
     rt.taskPool().post([promise, path = std::move(path), content = std::move(content)] {
         try {
-            storage::writeAll(path, content);
+            FsStorage::writeAll(path, content);
             promise->resolve("ok");
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
@@ -54,7 +54,7 @@ int FsModule::luaWriteFile(lua_State* L) {
 
 int FsModule::luaExists(lua_State* L) {
     std::string path = varn::lua::LuaHelpers::checkString(L, 1);
-    lua_pushboolean(L, storage::exists(path));
+    lua_pushboolean(L, FsStorage::exists(path));
     return 1;
 }
 

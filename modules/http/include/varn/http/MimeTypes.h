@@ -4,6 +4,11 @@
 
 namespace varn::http {
 
-std::string mimeTypeForPath(const std::string& path);
+class MimeTypes {
+public:
+    MimeTypes() = delete;
+
+    static std::string forPath(const std::string& path);
+};
 
 } // namespace varn::http

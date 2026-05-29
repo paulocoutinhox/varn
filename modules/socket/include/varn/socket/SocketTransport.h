@@ -22,8 +22,16 @@ public:
     virtual void closeBlocking() = 0;
 };
 
-std::shared_ptr<TcpConnection> connectBlocking(const std::string& host, int port);
+class SocketTransport {
+public:
+    SocketTransport() = delete;
 
-std::shared_ptr<TcpListener> listenBlocking(const std::string& host, int port, int backlog);
+    static std::shared_ptr<TcpConnection> connectBlocking(const std::string& host, int port);
+    static std::shared_ptr<TcpListener> listenBlocking(const std::string& host, int port, int backlog);
+
+private:
+    static void checkPort(int port);
+    static void checkBacklog(int backlog);
+};
 
 } // namespace varn::socket

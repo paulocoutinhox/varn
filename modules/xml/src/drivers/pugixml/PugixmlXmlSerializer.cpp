@@ -9,9 +9,7 @@
 
 namespace varn::xml {
 
-namespace {
-
-std::string sanitizeElementName(const std::string& raw) {
+std::string XmlSerializer::sanitizeElementName(const std::string& raw) {
     std::string out;
     out.reserve(raw.size());
     for (char c : raw) {
@@ -30,9 +28,7 @@ std::string sanitizeElementName(const std::string& raw) {
     return out;
 }
 
-} // namespace
-
-std::string serializeLuaTable(lua_State* L, int index) {
+std::string XmlSerializer::serialize(lua_State* L, int index) {
     index = lua_absindex(L, index);
     pugi::xml_document doc;
     pugi::xml_node decl = doc.prepend_child(pugi::node_declaration);

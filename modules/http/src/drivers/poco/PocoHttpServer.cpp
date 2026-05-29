@@ -24,7 +24,9 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <string>
 #include <string_view>
@@ -69,7 +71,7 @@ std::map<std::string, std::string> extractCookies(const Poco::Net::HTTPServerReq
             cookies[it->first] = it->second;
         }
     } catch (const std::exception& ex) {
-        log::Log::line("extractCookies", "getCookies", std::string("Cookie header rejected: ") + ex.what());
+        log::Log::line("http", std::string("The cookie header was rejected. ") + ex.what());
     }
 
     return cookies;
@@ -90,7 +92,7 @@ std::string readBody(Poco::Net::HTTPServerRequest& request, int maxBytes) {
 
         total += static_cast<int>(count);
         if (total > maxBytes) {
-            throw std::runtime_error("request body too large");
+            throw std::runtime_error("[http] The request body is too large.");
         }
 
         body.write(buffer, count);
@@ -119,12 +121,12 @@ HttpRequest convertRequest(Poco::Net::HTTPServerRequest& request, const HttpServ
 
 class VarnRequestHandler final : public Poco::Net::HTTPRequestHandler {
 public:
-    VarnRequestHandler(HttpServerOptions opts, HttpHandler onRequest)
-        : httpOptions(std::move(opts)), onRequest(std::move(onRequest)), publicFiles(httpOptions.publicDir) {}
+    VarnRequestHandler(HttpServerOptions opts, HttpHandler onRequest, std::shared_ptr<std::atomic<bool>> stopping)
+        : httpOptions(std::move(opts)), onRequest(std::move(onRequest)), stopping(std::move(stopping)), publicFiles(httpOptions.publicDir) {}
 
     void handleRequest(Poco::Net::HTTPServerRequest& request, Poco::Net::HTTPServerResponse& response) override {
         try {
-            auto deferredResponse = std::make_shared<PocoDeferredResponse>();
+            auto deferredResponse = std::make_shared<PocoDeferredResponse>(stopping);
             HttpRequest inboundRequest = convertRequest(request, httpOptions);
 
             if (httpOptions.servePublic && publicFiles.tryServe(inboundRequest, *deferredResponse)) {
@@ -137,8 +139,8 @@ public:
             // write the buffered response after the handler returns when the library still owns the stream
             deferredResponse->flushTo(response);
         } catch (const std::exception& ex) {
-            std::string detail = std::string("Unexpected exception: ") + ex.what();
-            log::Log::error("VarnRequestHandler", "handleRequest", detail);
+            std::string detail = std::string("A request failed unexpectedly. ") + ex.what();
+            log::Log::error("http", detail);
             response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
             response.setContentType("text/plain; charset=utf-8");
             response.send() << "Internal server error: " << ex.what();
@@ -148,21 +150,23 @@ public:
 private:
     HttpServerOptions httpOptions;
     HttpHandler onRequest;
+    std::shared_ptr<std::atomic<bool>> stopping;
     StaticFileHandler publicFiles;
 };
 
 class VarnRequestHandlerFactory final : public Poco::Net::HTTPRequestHandlerFactory {
 public:
-    VarnRequestHandlerFactory(HttpServerOptions opts, HttpHandler onRequest)
-        : httpOptions(std::move(opts)), onRequest(std::move(onRequest)) {}
+    VarnRequestHandlerFactory(HttpServerOptions opts, HttpHandler onRequest, std::shared_ptr<std::atomic<bool>> stopping)
+        : httpOptions(std::move(opts)), onRequest(std::move(onRequest)), stopping(std::move(stopping)) {}
 
     Poco::Net::HTTPRequestHandler* createRequestHandler(const Poco::Net::HTTPServerRequest&) override {
-        return new VarnRequestHandler(httpOptions, onRequest);
+        return new VarnRequestHandler(httpOptions, onRequest, stopping);
     }
 
 private:
     HttpServerOptions httpOptions;
     HttpHandler onRequest;
+    std::shared_ptr<std::atomic<bool>> stopping;
 };
 
 #ifdef VARN_ENABLE_TLS
@@ -190,11 +194,11 @@ bool pathLooksLikePkcs12(const std::string& path) {
 
 void requireTlsKeyMaterialExists(const HttpServerOptions& opts) {
     if (opts.keyFile.empty() || opts.certFile.empty()) {
-        throw std::runtime_error("tls is enabled but keyFile or certFile is empty");
+        throw std::runtime_error("[http] TLS is enabled but the key or certificate path is empty.");
     }
     for (const auto& path : {opts.keyFile, opts.certFile}) {
         if (!std::filesystem::exists(path)) {
-            throw std::runtime_error("tls file not found: " + path);
+            throw std::runtime_error("[http] A TLS key or certificate file was not found.");
         }
     }
 }
@@ -212,10 +216,7 @@ Poco::Net::Context::Ptr createTlsServerContext(const HttpServerOptions& opts) {
     } else if (pathLooksLikePkcs12(opts.keyFile)) {
         pkcs12Path = opts.keyFile;
     } else {
-        throw std::runtime_error(
-            "Windows HTTPS uses Schannel (Poco NetSSL_Win): set certFile or keyFile to a .pfx/.p12 bundle "
-            "(e.g. openssl pkcs12 -export -inkey key.pem -in cert.pem -out server.pfx). "
-            "Separate PEM key + cert paths are not supported on Windows.");
+        throw std::runtime_error("[http] On Windows the TLS certificate must be a single bundle file.");
     }
     const int winOptions = Poco::Net::Context::OPT_DEFAULTS | Poco::Net::Context::OPT_LOAD_CERT_FROM_FILE;
     return new Poco::Net::Context(
@@ -260,6 +261,8 @@ PocoHttpServer::~PocoHttpServer() {
 }
 
 void PocoHttpServer::start() {
+    stopping->store(false, std::memory_order_release);
+
     auto params = Poco::Net::HTTPServerParams::Ptr(new Poco::Net::HTTPServerParams());
     params->setMaxQueued(serverOptions.maxQueued);
     if (serverOptions.maxThreads > 0) {
@@ -269,7 +272,7 @@ void PocoHttpServer::start() {
     params->setKeepAliveTimeout(Poco::Timespan(serverOptions.keepAliveTimeoutSeconds, 0));
 
     auto factory = Poco::Net::HTTPRequestHandlerFactory::Ptr(
-        new VarnRequestHandlerFactory(serverOptions, httpHandler)
+        new VarnRequestHandlerFactory(serverOptions, httpHandler, stopping)
     );
 
     const Poco::Net::SocketAddress socketAddress(serverOptions.host, static_cast<Poco::UInt16>(serverOptions.port));
@@ -294,10 +297,15 @@ void PocoHttpServer::start() {
 
 void PocoHttpServer::stop() {
     if (server) {
+        // wake any worker blocked on a deferred response so stop can join instead of hanging on an unfinished request.
+        stopping->store(true, std::memory_order_release);
         server->stop();
         server.reset();
     }
 }
+
+PocoDeferredResponse::PocoDeferredResponse(std::shared_ptr<std::atomic<bool>> serverStopping)
+    : stopping(std::move(serverStopping)) {}
 
 void PocoDeferredResponse::setStatus(int code) {
     std::lock_guard<std::mutex> lock(sync);
@@ -328,7 +336,19 @@ bool PocoDeferredResponse::ended() const {
 
 void PocoDeferredResponse::flushTo(Poco::Net::HTTPServerResponse& response) {
     std::unique_lock<std::mutex> lock(sync);
-    ready.wait(lock, [&] { return finished; });
+
+    constexpr auto pollInterval = std::chrono::milliseconds(200);
+    while (!finished) {
+        if (stopping && stopping->load(std::memory_order_acquire)) {
+            // the server is stopping before the handler responded, so release the worker instead of waiting forever.
+            lock.unlock();
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+            response.setContentType("text/plain; charset=utf-8");
+            response.send() << "Service unavailable.";
+            return;
+        }
+        ready.wait_for(lock, pollInterval);
+    }
 
     response.setStatus(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(statusCode));
 

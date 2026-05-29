@@ -27,14 +27,14 @@ int LuaEngine::runFile(const std::string& path) {
 
     if (luaL_loadfile(L_, path.c_str()) != LUA_OK) {
         const char* message = lua_tostring(L_, -1);
-        log::Log::error("LuaEngine", "runFile", message ? message : "Load failed with no message.");
+        log::Log::error("lua", message ? message : "The script could not be loaded.");
         lua_pop(L_, 2);
         return 1;
     }
 
     if (lua_pcall(L_, 0, 0, tracebackIndex) != LUA_OK) {
         const char* message = lua_tostring(L_, -1);
-        log::Log::error("LuaEngine", "runFile", message ? message : "Script failed with no message.");
+        log::Log::error("lua", message ? message : "The script failed to run.");
         lua_pop(L_, 2);
         return 1;
     }
@@ -82,14 +82,14 @@ int LuaEngine::runString(const std::string& source, const std::string& chunkName
 
     if (luaL_loadbuffer(L_, source.data(), source.size(), chunkName.c_str()) != LUA_OK) {
         const char* message = lua_tostring(L_, -1);
-        log::Log::error("LuaEngine", "runString", message ? message : "Load failed with no message.");
+        log::Log::error("lua", message ? message : "The source could not be loaded.");
         lua_pop(L_, 2);
         return 1;
     }
 
     if (lua_pcall(L_, 0, 0, tracebackIndex) != LUA_OK) {
         const char* message = lua_tostring(L_, -1);
-        log::Log::error("LuaEngine", "runString", message ? message : "Script failed with no message.");
+        log::Log::error("lua", message ? message : "The source failed to run.");
         lua_pop(L_, 2);
         return 1;
     }

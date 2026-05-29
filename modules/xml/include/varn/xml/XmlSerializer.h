@@ -5,6 +5,14 @@
 
 namespace varn::xml {
 
-std::string serializeLuaTable(lua_State* L, int index);
+class XmlSerializer {
+public:
+    XmlSerializer() = delete;
+
+    static std::string serialize(lua_State* L, int index);
+
+private:
+    static std::string sanitizeElementName(const std::string& raw);
+};
 
 } // namespace varn::xml

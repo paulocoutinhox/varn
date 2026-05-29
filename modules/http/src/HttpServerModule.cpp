@@ -150,7 +150,7 @@ int HttpServerLuaBindings::luaResponseFinish(lua_State* L) {
 #if VARN_JSON_DRIVER_NLOHMANN
 int HttpServerLuaBindings::luaResponseJson(lua_State* L) {
     auto* userdata = checkResponse(L);
-    const std::string body = lua_istable(L, 2) ? json::serializeLuaTable(L, 2) : "{}";
+    const std::string body = lua_istable(L, 2) ? json::JsonSerializer::serialize(L, 2) : "{}";
 
     userdata->response->setHeader("Content-Type", "application/json; charset=utf-8");
     userdata->response->end(body);
@@ -162,7 +162,7 @@ int HttpServerLuaBindings::luaResponseJson(lua_State* L) {
 int HttpServerLuaBindings::luaResponseXml(lua_State* L) {
     auto* userdata = checkResponse(L);
     const std::string body =
-        lua_istable(L, 2) ? xml::serializeLuaTable(L, 2) : std::string("<?xml version=\"1.0\" encoding=\"UTF-8\"?><root/>\n");
+        lua_istable(L, 2) ? xml::XmlSerializer::serialize(L, 2) : std::string("<?xml version=\"1.0\" encoding=\"UTF-8\"?><root/>\n");
 
     userdata->response->setHeader("Content-Type", "application/xml; charset=utf-8");
     userdata->response->end(body);
@@ -280,23 +280,22 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
             int status = lua_resume(thread, mainState, 2, &nres);
             if (status != LUA_OK && status != LUA_YIELD) {
                 const char* message = lua_tostring(thread, -1);
-                std::string detail = message ? message : "No error message from Lua.";
-                log::Log::error("HttpServerModule", "dispatchRequest", detail);
+                std::string detail = message ? message : "A request handler failed without a message.";
+                log::Log::error("http", detail);
                 response->setStatus(500);
                 response->end("Internal server error.");
                 if (nres > 0) {
                     lua_pop(thread, nres);
                 }
-                luaL_unref(mainState, LUA_REGISTRYINDEX, threadRef);
-            }
-
-            if (status == LUA_OK) {
+            } else if (status == LUA_OK) {
                 if (!response->ended()) {
                     response->setStatus(204);
                     response->end("");
                 }
-                luaL_unref(mainState, LUA_REGISTRYINDEX, threadRef);
             }
+
+            // once the handler yields the promise machinery holds its own ref to the coroutine, so release ours in every case.
+            luaL_unref(mainState, LUA_REGISTRYINDEX, threadRef);
         });
     };
 
@@ -313,7 +312,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
 
     std::ostringstream started;
     started << "Listening on " << (options.tls ? "https" : "http") << "://" << options.host << ":" << options.port << ".";
-    log::Log::line("HttpServerModule", "serverListen", started.str());
+    log::Log::line("http", started.str());
 
     return 0;
 }

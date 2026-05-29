@@ -10,25 +10,25 @@
 namespace varn::platform {
 
 int PlatformModule::luaOs(lua_State* L) {
-    const std::string v = osId();
+    const std::string v = PlatformInfo::osId();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
 
 int PlatformModule::luaArch(lua_State* L) {
-    const std::string v = archId();
+    const std::string v = PlatformInfo::archId();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
 
 int PlatformModule::luaLibPrefix(lua_State* L) {
-    const std::string v = libPrefix();
+    const std::string v = PlatformInfo::libPrefix();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
 
 int PlatformModule::luaShlibSuffix(lua_State* L) {
-    const std::string v = shlibSuffix();
+    const std::string v = PlatformInfo::shlibSuffix();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
@@ -36,7 +36,7 @@ int PlatformModule::luaShlibSuffix(lua_State* L) {
 int PlatformModule::luaLibraryFilename(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
     try {
-        const std::string path = libraryFilenameForName(name);
+        const std::string path = PlatformInfo::libraryFilenameForName(name);
         lua_pushlstring(L, path.data(), path.size());
         return 1;
     } catch (const std::exception& ex) {
@@ -50,17 +50,17 @@ int PlatformModule::luaHostVersion(lua_State* L) {
 }
 
 int PlatformModule::luaCpuCount(lua_State* L) {
-    lua_pushinteger(L, static_cast<lua_Integer>(cpuCount()));
+    lua_pushinteger(L, static_cast<lua_Integer>(PlatformInfo::cpuCount()));
     return 1;
 }
 
 int PlatformModule::luaPointerSize(lua_State* L) {
-    lua_pushinteger(L, static_cast<lua_Integer>(pointerSize()));
+    lua_pushinteger(L, static_cast<lua_Integer>(PlatformInfo::pointerSize()));
     return 1;
 }
 
 int PlatformModule::luaEndianness(lua_State* L) {
-    const std::string v = endianness();
+    const std::string v = PlatformInfo::endianness();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
@@ -72,7 +72,7 @@ int PlatformModule::luaLibraryPathByName(lua_State* L) {
         subdir = lua_tostring(L, 2);
     }
     try {
-        const std::string file = libraryFilenameForName(name);
+        const std::string file = PlatformInfo::libraryFilenameForName(name);
         std::string out = subdir;
         if (!out.empty() && out.back() != '/' && out.back() != '\\') {
             out += '/';

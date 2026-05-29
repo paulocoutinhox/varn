@@ -3,57 +3,85 @@
 #include <nlohmann/json.hpp>
 
 #include <lua.hpp>
+#include <string>
 
 namespace varn::json {
 
-namespace {
-
-nlohmann::json luaValueToJson(lua_State* L, int index) {
+void JsonSerializer::appendValue(lua_State* L, int index, std::string& out, int depth) {
     index = lua_absindex(L, index);
-    const int t = lua_type(L, index);
-    switch (t) {
+    const int type = lua_type(L, index);
+    switch (type) {
         case LUA_TSTRING: {
             size_t len = 0;
             const char* s = lua_tolstring(L, index, &len);
-            return s ? nlohmann::json(std::string(s, len)) : nlohmann::json(nullptr);
+            out += nlohmann::json(s ? std::string(s, len) : std::string()).dump();
+            return;
         }
         case LUA_TNUMBER:
             if (lua_isinteger(L, index)) {
-                return nlohmann::json(lua_tointeger(L, index));
+                out += nlohmann::json(lua_tointeger(L, index)).dump();
+            } else {
+                out += nlohmann::json(lua_tonumber(L, index)).dump();
             }
-            return nlohmann::json(lua_tonumber(L, index));
+            return;
         case LUA_TBOOLEAN:
-            return nlohmann::json(lua_toboolean(L, index) != 0);
+            out += lua_toboolean(L, index) != 0 ? "true" : "false";
+            return;
         case LUA_TNIL:
-            return nlohmann::json(nullptr);
+            out += "null";
+            return;
         case LUA_TTABLE: {
-            nlohmann::json obj = nlohmann::json::object();
+            constexpr int maxDepth = 64;
+            if (depth >= maxDepth) {
+                out += nlohmann::json("[max depth]").dump();
+                return;
+            }
+
+            // each nesting level keeps a key and value on the stack, so reserve room before pushing more.
+            if (lua_checkstack(L, 4) == 0) {
+                out += nlohmann::json("[too deep]").dump();
+                return;
+            }
+
+            out += '{';
+            int count = 0;
             lua_pushnil(L);
             while (lua_next(L, index) != 0) {
-                std::string key = lua_tostring(L, -2) ? lua_tostring(L, -2) : "";
-                obj[key] = luaValueToJson(L, -1);
+                // coerce a copy of the key so lua_next still sees the original on the next step.
+                lua_pushvalue(L, -2);
+                const char* raw = lua_tolstring(L, -1, nullptr);
+                std::string key = raw ? raw : "";
+                lua_pop(L, 1);
+
+                if (count > 0) {
+                    out += ',';
+                }
+                ++count;
+
+                out += nlohmann::json(key).dump();
+                out += ':';
+                appendValue(L, -1, out, depth + 1);
+
                 lua_pop(L, 1);
             }
-            return obj;
+            out += '}';
+            return;
         }
         default:
-            return nlohmann::json("[unsupported]");
+            out += nlohmann::json("[unsupported]").dump();
+            return;
     }
 }
 
-} // namespace
-
-std::string serializeLuaTable(lua_State* L, int index) {
+std::string JsonSerializer::serialize(lua_State* L, int index) {
     if (!lua_istable(L, index)) {
         return "{}";
     }
-    nlohmann::json j = luaValueToJson(L, index);
-    if (!j.is_object()) {
-        nlohmann::json wrap = nlohmann::json::object();
-        wrap["value"] = std::move(j);
-        return wrap.dump();
-    }
-    return j.dump();
+
+    std::string out;
+    out.reserve(64);
+    appendValue(L, index, out, 0);
+    return out;
 }
 
 } // namespace varn::json

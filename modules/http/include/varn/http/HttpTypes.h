@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -48,5 +49,7 @@ struct HttpServerOptions {
     int keepAliveTimeoutSeconds = 30;
     int maxRequestBodyBytes = 16 * 1024 * 1024;
 };
+
+using HttpHandler = std::function<void(const HttpRequest&, std::shared_ptr<HttpResponse>)>;
 
 } // namespace varn::http

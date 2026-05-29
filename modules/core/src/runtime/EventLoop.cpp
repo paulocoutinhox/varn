@@ -61,21 +61,23 @@ void EventLoop::run() {
 }
 
 void EventLoop::stop() {
-    running_ = false;
+    // change the flag under the lock so a waiter cannot miss it between the predicate check and the wait.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        running_ = false;
+    }
     cv_.notify_all();
 }
 
 void EventLoop::wake() {
+    // take the lock so the notify cannot land in the gap between a waiter's predicate check and its wait.
+    std::lock_guard<std::mutex> lock(mutex_);
     cv_.notify_all();
 }
 
 void EventLoop::setIdleExitPredicate(IdleExitPredicate predicate) {
     std::lock_guard<std::mutex> lock(mutex_);
     idleExitEligible_ = std::move(predicate);
-}
-
-bool EventLoop::isRunning() const {
-    return running_;
 }
 
 bool EventLoop::hasPendingJobs() const {

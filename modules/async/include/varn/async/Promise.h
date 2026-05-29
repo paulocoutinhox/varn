@@ -33,8 +33,6 @@ public:
 
     int prepareAwait(lua_State* L);
 
-    varn::runtime::Runtime& runtime();
-
     static void installMetatable(lua_State* L);
     static void push(lua_State* L, std::shared_ptr<Promise> promise);
     static Promise* check(lua_State* L, int index);

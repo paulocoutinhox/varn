@@ -12,22 +12,18 @@
 
 namespace varn::platform {
 
-namespace {
-
-bool startsWith(std::string_view s, std::string_view p) {
+bool PlatformInfo::startsWith(std::string_view s, std::string_view p) {
     return s.size() >= p.size() && s.compare(0, p.size(), p) == 0;
 }
 
-std::string toLower(std::string s) {
+std::string PlatformInfo::toLower(std::string s) {
     for (char& c : s) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
     return s;
 }
 
-} // namespace
-
-std::string osId() {
+std::string PlatformInfo::osId() {
 #if defined(__EMSCRIPTEN__)
     return "wasm";
 #elif defined(__ANDROID__)
@@ -71,7 +67,7 @@ std::string osId() {
 #endif
 }
 
-std::string archId() {
+std::string PlatformInfo::archId() {
 #if defined(__EMSCRIPTEN__)
 #if defined(__wasm64__)
     return "wasm64";
@@ -91,16 +87,16 @@ std::string archId() {
 #endif
 }
 
-unsigned cpuCount() {
+unsigned PlatformInfo::cpuCount() {
     const unsigned count = std::thread::hardware_concurrency();
     return count == 0 ? 1u : count;
 }
 
-std::size_t pointerSize() {
+std::size_t PlatformInfo::pointerSize() {
     return sizeof(void*);
 }
 
-std::string endianness() {
+std::string PlatformInfo::endianness() {
     if constexpr (std::endian::native == std::endian::little) {
         return "little";
     }
@@ -110,7 +106,7 @@ std::string endianness() {
     return "mixed";
 }
 
-std::string libPrefix() {
+std::string PlatformInfo::libPrefix() {
 #if defined(_WIN32)
     return "";
 #else
@@ -118,7 +114,7 @@ std::string libPrefix() {
 #endif
 }
 
-std::string shlibSuffix() {
+std::string PlatformInfo::shlibSuffix() {
 #if defined(_WIN32)
     return ".dll";
 #elif defined(__APPLE__)
@@ -128,9 +124,9 @@ std::string shlibSuffix() {
 #endif
 }
 
-std::string libraryFilenameForName(std::string_view logicalName) {
+std::string PlatformInfo::libraryFilenameForName(std::string_view logicalName) {
     if (logicalName.empty()) {
-        throw std::invalid_argument("library name must be non-empty");
+        throw std::invalid_argument("[platform] The library name must not be empty.");
     }
 
     std::string s(logicalName);

@@ -55,7 +55,7 @@ int AsyncModule::luaSpawn(lua_State* L) {
     if (status != LUA_OK && status != LUA_YIELD) {
         const char* message = lua_tostring(thread, -1);
         luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
-        return luaL_error(L, "%s", message ? message : "async.spawn failed");
+        return luaL_error(L, "%s", message ? message : "[async] Failed to start the task.");
     }
 
     if (status == LUA_OK) {
