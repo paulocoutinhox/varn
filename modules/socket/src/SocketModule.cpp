@@ -20,6 +20,7 @@ namespace {
 
 constexpr const char* kTcpSocketMeta = "varn.TcpSocket";
 constexpr const char* kTcpListenerMeta = "varn.TcpListener";
+constexpr const char* kUdpSocketMeta = "varn.UdpSocket";
 
 } // namespace
 
@@ -42,12 +43,24 @@ void SocketModule::pushTcpListener(lua_State* L, std::shared_ptr<TcpListener> li
     luaRuntime(L).retainBackgroundDriver();
 }
 
+void SocketModule::pushUdpSocket(lua_State* L, std::shared_ptr<UdpSocket> socket) {
+    void* memory = lua_newuserdatauv(L, sizeof(std::shared_ptr<UdpSocket>), 0);
+    new (memory) std::shared_ptr<UdpSocket>(std::move(socket));
+    luaL_getmetatable(L, kUdpSocketMeta);
+    lua_setmetatable(L, -2);
+    luaRuntime(L).retainBackgroundDriver();
+}
+
 std::shared_ptr<TcpConnection>* SocketModule::checkTcpSocket(lua_State* L, int index) {
     return static_cast<std::shared_ptr<TcpConnection>*>(luaL_checkudata(L, index, kTcpSocketMeta));
 }
 
 std::shared_ptr<TcpListener>* SocketModule::checkTcpListener(lua_State* L, int index) {
     return static_cast<std::shared_ptr<TcpListener>*>(luaL_checkudata(L, index, kTcpListenerMeta));
+}
+
+std::shared_ptr<UdpSocket>* SocketModule::checkUdpSocket(lua_State* L, int index) {
+    return static_cast<std::shared_ptr<UdpSocket>*>(luaL_checkudata(L, index, kUdpSocketMeta));
 }
 
 int SocketModule::luaTcpSocketGc(lua_State* L) {
@@ -66,6 +79,21 @@ int SocketModule::luaTcpSocketGc(lua_State* L) {
 
 int SocketModule::luaTcpListenerGc(lua_State* L) {
     auto* holder = static_cast<std::shared_ptr<TcpListener>*>(lua_touserdata(L, 1));
+    if (holder != nullptr) {
+        if (*holder) {
+            try {
+                (*holder)->closeBlocking();
+            } catch (...) {
+            }
+        }
+        std::destroy_at(holder);
+        luaRuntime(L).releaseBackgroundDriver();
+    }
+    return 0;
+}
+
+int SocketModule::luaUdpSocketGc(lua_State* L) {
+    auto* holder = static_cast<std::shared_ptr<UdpSocket>*>(lua_touserdata(L, 1));
     if (holder != nullptr) {
         if (*holder) {
             try {
@@ -234,6 +262,110 @@ int SocketModule::luaTcpListenerClose(lua_State* L) {
     return 1;
 }
 
+int SocketModule::luaUdpBind(lua_State* L) {
+    const char* host = luaL_checkstring(L, 1);
+    const int port = static_cast<int>(luaL_checkinteger(L, 2));
+    if (port <= 0 || port > 65535) {
+        return luaL_error(L, "[socket] Port must be between 1 and 65535.");
+    }
+
+    auto& rt = luaRuntime(L);
+    std::string hostStr = host;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, hostStr, port] {
+        try {
+            auto socket = SocketTransport::bindUdpBlocking(hostStr, port);
+            promise->resolveCustom([socket](lua_State* lua) { pushUdpSocket(lua, socket); });
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int SocketModule::luaUdpSocketSendTo(lua_State* L) {
+    auto* holder = checkUdpSocket(L, 1);
+    const char* host = luaL_checkstring(L, 2);
+    const int port = static_cast<int>(luaL_checkinteger(L, 3));
+    if (port <= 0 || port > 65535) {
+        return luaL_error(L, "[socket] Port must be between 1 and 65535.");
+    }
+    size_t len = 0;
+    const char* data = luaL_checklstring(L, 4, &len);
+    std::string payload(data, len);
+
+    auto& rt = luaRuntime(L);
+    auto socket = *holder;
+    std::string hostStr = host;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, socket, hostStr, port, payload = std::move(payload)] {
+        try {
+            socket->sendToBlocking(hostStr, port, payload);
+            promise->resolve("ok");
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int SocketModule::luaUdpSocketRecvFrom(lua_State* L) {
+    auto* holder = checkUdpSocket(L, 1);
+    const int maxBytes = static_cast<int>(luaL_optinteger(L, 2, 65536));
+    if (maxBytes <= 0) {
+        return luaL_error(L, "[socket] The maximum number of bytes to receive must be positive.");
+    }
+
+    auto& rt = luaRuntime(L);
+    auto socket = *holder;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, socket, maxBytes] {
+        try {
+            auto datagram = socket->receiveFromBlocking(maxBytes);
+            promise->resolveCustom([datagram](lua_State* lua) {
+                lua_createtable(lua, 0, 3);
+                lua_pushlstring(lua, datagram.data.data(), datagram.data.size());
+                lua_setfield(lua, -2, "data");
+                lua_pushlstring(lua, datagram.host.data(), datagram.host.size());
+                lua_setfield(lua, -2, "host");
+                lua_pushinteger(lua, datagram.port);
+                lua_setfield(lua, -2, "port");
+            });
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int SocketModule::luaUdpSocketClose(lua_State* L) {
+    auto* holder = checkUdpSocket(L, 1);
+    auto& rt = luaRuntime(L);
+    auto socket = *holder;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, socket] {
+        try {
+            socket->closeBlocking();
+            promise->resolve("ok");
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
 void SocketModule::createMetatables(lua_State* L) {
     if (luaL_newmetatable(L, kTcpSocketMeta)) {
         lua_pushcfunction(L, &SocketModule::luaTcpSocketGc);
@@ -262,18 +394,40 @@ void SocketModule::createMetatables(lua_State* L) {
         lua_setfield(L, -2, "__index");
     }
     lua_pop(L, 1);
+
+    if (luaL_newmetatable(L, kUdpSocketMeta)) {
+        lua_pushcfunction(L, &SocketModule::luaUdpSocketGc);
+        lua_setfield(L, -2, "__gc");
+
+        lua_newtable(L);
+        lua_pushcfunction(L, &SocketModule::luaUdpSocketSendTo);
+        lua_setfield(L, -2, "sendTo");
+        lua_pushcfunction(L, &SocketModule::luaUdpSocketRecvFrom);
+        lua_setfield(L, -2, "recvFrom");
+        lua_pushcfunction(L, &SocketModule::luaUdpSocketClose);
+        lua_setfield(L, -2, "close");
+        lua_setfield(L, -2, "__index");
+    }
+    lua_pop(L, 1);
 }
 
 int SocketModule::luaOpen(lua_State* L) {
     createMetatables(L);
 
     lua_newtable(L);
+
     lua_newtable(L);
     lua_pushcfunction(L, &SocketModule::luaTcpConnect);
     lua_setfield(L, -2, "connect");
     lua_pushcfunction(L, &SocketModule::luaTcpListen);
     lua_setfield(L, -2, "listen");
     lua_setfield(L, -2, "tcp");
+
+    lua_newtable(L);
+    lua_pushcfunction(L, &SocketModule::luaUdpBind);
+    lua_setfield(L, -2, "bind");
+    lua_setfield(L, -2, "udp");
+
     return 1;
 }
 

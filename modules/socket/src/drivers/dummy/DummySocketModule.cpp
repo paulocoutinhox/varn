@@ -14,4 +14,8 @@ std::shared_ptr<TcpListener> SocketTransport::listenBlocking(const std::string& 
     throw std::runtime_error("[socket] The socket module is not available in this build.");
 }
 
+std::shared_ptr<UdpSocket> SocketTransport::bindUdpBlocking(const std::string& /*host*/, int /*port*/) {
+    throw std::runtime_error("[socket] The socket module is not available in this build.");
+}
+
 } // namespace varn::socket

@@ -1,7 +1,7 @@
-# socket: tcp transport exposed to lua through a network driver.
+# socket: tcp and udp transports exposed to lua through a network driver.
 
 if(NOT DEFINED CACHE{VARN_SOCKET_DRIVER})
-    set(VARN_SOCKET_DRIVER "POCO" CACHE STRING "tcp socket backend: POCO DUMMY")
+    set(VARN_SOCKET_DRIVER "POCO" CACHE STRING "socket backend: POCO DUMMY")
 endif()
 set_property(CACHE VARN_SOCKET_DRIVER PROPERTY STRINGS POCO DUMMY)
 varn_validate_driver(VARN_SOCKET_DRIVER POCO DUMMY)
@@ -10,7 +10,10 @@ list(APPEND VARN_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/SocketModule.cpp")
 
 if(VARN_SOCKET_DRIVER STREQUAL "POCO")
-    list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketTcp.cpp")
+    list(APPEND VARN_SOURCES
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketTcp.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketUdp.cpp"
+    )
     set(VARN_NEEDS_POCO ON)
 else()
     list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/dummy/DummySocketModule.cpp")
