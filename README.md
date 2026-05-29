@@ -1,6 +1,11 @@
 # Varn
 
-[![Build](https://github.com/paulocoutinhox/varn/actions/workflows/build-all.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-all.yml)
+[![Linux](https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml)
+[![macOS](https://github.com/paulocoutinhox/varn/actions/workflows/build-macos.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-macos.yml)
+[![Windows](https://github.com/paulocoutinhox/varn/actions/workflows/build-windows.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-windows.yml)
+[![Apple](https://github.com/paulocoutinhox/varn/actions/workflows/build-apple.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-apple.yml)
+[![Android](https://github.com/paulocoutinhox/varn/actions/workflows/build-android.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-android.yml)
+[![WebAssembly](https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml)
 
 Varn is a small C++20 runtime that embeds Lua and gives your scripts a Node-like set of
 built-in modules: HTTP server and client, TCP sockets, async tasks, files, crypto, zip,
