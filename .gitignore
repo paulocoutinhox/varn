@@ -41,6 +41,7 @@ CMakeLists.txt.user
 
 # build
 /build/
+/build-*/
 
 # android
 android/**/build/

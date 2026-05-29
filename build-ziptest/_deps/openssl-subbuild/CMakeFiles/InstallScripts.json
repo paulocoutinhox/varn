@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/paulo/Developer/workspaces/cpp/varn/build-ziptest/_deps/openssl-subbuild/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
