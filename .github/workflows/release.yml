@@ -17,8 +17,8 @@ jobs:
   windows:
     uses: ./.github/workflows/build-windows.yml
 
-  ios:
-    uses: ./.github/workflows/build-ios.yml
+  apple:
+    uses: ./.github/workflows/build-apple.yml
 
   android:
     uses: ./.github/workflows/build-android.yml
@@ -27,7 +27,7 @@ jobs:
     uses: ./.github/workflows/build-wasm.yml
 
   release:
-    needs: [macos, linux, windows, ios, android, wasm]
+    needs: [macos, linux, windows, apple, android, wasm]
     runs-on: ubuntu-latest
 
     steps:

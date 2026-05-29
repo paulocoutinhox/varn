@@ -28,7 +28,7 @@ jobs:
           path: |
             ${{ env.CPM_SOURCE_CACHE }}
             build/wasm/_deps
-          key: cpm-wasm-${{ hashFiles('cmake/cpm/varn-dependencies.cmake', 'CMakeLists.txt', 'cmake/varn-libffi.cmake', 'cmake/varn-libffi/**') }}
+          key: cpm-wasm-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'modules/ffi/libffi/varn-vendor-libffi.cmake', 'modules/ffi/libffi/fficonfig.h.in') }}
           restore-keys: cpm-wasm-
 
       - name: Configure (Emscripten)

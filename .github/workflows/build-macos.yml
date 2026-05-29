@@ -35,7 +35,7 @@ jobs:
           path: |
             ${{ env.CPM_SOURCE_CACHE }}
             build/release/_deps
-          key: cpm-macos-${{ matrix.arch }}-${{ hashFiles('cmake/cpm/varn-dependencies.cmake', 'CMakeLists.txt') }}
+          key: cpm-macos-${{ matrix.arch }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}
           restore-keys: cpm-macos-${{ matrix.arch }}-
 
       - name: Configure

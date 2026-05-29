@@ -27,7 +27,7 @@ jobs:
           path: |
             ${{ env.CPM_SOURCE_CACHE }}
             build/release/_deps
-          key: cpm-windows-${{ hashFiles('cmake/cpm/varn-dependencies.cmake', 'CMakeLists.txt', 'cmake/varn-libffi.cmake', 'cmake/varn-libffi/varn-vendor-libffi.cmake', 'cmake/varn-libffi/fficonfig.h.in') }}
+          key: cpm-windows-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'modules/ffi/libffi/varn-vendor-libffi.cmake', 'modules/ffi/libffi/fficonfig.h.in') }}
           restore-keys: cpm-windows-
 
       - name: Configure

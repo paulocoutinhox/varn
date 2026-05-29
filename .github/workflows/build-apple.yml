@@ -1,0 +1,52 @@
+name: Build Apple
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  BUILD_TYPE: Release
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+
+jobs:
+  build:
+    name: Apple (xcframework)
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM sources
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-apple-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}
+          restore-keys: cpm-apple-
+
+      - name: Cache per-slice build trees
+        uses: actions/cache@v4
+        with:
+          path: build/apple/slices
+          key: apple-slices-${{ env.BUILD_TYPE }}-${{ hashFiles('cmake/dependencies.cmake', 'cmake/ios/ios.toolchain.cmake', 'tools/core/targets/apple.py', 'CMakeLists.txt') }}
+          restore-keys: apple-slices-${{ env.BUILD_TYPE }}-
+
+      - name: Build xcframework (all Apple slices)
+        run: python3 varn.py apple --config ${{ env.BUILD_TYPE }}
+
+      - name: Verify xcframework
+        run: |
+          test -d build/apple/Varn.xcframework
+          plutil -p build/apple/Varn.xcframework/Info.plist | head -40
+
+      - name: Package
+        run: |
+          mkdir -p dist/varn-apple
+          cp -R build/apple/Varn.xcframework dist/varn-apple/
+          cp LICENSE.md dist/varn-apple/
+          tar -czf varn-apple-xcframework.tar.gz -C dist varn-apple
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: varn-apple-xcframework
+          path: varn-apple-xcframework.tar.gz
