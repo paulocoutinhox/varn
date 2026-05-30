@@ -3,6 +3,24 @@ name: Build Apple
 on:
   workflow_dispatch:
   workflow_call:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "LICENSE.md"
+      - "docs/**"
+      - "extras/**"
+      - ".gitignore"
+      - ".editorconfig"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "LICENSE.md"
+      - "docs/**"
+      - "extras/**"
+      - ".gitignore"
+      - ".editorconfig"
 
 env:
   BUILD_TYPE: Release

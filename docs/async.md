@@ -57,16 +57,21 @@ end)
 pool finishes the read, the result is posted back to the main thread and your coroutine resumes
 right after the `:await()`.
 
-`:await()` only works inside a coroutine, which means inside an HTTP handler or an
-`async.spawn` function. It does not work at the top level of a plain script, because there is no
-coroutine to pause. A promise settles exactly once, either resolved or rejected. Later settles
-are ignored.
+`:await()` only works inside a coroutine. Varn opens one for you in `async.run(fn)`,
+`async.spawn(fn)`, and anywhere else it runs your code through one of them (an HTTP handler,
+for example). At the top level of a plain script there is no coroutine to pause, so call
+`async.run(fn)` and put your code inside `fn`. A promise settles exactly once, either resolved
+or rejected. Later settles are ignored.
 
 ## The async module
 
 - `async.sleep(ms)` returns a promise that resolves after `ms` milliseconds without blocking
   the thread.
-- `async.spawn(fn)` runs `fn` as a coroutine so you can `:await()` outside an HTTP handler.
+- `async.spawn(fn)` runs `fn` as a background coroutine so it can `:await()` promises. Any
+  error that escapes `fn` ends the process with a non-zero exit code.
+- `async.run(fn)` runs `fn` as the program's async entry point. The process exits cleanly
+  when `fn` returns, or with a non-zero status if an uncaught error escapes. Use it at the
+  top level of a script instead of `async.spawn` when you want the script to end with `fn`.
 
 ```lua
 local async = require("async")
@@ -93,7 +98,8 @@ Don't:
 - Don't run heavy CPU work or a busy loop on the main thread. It blocks every other request
   until it ends. Keep handlers short, or break the work up.
 - Don't fake waiting with `os.execute` or a manual busy-loop. Use `async.sleep` or `:await()`.
-- Don't call `:await()` at the top level of a script. Put it inside `async.spawn`.
+- Don't call `:await()` at the top level of a script. Wrap your code in `async.run` (one-shot
+  scripts) or `async.spawn` (background tasks).
 
 ## Writing an async function in C++
 

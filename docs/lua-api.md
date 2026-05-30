@@ -94,8 +94,9 @@ end)
 ## async
 
 - `async.sleep(ms)` → a promise that resolves after `ms` milliseconds.
-- `async.spawn(fn)` → run `fn` in a new coroutine. Use it to call `:await()` outside an HTTP
-  handler.
+- `async.spawn(fn)` → run `fn` as a background coroutine that can `:await()` promises.
+- `async.run(fn)` → run `fn` as the program's async entry point. The process exits when
+  it returns, or with a non-zero status if an uncaught error escapes.
 
 See [async.md](async.md).
 
