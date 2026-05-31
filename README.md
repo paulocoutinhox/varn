@@ -10,6 +10,7 @@
     <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml/badge.svg" alt="Linux"></a>
     <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-macos.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-macos.yml/badge.svg" alt="macOS"></a>
     <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-windows.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-windows.yml/badge.svg" alt="Windows"></a>
+    <br>
     <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-apple.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-apple.yml/badge.svg" alt="Apple"></a>
     <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-android.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-android.yml/badge.svg" alt="Android"></a>
     <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml/badge.svg" alt="WebAssembly"></a>
