@@ -1,4 +1,4 @@
-name: Build Apple
+name: Apple
 
 on:
   workflow_dispatch:
