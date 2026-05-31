@@ -16,13 +16,9 @@
     <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml/badge.svg" alt="WebAssembly"></a>
 </p>
 
-Varn is a small C++20 runtime that embeds Lua and gives your scripts a Node-like set of
-built-in modules: HTTP server and client, TCP sockets, async tasks, files, crypto, zip,
-JSON/XML, and FFI. Lua runs on one thread; blocking work goes to a worker pool and comes
-back through promises, so request handlers never block.
+Varn is an all-in-one platform for building applications with Lua scripts, powered by a fast C++ core. The idea is to give a project everything it needs from the start — a web layer, networking, background work, storage, data protection, and packaging — already built in, consistent, and the same on every device.
 
-The same core ships two ways: the `varn` command-line host, and an embeddable library
-(`Varn.xcframework` on Apple, an `.aar` on Android, a static library elsewhere).
+Instead of assembling and wiring together separate pieces, you get one complete and coherent foundation that behaves the same whether it runs on a computer, a phone, or in the browser, so the focus stays on the product and not on the plumbing.
 
 ## Quickstart
 
@@ -33,6 +29,8 @@ python3 varn.py build
 
 Then open <http://localhost:3000>.
 
+A working web server in a few lines:
+
 ```lua
 local http = require("http")
 
@@ -41,75 +39,35 @@ http.createServer(function(req, res)
 end):listen(3000)
 ```
 
-Each module keeps runnable examples under `modules/<module>/lua/examples/`.
+Every feature ships with runnable examples under `modules/<module>/lua/examples/`.
 
-## Modules
+## Features
 
-| `require(...)` | what it gives you |
-|----------------|-------------------|
-| `http` | HTTP/HTTPS server and client, static files, JSON/XML responses |
-| `socket` | TCP client and server |
-| `async` | `sleep`, `spawn`, and promises you `:await()` |
-| `fs` | async read/write, sync `exists` |
-| `crypto` | digests, HMAC, random bytes |
+| Module | What you get |
+|----------------|--------------|
+| `http` | web server and client, static file serving, JSON and XML responses |
+| `socket` | network client and server connections |
+| `async` | background tasks, timers, and awaitable promises |
+| `fs` | read and write files, check what already exists |
+| `crypto` | hashing, signatures, and secure random data |
 | `zip` | create, extract, and list archives |
-| `ffi` | call functions from C libraries |
-| `platform` | OS, architecture, cpu count, library paths |
-| `log` | `debug` / `info` / `warn` / `error` |
+| `ffi` | call functions from native libraries |
+| `platform` | system, architecture, processor, and path information |
+| `log` | leveled logging with debug, info, warn, and error |
 
-Full reference: [docs/lua-api.md](docs/lua-api.md).
+Full feature reference: [docs/lua-api.md](docs/lua-api.md).
 
-## Building
+## Runs everywhere
 
-`varn.py` builds every target. Run `python3 varn.py <task> --help` for options.
-
-| command | output |
-|---------|--------|
-| `python3 varn.py build` | the `varn` executable for your desktop OS |
-| `python3 varn.py apple` | `Varn.xcframework` (iOS, tvOS, watchOS, visionOS, macOS) |
-| `python3 varn.py android` | an Android `.aar` (one `libvarn.so` per ABI) |
-| `python3 varn.py wasm` | the `varn_wasm` WebAssembly build |
-| `python3 varn.py serve` | build wasm and serve the browser demo |
-
-You can also use CMake directly:
-
-```bash
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-```
-
-Options and platform notes: [docs/build.md](docs/build.md).
-
-## Requirements
-
-- A C++20 compiler (Clang, GCC, or MSVC)
-- CMake 3.26+
-- Python 3 (to run `varn.py`)
-
-Lua and the other libraries are downloaded and built for you. Supported native platforms:
-Linux, macOS, Windows, iOS, and Android.
-
-## Embedding in your app
-
-Link the library and drive it through the C API in
-[modules/api/include/varn/varn.h](modules/api/include/varn/varn.h):
-
-```c
-varn_runtime* rt = varn_runtime_new();
-varn_runtime_run_file(rt, "main.lua");
-varn_runtime_free(rt);
-```
+The same scripts run on Linux, macOS, and Windows, on iPhone and Android, and in the browser. You can run them as a standalone app you launch, or embed them inside an app you already have.
 
 ## Documentation
 
 | Topic | File |
 |-------|------|
-| Lua API reference | [docs/lua-api.md](docs/lua-api.md) |
-| Building and options | [docs/build.md](docs/build.md) |
-| Adding a C++ module | [docs/native-modules.md](docs/native-modules.md) |
-| How it works | [docs/architecture.md](docs/architecture.md) |
+| Feature reference | [docs/lua-api.md](docs/lua-api.md) |
+| Building and running | [docs/build.md](docs/build.md) |
 | Async and promises | [docs/async.md](docs/async.md) |
-| Bundled libraries | [docs/official-libraries.md](docs/official-libraries.md) |
 
 ## Support
 

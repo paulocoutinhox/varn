@@ -260,7 +260,8 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
 
     Runtime& rt = *builder->runtime;
 
-    // duplicate registry ref for native server lifetime; builder userdata may be collected once the chunk returns
+    // duplicate the registry ref for the native server lifetime.
+    // the builder userdata may be collected once the chunk returns.
     lua_rawgeti(L, LUA_REGISTRYINDEX, builder->handlerRef);
     const int persistedHandlerRef = luaL_ref(L, LUA_REGISTRYINDEX);
 

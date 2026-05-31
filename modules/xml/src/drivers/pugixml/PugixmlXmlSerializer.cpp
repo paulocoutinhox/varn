@@ -44,8 +44,8 @@ std::string XmlSerializer::serialize(lua_State* L, int index) {
 
     lua_pushnil(L);
     while (lua_next(L, index) != 0) {
-        // luaL_tolstring pushes a copy of the key; drop it before touching the value so the
-        // value stays at -1 and lua_next still sees the original key on the next iteration.
+        // luaL_tolstring pushes a copy of the key, so drop it before touching the value.
+        // the value stays at -1 and lua_next still sees the original key on the next iteration.
         const char* keyRaw = luaL_tolstring(L, -2, nullptr);
         const std::string key = keyRaw ? keyRaw : "";
         lua_pop(L, 1);

@@ -1,7 +1,7 @@
 #pragma once
 
-// public embedding surface for the varn runtime. the same library that backs the varn
-// executable is packaged as a framework/xcframework on apple and an aar on android.
+// public embedding surface for the varn runtime.
+// the same library that backs the varn executable is packaged as a framework/xcframework on apple and an aar on android.
 
 // keeps the api visible on the shared framework and aar even under -fvisibility=hidden.
 #if defined(_WIN32)

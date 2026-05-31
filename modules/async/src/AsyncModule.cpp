@@ -55,8 +55,8 @@ int AsyncModule::entryContinuation(lua_State* L, int status, lua_KContext ctx) {
 int AsyncModule::entryBody(lua_State* L) {
     const lua_KContext ctx = lua_toboolean(L, lua_upvalueindex(2)) ? 1 : 0;
 
-    // run the user function under a protected call that survives await yields, so an uncaught error
-    // becomes a single reported outcome instead of being lost inside the resume machinery.
+    // run the user function under a protected call that survives await yields.
+    // an uncaught error becomes a single reported outcome instead of being lost inside the resume machinery.
     lua_pushvalue(L, lua_upvalueindex(1));
     const int status = lua_pcallk(L, 0, 0, 0, ctx, &AsyncModule::entryContinuation);
     return entryContinuation(L, status, ctx);

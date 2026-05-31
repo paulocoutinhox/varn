@@ -38,7 +38,6 @@ public:
     void addServer(std::shared_ptr<varn::http::HttpServer> server);
     void stop();
 
-    // reports the outcome of an async entry coroutine. an uncaught error ends the program with a non-zero status.
     void onAsyncComplete(bool ok, bool stopLoopOnSuccess, const std::string& error);
 
     void retainBackgroundDriver();
