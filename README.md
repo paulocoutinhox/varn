@@ -1,3 +1,9 @@
+<p align="center">
+    <a href="https://github.com/paulocoutinhox/varn" target="_blank" rel="noopener noreferrer">
+        <img width="250" src="extras/images/logo.png" alt="Varn Logo">
+    </a>
+</p>
+
 # Varn
 
 [![Linux](https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml)
