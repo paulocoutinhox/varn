@@ -1,6 +1,6 @@
 <p align="center">
     <a href="https://github.com/paulocoutinhox/varn" target="_blank" rel="noopener noreferrer">
-        <img width="250" src="extras/images/logo.png" alt="Varn Logo">
+        <img width="200" src="extras/images/logo.png" alt="Varn Logo">
     </a>
 </p>
 
