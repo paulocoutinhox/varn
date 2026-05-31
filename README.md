@@ -74,4 +74,6 @@ The same scripts run on Linux, macOS, and Windows, on iPhone and Android, and in
 If this project saved you time, consider supporting it:
 [GitHub Sponsors](https://github.com/sponsors/paulocoutinhox) · [Ko-fi](https://ko-fi.com/paulocoutinho).
 
-Made with care by [Paulo Coutinho](https://github.com/paulocoutinhox). Licensed under [MIT](LICENSE.md).
+Made with care by [Paulo Coutinho](https://github.com/paulocoutinhox).
+
+Licensed under [MIT](LICENSE.md).
