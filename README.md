@@ -6,12 +6,14 @@
 
 # Varn
 
-[![Linux](https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml)
-[![macOS](https://github.com/paulocoutinhox/varn/actions/workflows/build-macos.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-macos.yml)
-[![Windows](https://github.com/paulocoutinhox/varn/actions/workflows/build-windows.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-windows.yml)
-[![Apple](https://github.com/paulocoutinhox/varn/actions/workflows/build-apple.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-apple.yml)
-[![Android](https://github.com/paulocoutinhox/varn/actions/workflows/build-android.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-android.yml)
-[![WebAssembly](https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml/badge.svg)](https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml)
+<p align="center">
+    <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-linux.yml/badge.svg" alt="Linux"></a>
+    <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-macos.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-macos.yml/badge.svg" alt="macOS"></a>
+    <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-windows.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-windows.yml/badge.svg" alt="Windows"></a>
+    <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-apple.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-apple.yml/badge.svg" alt="Apple"></a>
+    <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-android.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-android.yml/badge.svg" alt="Android"></a>
+    <a href="https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml"><img src="https://github.com/paulocoutinhox/varn/actions/workflows/build-wasm.yml/badge.svg" alt="WebAssembly"></a>
+</p>
 
 Varn is a small C++20 runtime that embeds Lua and gives your scripts a Node-like set of
 built-in modules: HTTP server and client, TCP sockets, async tasks, files, crypto, zip,
