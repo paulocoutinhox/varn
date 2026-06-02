@@ -16,13 +16,82 @@ for i = 1, 4 do
 end
 `;
 
-// one runnable example per module, tuned for the browser build. crypto/ffi are stubs in wasm
-// and the examples show that caveat instead of failing silently.
+// runnable examples tuned for the browser build.
+// crypto and ffi are unavailable in wasm, so they are intentionally omitted.
 const EXAMPLES: ReadonlyArray<{ label: string; code: string }> = [
   { label: "Lua — fibonacci", code: DEFAULT_LUA },
   {
+    label: "Lua — strings & patterns",
+    code: `local text = "varn: fast, small, embeddable"
+
+-- split the sentence into words with a pattern
+for word in text:gmatch("%a+") do
+  print(word)
+end
+
+print("upper:", text:upper())
+print("commas:", select(2, text:gsub(",", "")))
+`,
+  },
+  {
+    label: "Lua — tables & iteration",
+    code: `local fruits = { "apple", "banana", "cherry" }
+
+-- ordered iteration over an array
+for index, name in ipairs(fruits) do
+  print(index, name)
+end
+
+local counts = { apple = 3, banana = 5 }
+counts.cherry = 1
+
+-- keyed iteration over a map
+for name, n in pairs(counts) do
+  print(name, "=", n)
+end
+`,
+  },
+  {
+    label: "json — encode & decode",
+    code: `local json = require("json")
+
+local text = json.encode({ name = "varn", tags = { "fast", "small" }, version = 1 })
+print("encoded:", text)
+
+local value = json.decode(text)
+print("name:", value.name)
+print("first tag:", value.tags[1])
+
+print("pretty:")
+print(json.encode({ user = { id = 1, roles = { "admin" } } }, { pretty = true }))
+`,
+  },
+  {
+    label: "xml — encode & decode",
+    code: `local xml = require("xml")
+
+-- build a document from the node model
+local doc = xml.encode({
+  name = "note",
+  attributes = { priority = "high" },
+  children = {
+    { name = "to", text = "Lua" },
+    { name = "from", text = "C++" },
+  },
+}, { pretty = true })
+print(doc)
+
+-- parse it back into the same node model
+local node = xml.decode(doc)
+print("root:", node.name)
+print("priority:", node.attributes.priority)
+print("first child:", node.children[1].name, node.children[1].text)
+`,
+  },
+  {
     label: "platform — system info",
     code: `local p = require("platform")
+
 print("os", p.os())
 print("arch", p.arch())
 print("cpus", p.cpuCount())
@@ -34,31 +103,36 @@ print("host version", p.hostVersion())
   {
     label: "log — levels",
     code: `local log = require("log")
+
 log.debug("debug", 1)
 log.info("info", "hello")
 log.warn("careful")
 log.error("boom", { code = 7 })
+
 print("log lines were emitted")
 `,
   },
   {
     label: "async — sleep & spawn",
-    code: `print("start")
-local async = require("async")
+    code: `local async = require("async")
+
+print("start")
 async.spawn(function()
-  print("start spawn")
-  async.sleep(3000):await()
-  print("woke up after 3000ms")
+  print("task started")
+  async.sleep(1500):await()
+  print("task woke up after 1500ms")
 end)
-print("spawned - the main chunk returns first")
+print("main chunk returned first")
 `,
   },
   {
     label: "fs — read & write (MEMFS)",
     code: `local async = require("async")
 local fs = require("fs")
+
 async.spawn(function()
   fs.writeFile("demo.txt", "hello from lua\\n"):await()
+
   local content = fs.readFile("demo.txt"):await()
   print("read back:", content)
 end)
@@ -68,26 +142,57 @@ end)
     label: "zip — create & list",
     code: `local async = require("async")
 local zip = require("zip")
+
 async.spawn(function()
-  local f = io.open("hello.txt", "w"); f:write("zipped!\\n"); f:close()
+  -- write a source file into MEMFS
+  local file = io.open("hello.txt", "w")
+  file:write("zipped!\\n")
+  file:close()
+
   local _, err = zip.create("demo.zip", { { file = "hello.txt", entry = "a/hello.txt" } }):await()
-  if err then print("zip error:", err); return end
+  if err then
+    print("zip error:", err)
+    return
+  end
+
   local entries = zip.list("demo.zip"):await()
   print("entries:", table.concat(entries, ", "))
 end)
 `,
   },
   {
+    label: "pcall — error handling",
+    code: `-- pcall turns a runtime error into a value you can inspect
+local ok, err = pcall(function()
+  error("something went wrong")
+end)
+print("ok:", ok)
+print("err:", err)
+
+local divided, result = pcall(function(a, b)
+  return a / b
+end, 10, 2)
+print("divided:", divided, "result:", result)
+`,
+  },
+  {
     label: "http.client — fetch",
     code: `local async = require("async")
 local http = require("http")
+
 async.spawn(function()
-  local wire, err = http.client.request({ url = "https://httpbin.org/delay/3" }):await()
-  if err then print("request failed:", err); return end
-  print("status", wire:match("^VARN/1 (%d+)"))
+  local wire, err = http.client.request({ url = "https://httpbin.org/get" }):await()
+  if err then
+    print("request failed:", err)
+    return
+  end
+
+  -- the response arrives as a VARN/1 <status> <length> wire string
+  local status = wire:match("^VARN/1 (%d+)")
+  print("status:", status)
 end)
 `,
-  }
+  },
 ];
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -261,8 +366,8 @@ function mount(): void {
   });
 
   stopBtn.addEventListener("click", () => {
-    // hard stop: terminate the worker so a sleeping or runaway chunk ends immediately, then
-    // bring up a fresh one so Run becomes available again.
+    // hard stop terminates the worker so a sleeping or runaway chunk ends immediately.
+    // a fresh worker is spawned afterwards so the run button becomes available again.
     worker.terminate();
     appendLine("stopped.");
     status.textContent = "Stopped.";

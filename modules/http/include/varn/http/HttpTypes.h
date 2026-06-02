@@ -30,9 +30,6 @@ public:
     virtual void write(const std::string& chunk) = 0;
     virtual void end(const std::string& body) = 0;
     virtual bool ended() const = 0;
-
-    // streams a byte range of a file as the body so the transport reads it off the hot path.
-    // the default buffers, while a transport that can stream overrides this.
     virtual void sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly);
 };
 

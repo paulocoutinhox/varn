@@ -11,8 +11,6 @@ public:
 
     static std::string serialize(lua_State* L, int index);
     static bool deserialize(lua_State* L, const std::string& text);
-
-    // encodes any lua value (not only a table); indent > 0 pretty-prints with that many spaces.
     static std::string encode(lua_State* L, int index, int indent);
 
 private:

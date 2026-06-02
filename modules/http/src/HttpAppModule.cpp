@@ -350,8 +350,8 @@ std::string extractBoundary(const std::string& contentType) {
 std::string multipartAttribute(const std::string& headers, const std::string& key) {
     std::size_t pos = 0;
     while ((pos = headers.find(key, pos)) != std::string::npos) {
-        // only accept the attribute when it starts at a real boundary, never inside another
-        // attribute such as filename= or a custom x-name= token.
+        // the attribute is only accepted when it starts at a real boundary.
+        // this avoids matching inside another token such as filename= or a custom x-name=.
         const char previous = pos == 0 ? ' ' : headers[pos - 1];
         if (pos == 0 || previous == ' ' || previous == ';') {
             const std::size_t start = pos + key.size();
@@ -2232,8 +2232,8 @@ void wsFlush(Poco::Net::WebSocket& socket, const std::shared_ptr<WsConnState>& c
     }
 }
 
-// blocks until the posted task runs, but gives up if the server is shutting down so the
-// transport thread can never deadlock against a main loop that is being joined and stopped.
+// blocks until the posted task runs, but gives up once the server starts shutting down.
+// this keeps the transport thread from deadlocking against a main loop that is being joined.
 void waitForMainLoop(std::future<void>& ready, const std::shared_ptr<std::atomic<bool>>& stopping) {
     while (ready.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
         if (stopping && stopping->load(std::memory_order_acquire)) {

@@ -94,7 +94,7 @@ std::string performHttp(
 
 #if defined(VARN_ENABLE_TLS)
 
-// strict context validates the chain against the system CAs; the insecure one is an explicit opt-out.
+// the strict context validates the chain against the system CAs, while the insecure one is an explicit opt-out.
 Poco::Net::Context::Ptr tlsClientContext(bool verify) {
 #if defined(_WIN32)
     if (verify) {

@@ -77,7 +77,7 @@ int HttpClientModule::luaClientRequest(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    // tls verification is on by default; insecure is an explicit, opt-in escape hatch for dev certs.
+    // tls verification is on by default, with insecure as an explicit opt-in escape hatch for dev certs.
     lua_getfield(L, 1, "verifyTls");
     if (lua_isboolean(L, -1)) {
         options.verifyTls = lua_toboolean(L, -1) != 0;

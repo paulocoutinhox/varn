@@ -36,7 +36,7 @@ int readIndent(lua_State* L, int optsIndex) {
 } // namespace
 
 int JsonModule::luaEncode(lua_State* L) {
-    // any value at index 1 is encodable; an options table at index 2 controls pretty-printing.
+    // the value at index 1 is encoded, with an optional options table at index 2 for pretty-printing.
     const int indent = readIndent(L, 2);
 
     try {
