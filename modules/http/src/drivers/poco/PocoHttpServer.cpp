@@ -206,6 +206,7 @@ private:
 #ifdef VARN_ENABLE_TLS
 namespace {
 
+#if defined(_WIN32)
 bool endsWithIgnoreCase(std::string_view value, std::string_view suffix) {
     if (value.size() < suffix.size()) {
         return false;
@@ -223,6 +224,7 @@ bool endsWithIgnoreCase(std::string_view value, std::string_view suffix) {
 bool pathLooksLikePkcs12(const std::string& path) {
     return endsWithIgnoreCase(path, ".pfx") || endsWithIgnoreCase(path, ".p12");
 }
+#endif
 
 } // namespace
 
