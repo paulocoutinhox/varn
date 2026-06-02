@@ -4,7 +4,9 @@
 #include "varn/async/Promise.h"
 #include "varn/crypto/CryptoModule.h"
 #include "varn/ffi/FfiModule.h"
+#include "varn/json/JsonModule.h"
 #include "varn/platform/PlatformModule.h"
+#include "varn/xml/XmlModule.h"
 #include "varn/zip/ZipModule.h"
 #include "varn/fs/FsModule.h"
 #include "varn/http/HttpServerModule.h"
@@ -20,6 +22,8 @@ void NativeModuleRegistry::installAll(lua_State* L) {
     ffi::FfiModule::install(L);
     log::LogModule::install(L);
     crypto::CryptoModule::install(L);
+    json::JsonModule::install(L);
+    xml::XmlModule::install(L);
     platform::PlatformModule::install(L);
     zip::ZipModule::install(L);
     http::HttpServerModule::install(L);

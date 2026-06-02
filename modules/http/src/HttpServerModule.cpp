@@ -1,4 +1,5 @@
 #include "varn/log/Log.h"
+#include "varn/http/HttpAppModule.h"
 #include "varn/http/HttpClientModule.h"
 #include "varn/http/HttpServerModule.h"
 #include "varn/http/HttpTypes.h"
@@ -43,8 +44,6 @@ private:
     };
 
     static Runtime& luaRuntime(lua_State* L);
-    static void pushQueryTable(lua_State* L, const std::map<std::string, std::string>& values);
-    static void pushRequest(lua_State* L, const HttpRequest& request);
     static void pushResponse(lua_State* L, std::shared_ptr<HttpResponse> response);
     static ResponseUserdata* checkResponse(lua_State* L);
 
@@ -59,7 +58,6 @@ private:
     static int luaResponseXml(lua_State* L);
 #endif
     static int luaServerGc(lua_State* L);
-    static HttpServerOptions readOptions(lua_State* L, int index);
     static int luaServerListen(lua_State* L);
     static int luaCreateServer(lua_State* L);
     static void createMetatables(lua_State* L);
@@ -67,44 +65,6 @@ private:
 
 Runtime& HttpServerLuaBindings::luaRuntime(lua_State* L) {
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
-}
-
-void HttpServerLuaBindings::pushQueryTable(lua_State* L, const std::map<std::string, std::string>& values) {
-    varn::lua::LuaHelpers::pushStringMap(L, values);
-}
-
-void HttpServerLuaBindings::pushRequest(lua_State* L, const HttpRequest& request) {
-    lua_newtable(L);
-
-    lua_pushlstring(L, request.host.data(), request.host.size());
-    lua_setfield(L, -2, "host");
-
-    lua_pushlstring(L, request.method.data(), request.method.size());
-    lua_setfield(L, -2, "method");
-
-    lua_pushlstring(L, request.path.data(), request.path.size());
-    lua_setfield(L, -2, "path");
-
-    lua_pushlstring(L, request.target.data(), request.target.size());
-    lua_setfield(L, -2, "target");
-
-    lua_pushlstring(L, request.queryString.data(), request.queryString.size());
-    lua_setfield(L, -2, "queryString");
-
-    lua_pushlstring(L, request.body.data(), request.body.size());
-    lua_setfield(L, -2, "body");
-
-    lua_pushlstring(L, request.remoteAddress.data(), request.remoteAddress.size());
-    lua_setfield(L, -2, "remoteAddress");
-
-    varn::lua::LuaHelpers::pushStringMap(L, request.headers);
-    lua_setfield(L, -2, "headers");
-
-    varn::lua::LuaHelpers::pushStringMap(L, request.cookies);
-    lua_setfield(L, -2, "cookies");
-
-    pushQueryTable(L, request.query);
-    lua_setfield(L, -2, "query");
 }
 
 void HttpServerLuaBindings::pushResponse(lua_State* L, std::shared_ptr<HttpResponse> response) {
@@ -179,73 +139,6 @@ int HttpServerLuaBindings::luaServerGc(lua_State* L) {
     return 0;
 }
 
-HttpServerOptions HttpServerLuaBindings::readOptions(lua_State* L, int index) {
-    HttpServerOptions options;
-
-    const char* envPort = std::getenv("VARN_PORT");
-    if (envPort) {
-        options.port = std::atoi(envPort);
-    }
-
-    const char* cert = std::getenv("VARN_TLS_CERT");
-    const char* key = std::getenv("VARN_TLS_KEY");
-    if (cert && key) {
-        options.tls = true;
-        options.certFile = cert;
-        options.keyFile = key;
-    }
-
-    if (lua_istable(L, index)) {
-        lua_getfield(L, index, "host");
-        options.host = varn::lua::LuaHelpers::optionalString(L, -1, options.host);
-        lua_pop(L, 1);
-
-        lua_getfield(L, index, "port");
-        if (lua_isinteger(L, -1)) options.port = lua_tointeger(L, -1);
-        lua_pop(L, 1);
-
-        lua_getfield(L, index, "publicDir");
-        options.publicDir = varn::lua::LuaHelpers::optionalString(L, -1, options.publicDir);
-        lua_pop(L, 1);
-
-        lua_getfield(L, index, "servePublic");
-        if (lua_isboolean(L, -1)) options.servePublic = lua_toboolean(L, -1) != 0;
-        lua_pop(L, 1);
-
-        lua_getfield(L, index, "tls");
-        if (lua_isboolean(L, -1)) options.tls = lua_toboolean(L, -1) != 0;
-        lua_pop(L, 1);
-
-        lua_getfield(L, index, "certFile");
-        options.certFile = varn::lua::LuaHelpers::optionalString(L, -1, options.certFile);
-        lua_pop(L, 1);
-
-        lua_getfield(L, index, "keyFile");
-        options.keyFile = varn::lua::LuaHelpers::optionalString(L, -1, options.keyFile);
-        lua_pop(L, 1);
-
-        lua_getfield(L, index, "maxQueued");
-        if (lua_isinteger(L, -1)) {
-            const auto v = static_cast<int>(lua_tointeger(L, -1));
-            if (v > 0) {
-                options.maxQueued = std::clamp(v, 1, 65535);
-            }
-        }
-        lua_pop(L, 1);
-
-        lua_getfield(L, index, "maxThreads");
-        if (lua_isinteger(L, -1)) {
-            const auto v = static_cast<int>(lua_tointeger(L, -1));
-            if (v > 0) {
-                options.maxThreads = v;
-            }
-        }
-        lua_pop(L, 1);
-    }
-
-    return options;
-}
-
 int HttpServerLuaBindings::luaServerListen(lua_State* L) {
     auto* builder = static_cast<ServerBuilderUserdata*>(luaL_checkudata(L, 1, kServerMeta));
 
@@ -253,9 +146,9 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
     if (lua_isinteger(L, 2)) {
         options.port = lua_tointeger(L, 2);
     } else if (lua_istable(L, 2)) {
-        options = readOptions(L, 2);
+        options = readListenOptions(L, 2);
     } else {
-        options = readOptions(L, 3);
+        options = readListenOptions(L, 3);
     }
 
     Runtime& rt = *builder->runtime;
@@ -274,7 +167,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
             lua_rawgeti(mainState, LUA_REGISTRYINDEX, persistedHandlerRef);
             lua_xmove(mainState, thread, 1);
 
-            HttpServerLuaBindings::pushRequest(thread, request);
+            pushRequestTable(thread, request);
             HttpServerLuaBindings::pushResponse(thread, response);
 
             int nres = 0;
@@ -377,11 +270,128 @@ int HttpServerLuaBindings::luaOpen(lua_State* L) {
     lua_newtable(L);
     lua_pushcfunction(L, &HttpServerLuaBindings::luaCreateServer);
     lua_setfield(L, -2, "createServer");
+    HttpAppModule::registerApp(L);
     HttpClientModule::registerClient(L);
     return 1;
 }
 
 } // namespace
+
+void pushRequestTable(lua_State* L, const HttpRequest& request) {
+    lua_newtable(L);
+
+    lua_pushlstring(L, request.host.data(), request.host.size());
+    lua_setfield(L, -2, "host");
+
+    lua_pushlstring(L, request.method.data(), request.method.size());
+    lua_setfield(L, -2, "method");
+
+    lua_pushlstring(L, request.path.data(), request.path.size());
+    lua_setfield(L, -2, "path");
+
+    lua_pushlstring(L, request.target.data(), request.target.size());
+    lua_setfield(L, -2, "target");
+
+    lua_pushlstring(L, request.queryString.data(), request.queryString.size());
+    lua_setfield(L, -2, "queryString");
+
+    lua_pushlstring(L, request.body.data(), request.body.size());
+    lua_setfield(L, -2, "body");
+
+    lua_pushlstring(L, request.remoteAddress.data(), request.remoteAddress.size());
+    lua_setfield(L, -2, "remoteAddress");
+
+    varn::lua::LuaHelpers::pushStringMap(L, request.headers);
+    lua_setfield(L, -2, "headers");
+
+    varn::lua::LuaHelpers::pushStringMap(L, request.cookies);
+    lua_setfield(L, -2, "cookies");
+
+    varn::lua::LuaHelpers::pushStringMap(L, request.query);
+    lua_setfield(L, -2, "query");
+}
+
+HttpServerOptions readListenOptions(lua_State* L, int index) {
+    HttpServerOptions options;
+
+    const char* envPort = std::getenv("VARN_PORT");
+    if (envPort) {
+        options.port = std::atoi(envPort);
+    }
+
+    const char* cert = std::getenv("VARN_TLS_CERT");
+    const char* key = std::getenv("VARN_TLS_KEY");
+    if (cert && key) {
+        options.tls = true;
+        options.certFile = cert;
+        options.keyFile = key;
+    }
+
+    if (!lua_istable(L, index)) {
+        return options;
+    }
+
+    lua_getfield(L, index, "host");
+    options.host = varn::lua::LuaHelpers::optionalString(L, -1, options.host);
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "port");
+    if (lua_isinteger(L, -1)) options.port = lua_tointeger(L, -1);
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "publicDir");
+    options.publicDir = varn::lua::LuaHelpers::optionalString(L, -1, options.publicDir);
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "servePublic");
+    if (lua_isboolean(L, -1)) options.servePublic = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "directoryListing");
+    if (lua_isboolean(L, -1)) options.directoryListing = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "tls");
+    if (lua_isboolean(L, -1)) options.tls = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "certFile");
+    options.certFile = varn::lua::LuaHelpers::optionalString(L, -1, options.certFile);
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "keyFile");
+    options.keyFile = varn::lua::LuaHelpers::optionalString(L, -1, options.keyFile);
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "maxQueued");
+    if (lua_isinteger(L, -1)) {
+        const auto value = static_cast<int>(lua_tointeger(L, -1));
+        if (value > 0) {
+            options.maxQueued = std::clamp(value, 1, 65535);
+        }
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "maxThreads");
+    if (lua_isinteger(L, -1)) {
+        const auto value = static_cast<int>(lua_tointeger(L, -1));
+        if (value > 0) {
+            options.maxThreads = value;
+        }
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "requestTimeoutMs");
+    if (lua_isinteger(L, -1)) {
+        const long long value = lua_tointeger(L, -1);
+        if (value >= 0) {
+            options.requestTimeoutMs = value;
+        }
+    }
+    lua_pop(L, 1);
+
+    return options;
+}
 
 void HttpServerModule::install(lua_State* L) {
     luaL_requiref(L, "http", &HttpServerLuaBindings::luaOpen, 1);

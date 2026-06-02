@@ -6,6 +6,7 @@
 
 #include <lua.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -64,7 +65,17 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
     fs::create_directories(destDir);
     const fs::path destRoot = fs::canonical(fs::absolute(destDir));
 
+    // bound the entry count and the total expansion so a zip bomb cannot exhaust disk or inodes.
+    constexpr zip_uint64_t kMaxEntries = 100000;
+    constexpr std::uint64_t kMaxTotalBytes = 2ull * 1024 * 1024 * 1024;
+
     const zip_int64_t n = zip_get_num_entries(za, 0);
+    if (n < 0 || static_cast<zip_uint64_t>(n) > kMaxEntries) {
+        zip_discard(za);
+        throw std::runtime_error("[zip] The archive declares too many entries.");
+    }
+
+    std::uint64_t totalWritten = 0;
     for (zip_uint64_t i = 0; i < static_cast<zip_uint64_t>(n); ++i) {
         const char* name = zip_get_name(za, i, ZIP_FL_ENC_GUESS);
         if (name == nullptr) {
@@ -113,6 +124,12 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             }
             if (r == 0) {
                 break;
+            }
+            totalWritten += static_cast<std::uint64_t>(r);
+            if (totalWritten > kMaxTotalBytes) {
+                zip_fclose(zf);
+                zip_discard(za);
+                throw std::runtime_error("[zip] The archive expands beyond the allowed size.");
             }
             out.write(buf, static_cast<std::size_t>(r));
         }

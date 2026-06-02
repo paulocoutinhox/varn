@@ -11,7 +11,10 @@ public:
 
     static std::string serialize(lua_State* L, int index);
 
-private:
+    // node model: a table {name, attributes, children, text} round-trips between xml and lua.
+    static std::string encodeNode(lua_State* L, int index, int indent);
+    static bool parse(lua_State* L, const std::string& text);
+
     static std::string sanitizeElementName(const std::string& raw);
 };
 

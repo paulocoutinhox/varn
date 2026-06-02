@@ -26,6 +26,8 @@ list(APPEND VARN_SOURCES
 if(VARN_HTTP_SERVER_DRIVER STREQUAL "POCO")
     list(APPEND VARN_SOURCES
         "${CMAKE_CURRENT_LIST_DIR}/src/HttpServerModule.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/HttpAppModule.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/Router.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/StaticFileHandler.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/MimeTypes.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoHttpServer.cpp"

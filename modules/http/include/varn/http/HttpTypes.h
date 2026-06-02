@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -25,8 +26,14 @@ public:
     virtual ~HttpResponse() = default;
     virtual void setStatus(int statusCode) = 0;
     virtual void setHeader(const std::string& name, const std::string& value) = 0;
+    virtual void addHeader(const std::string& name, const std::string& value) = 0;
+    virtual void write(const std::string& chunk) = 0;
     virtual void end(const std::string& body) = 0;
     virtual bool ended() const = 0;
+
+    // streams a byte range of a file as the body so the transport reads it off the hot path.
+    // the default buffers, while a transport that can stream overrides this.
+    virtual void sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly);
 };
 
 class HttpServer {
@@ -44,10 +51,12 @@ struct HttpServerOptions {
     std::string keyFile;
     std::string publicDir = "apps/lua/public";
     bool servePublic = true;
+    bool directoryListing = false;
     int maxQueued = 65536;
     int maxThreads = 0;
     int keepAliveTimeoutSeconds = 30;
     int maxRequestBodyBytes = 16 * 1024 * 1024;
+    long long requestTimeoutMs = 30000;
 };
 
 using HttpHandler = std::function<void(const HttpRequest&, std::shared_ptr<HttpResponse>)>;

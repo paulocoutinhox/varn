@@ -8,11 +8,12 @@ namespace varn::http {
 
 class StaticFileHandler {
 public:
-    explicit StaticFileHandler(std::string publicDir);
+    StaticFileHandler(std::string publicDir, bool directoryListing);
     bool tryServe(const HttpRequest& request, HttpResponse& response) const;
 
 private:
     std::string publicDir_;
+    bool directoryListing_;
 };
 
 } // namespace varn::http

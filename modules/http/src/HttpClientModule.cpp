@@ -66,12 +66,34 @@ int HttpClientModule::luaClientRequest(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    int timeoutSeconds = 60;
+    varn::http::client::ClientRequestOptions options;
+
     lua_getfield(L, 1, "timeoutSeconds");
     if (lua_isinteger(L, -1)) {
-        timeoutSeconds = static_cast<int>(lua_tointeger(L, -1));
-        if (timeoutSeconds <= 0) {
-            timeoutSeconds = 60;
+        const int value = static_cast<int>(lua_tointeger(L, -1));
+        if (value > 0) {
+            options.timeoutSeconds = value;
+        }
+    }
+    lua_pop(L, 1);
+
+    // tls verification is on by default; insecure is an explicit, opt-in escape hatch for dev certs.
+    lua_getfield(L, 1, "verifyTls");
+    if (lua_isboolean(L, -1)) {
+        options.verifyTls = lua_toboolean(L, -1) != 0;
+    }
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "insecure");
+    if (lua_isboolean(L, -1) && lua_toboolean(L, -1) != 0) {
+        options.verifyTls = false;
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "maxResponseBytes");
+    if (lua_isinteger(L, -1)) {
+        const long long value = lua_tointeger(L, -1);
+        if (value > 0) {
+            options.maxResponseBytes = static_cast<std::size_t>(value);
         }
     }
     lua_pop(L, 1);
@@ -84,14 +106,14 @@ int HttpClientModule::luaClientRequest(lua_State* L) {
 #if VARN_HTTP_CLIENT_EMSCRIPTEN_FETCH_ASYNC
     try {
         varn::http::client::performRequestWireEmscriptenAsync(
-            promise, methodStr, urlStr, headers, body, timeoutSeconds);
+            promise, methodStr, urlStr, headers, body, options.timeoutSeconds);
     } catch (const std::exception& ex) {
         promise->reject(ex.what());
     }
 #else
-    rt.taskPool().post([promise, methodStr, urlStr, headers, body, timeoutSeconds] {
+    rt.taskPool().post([promise, methodStr, urlStr, headers, body, options] {
         try {
-            promise->resolve(varn::http::client::performRequestWire(methodStr, urlStr, headers, body, timeoutSeconds));
+            promise->resolve(varn::http::client::performRequestWire(methodStr, urlStr, headers, body, options));
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         }

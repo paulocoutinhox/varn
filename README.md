@@ -20,7 +20,7 @@ Varn is an all-in-one platform for building applications with Lua scripts, power
 
 Instead of assembling and wiring together separate pieces, you get one complete and coherent foundation that behaves the same whether it runs on a computer, a phone, or in the browser, so the focus stays on the product and not on the plumbing.
 
-## Quickstart
+## 🚀 Quickstart
 
 ```bash
 python3 varn.py build
@@ -41,35 +41,36 @@ end):listen(3000)
 
 Every feature ships with runnable examples under `modules/<module>/lua/examples/`.
 
-## Features
+## ✨ Features
 
 | Module | What you get |
 |----------------|--------------|
-| `http` | web server and client, static file serving, JSON and XML responses |
-| `socket` | network client and server connections |
-| `async` | background tasks, timers, and awaitable promises |
-| `fs` | read and write files, check what already exists |
-| `crypto` | hashing, signatures, and secure random data |
-| `zip` | create, extract, and list archives |
-| `ffi` | call functions from native libraries |
-| `platform` | system, architecture, processor, and path information |
-| `log` | leveled logging with debug, info, warn, and error |
+| 🌐 `http` | web server and client, static file serving, JSON and XML responses |
+| 🔌 `socket` | network client and server connections |
+| ⏳ `async` | background tasks, timers, and awaitable promises |
+| 📁 `fs` | read and write files, check what already exists |
+| 🔐 `crypto` | hashing, signatures, and secure random data |
+| 🗜️ `zip` | create, extract, and list archives |
+| 🧩 `ffi` | call functions from native libraries |
+| 🖥️ `platform` | system, architecture, processor, and path information |
+| 📝 `log` | leveled logging with debug, info, warn, and error |
 
 Full feature reference: [docs/lua-api.md](docs/lua-api.md).
 
-## Runs everywhere
+## 🌍 Runs everywhere
 
 The same scripts run on Linux, macOS, and Windows, on iPhone and Android, and in the browser. You can run them as a standalone app you launch, or embed them inside an app you already have.
 
-## Documentation
+## 📚 Documentation
 
 | Topic | File |
 |-------|------|
-| Feature reference | [docs/lua-api.md](docs/lua-api.md) |
-| Building and running | [docs/build.md](docs/build.md) |
-| Async and promises | [docs/async.md](docs/async.md) |
+| 📖 Feature reference | [docs/lua-api.md](docs/lua-api.md) |
+| 🛠️ Building and running | [docs/build.md](docs/build.md) |
+| ⏳ Async and promises | [docs/async.md](docs/async.md) |
+| 🔒 Safety notes | [docs/security.md](docs/security.md) |
 
-## Support
+## 💜 Support
 
 If this project saved you time, consider supporting it:
 [GitHub Sponsors](https://github.com/sponsors/paulocoutinhox) · [Ko-fi](https://ko-fi.com/paulocoutinho).
