@@ -54,8 +54,8 @@ Every module is independent and used through `require`, so you pull in only what
 | ⏳ `async` | background tasks, timers, and awaitable promises |
 | 📁 `fs` | read and write files, check what already exists |
 | 🔐 `crypto` | hashing, signatures, and secure random data |
-| 🧾 `json` | encode and decode JSON, on its own or as an http response |
-| 🧬 `xml` | encode and decode XML, on its own or as an http response |
+| 🧾 `json` | encode and decode JSON with a full Lua mapping |
+| 🧬 `xml` | encode and decode XML with a full Lua mapping |
 | 🗜️ `zip` | create, extract, and list archives |
 | 🧩 `ffi` | call functions from native libraries |
 | 🖥️ `platform` | system, architecture, processor, and path information |
