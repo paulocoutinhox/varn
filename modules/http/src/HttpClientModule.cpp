@@ -16,13 +16,11 @@ namespace varn::http {
 using varn::runtime::Runtime;
 using varn::async::Promise;
 
-namespace {
-
-Runtime& luaRuntime(lua_State* L) {
+Runtime& HttpClientModule::luaRuntime(lua_State* L) {
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
 }
 
-void readHeadersTable(lua_State* L, int absIndex, std::map<std::string, std::string>& out) {
+void HttpClientModule::readHeadersTable(lua_State* L, int absIndex, std::map<std::string, std::string>& out) {
     lua_pushnil(L);
     while (lua_next(L, absIndex) != 0) {
         // coerce a copy of the key so lua_next still sees the original on the next step.
@@ -35,8 +33,6 @@ void readHeadersTable(lua_State* L, int absIndex, std::map<std::string, std::str
         lua_pop(L, 2);
     }
 }
-
-} // namespace
 
 int HttpClientModule::luaClientRequest(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);

@@ -12,8 +12,6 @@
 
 namespace varn::socket {
 
-namespace {
-
 class PocoUdpSocket final : public UdpSocket {
 public:
     explicit PocoUdpSocket(Poco::Net::DatagramSocket socket) : socket_(std::move(socket)) {}
@@ -54,8 +52,6 @@ private:
     std::mutex mutex_;
     Poco::Net::DatagramSocket socket_;
 };
-
-} // namespace
 
 std::shared_ptr<UdpSocket> SocketTransport::bindUdpBlocking(const std::string& host, int port) {
     checkPort(port);

@@ -9,7 +9,7 @@ std::string performRequestWire(
     const std::string& /*url*/,
     const std::map<std::string, std::string>& /*headers*/,
     const std::string& /*body*/,
-    int /*timeoutSeconds*/) {
+    const ClientRequestOptions& /*options*/) {
     throw std::runtime_error("[http] The HTTP client is not available in this build.");
 }
 

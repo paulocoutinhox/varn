@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <optional>
 #include <regex>
 #include <string>
@@ -50,6 +51,15 @@ private:
     };
 
     bool pathMatches(const Route& route, const std::vector<std::string>& parts, std::vector<RouteParam>& outParams) const;
+
+    static std::string urlEncodeSegment(const std::string& value);
+    static std::vector<std::string> splitPath(const std::string& path);
+    static std::string toUpper(std::string value);
+    static std::regex compileConstraint(const std::string& spec);
+
+    // bounds the work an attacker-controlled path can drive through constraint regexes.
+    static constexpr std::size_t kMaxPathLength = 8192;
+    static constexpr std::size_t kMaxSegmentLength = 1024;
 
     std::vector<Route> routes_;
     std::unordered_map<std::string, int> namedRoutes_;

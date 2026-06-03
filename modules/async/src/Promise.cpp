@@ -8,13 +8,11 @@ namespace varn::async {
 
 using varn::runtime::Runtime;
 
-namespace {
 constexpr const char* PromiseMeta = "varn.Promise";
 
 struct PromiseUserdata {
     std::shared_ptr<Promise> promise;
 };
-} // namespace
 
 int Promise::luaGc(lua_State* L) {
     auto* userdata = static_cast<PromiseUserdata*>(luaL_checkudata(L, 1, PromiseMeta));

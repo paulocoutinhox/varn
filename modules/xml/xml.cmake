@@ -10,7 +10,10 @@ list(APPEND VARN_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/XmlModule.cpp")
 
 if(VARN_XML_DRIVER STREQUAL "PUGIXML")
-    list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/pugixml/PugixmlXmlSerializer.cpp")
+    list(APPEND VARN_SOURCES
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/pugixml/PugixmlXmlSerializer.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/pugixml/PugixmlXmlConvert.cpp"
+    )
     set(VARN_NEEDS_PUGIXML ON)
 else()
     list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/dummy/DummyXmlSerializer.cpp")

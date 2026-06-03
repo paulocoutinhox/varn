@@ -8,10 +8,8 @@
 
 namespace varn::json {
 
-namespace {
-
 // reads the indent width from the options table: an explicit indent, or 2 when pretty is set.
-int readIndent(lua_State* L, int optsIndex) {
+int JsonModule::readIndent(lua_State* L, int optsIndex) {
     if (!lua_istable(L, optsIndex)) {
         return 0;
     }
@@ -32,8 +30,6 @@ int readIndent(lua_State* L, int optsIndex) {
 
     return indent;
 }
-
-} // namespace
 
 int JsonModule::luaEncode(lua_State* L) {
     // the value at index 1 is encoded, with an optional options table at index 2 for pretty-printing.

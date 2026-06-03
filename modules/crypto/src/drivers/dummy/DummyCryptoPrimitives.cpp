@@ -10,22 +10,16 @@
 
 namespace varn::crypto {
 
-namespace {
-[[noreturn]] void disabled() {
-    throw std::runtime_error("[crypto] The crypto module is not available in this build.");
-}
-} // namespace
-
 std::string CryptoPrimitives::digest(std::string_view /*algorithm*/, std::string_view /*data*/, bool /*outputHex*/) {
-    disabled();
+    throw std::runtime_error("[crypto] The crypto module is not available in this build.");
 }
 
 std::string CryptoPrimitives::hmac(std::string_view /*digestAlgorithm*/, std::string_view /*key*/, std::string_view /*data*/, bool /*outputHex*/) {
-    disabled();
+    throw std::runtime_error("[crypto] The crypto module is not available in this build.");
 }
 
 std::string CryptoPrimitives::randomBytes(std::size_t /*count*/) {
-    disabled();
+    throw std::runtime_error("[crypto] The crypto module is not available in this build.");
 }
 
 } // namespace varn::crypto

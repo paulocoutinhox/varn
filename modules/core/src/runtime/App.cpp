@@ -8,13 +8,9 @@
 
 namespace varn::runtime {
 
-namespace {
-
-bool isEvalFlag(std::string_view flag) {
+bool App::isEvalFlag(std::string_view flag) {
     return flag == "-e" || flag == "--eval";
 }
-
-} // namespace
 
 int App::run(int argc, char** argv) {
     if (argc < 2) {

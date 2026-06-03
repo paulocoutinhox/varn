@@ -34,9 +34,11 @@ A working web server in a few lines:
 ```lua
 local http = require("http")
 
-http.createServer(function(req, res)
+local server = http.createServer(function(req, res)
     res:json({ hello = req.query.name or "world" })
-end):listen(3000)
+end)
+
+server:listen(3000)
 ```
 
 Every feature ships with runnable examples under `modules/<module>/lua/examples/`.

@@ -16,13 +16,9 @@ namespace varn::socket {
 using varn::runtime::Runtime;
 using varn::async::Promise;
 
-namespace {
-
 constexpr const char* kTcpSocketMeta = "varn.TcpSocket";
 constexpr const char* kTcpListenerMeta = "varn.TcpListener";
 constexpr const char* kUdpSocketMeta = "varn.UdpSocket";
-
-} // namespace
 
 Runtime& SocketModule::luaRuntime(lua_State* L) {
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));

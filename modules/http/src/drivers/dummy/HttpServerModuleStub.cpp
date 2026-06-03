@@ -9,8 +9,6 @@
 
 namespace varn::http {
 
-namespace {
-
 class HttpServerLuaStub {
 public:
     static int luaOpen(lua_State* L);
@@ -30,8 +28,6 @@ int HttpServerLuaStub::luaOpen(lua_State* L) {
     HttpClientModule::registerClient(L);
     return 1;
 }
-
-} // namespace
 
 void HttpServerModule::install(lua_State* L) {
     luaL_requiref(L, "http", &HttpServerLuaStub::luaOpen, 1);

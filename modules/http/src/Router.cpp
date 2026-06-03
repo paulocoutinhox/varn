@@ -5,13 +5,7 @@
 
 namespace varn::http {
 
-namespace {
-
-// bounds the work an attacker-controlled path can drive through constraint regexes.
-constexpr std::size_t kMaxPathLength = 8192;
-constexpr std::size_t kMaxSegmentLength = 1024;
-
-std::string urlEncodeSegment(const std::string& value) {
+std::string Router::urlEncodeSegment(const std::string& value) {
     static const char* hex = "0123456789ABCDEF";
     std::string out;
     out.reserve(value.size());
@@ -29,7 +23,7 @@ std::string urlEncodeSegment(const std::string& value) {
     return out;
 }
 
-std::vector<std::string> splitPath(const std::string& path) {
+std::vector<std::string> Router::splitPath(const std::string& path) {
     std::vector<std::string> parts;
     std::string current;
 
@@ -51,14 +45,14 @@ std::vector<std::string> splitPath(const std::string& path) {
     return parts;
 }
 
-std::string toUpper(std::string value) {
+std::string Router::toUpper(std::string value) {
     for (char& c : value) {
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
     return value;
 }
 
-std::regex compileConstraint(const std::string& spec) {
+std::regex Router::compileConstraint(const std::string& spec) {
     if (spec == "int") return std::regex("[0-9]+");
     if (spec == "alpha") return std::regex("[A-Za-z]+");
     if (spec == "alnum") return std::regex("[A-Za-z0-9]+");
@@ -66,8 +60,6 @@ std::regex compileConstraint(const std::string& spec) {
     if (spec == "uuid") return std::regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
     return std::regex(spec);
 }
-
-} // namespace
 
 int Router::add(const std::string& method, const std::string& pattern) {
     Route route;

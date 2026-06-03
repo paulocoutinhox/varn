@@ -8,10 +8,8 @@
 
 namespace varn::xml {
 
-namespace {
-
 // reads the indent width from the options table: an explicit indent, or 2 when pretty is set.
-int readIndent(lua_State* L, int optsIndex) {
+int XmlModule::readIndent(lua_State* L, int optsIndex) {
     if (!lua_istable(L, optsIndex)) {
         return 0;
     }
@@ -32,8 +30,6 @@ int readIndent(lua_State* L, int optsIndex) {
 
     return indent;
 }
-
-} // namespace
 
 int XmlModule::luaEncode(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);

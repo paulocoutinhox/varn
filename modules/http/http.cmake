@@ -27,10 +27,17 @@ if(VARN_HTTP_SERVER_DRIVER STREQUAL "POCO")
     list(APPEND VARN_SOURCES
         "${CMAKE_CURRENT_LIST_DIR}/src/HttpServerModule.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/HttpAppModule.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/HttpText.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/HttpUrlForm.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/HttpMultipart.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/HttpToken.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/Router.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/StaticFileHandler.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/StaticContent.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/MimeTypes.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoHttpServer.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoRequestReader.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/TlsServerContext.cpp"
     )
     set(VARN_NEEDS_POCO ON)
 else()
@@ -39,7 +46,10 @@ endif()
 
 # outbound client transport
 if(VARN_HTTP_CLIENT_DRIVER STREQUAL "POCO")
-    list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoHttpClient.cpp")
+    list(APPEND VARN_SOURCES
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoHttpClient.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoClientExchange.cpp"
+    )
     set(VARN_NEEDS_POCO ON)
 elseif(VARN_HTTP_CLIENT_DRIVER STREQUAL "EMSCRIPTEN_FETCH")
     list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/emscripten_fetch/EmscriptenFetchHttpClient.cpp")

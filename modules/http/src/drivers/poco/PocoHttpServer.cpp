@@ -2,142 +2,32 @@
 #include "varn/http/drivers/poco/PocoHttpServer.h"
 #include "varn/runtime/Runtime.h"
 
-#include <Poco/Net/HTMLForm.h>
-#include <Poco/Net/HTTPCookie.h>
+#include "PocoRequestReader.h"
+#include "TlsServerContext.h"
+
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/MediaType.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/URI.h>
 
 #ifdef VARN_ENABLE_TLS
-#include <Poco/Crypto/OpenSSLInitializer.h>
-#include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/Context.h>
-#include <Poco/Net/KeyFileHandler.h>
-#include <Poco/Net/SSLManager.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
 
 #include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
 #include <fstream>
 #include <string>
-#include <string_view>
-#include <filesystem>
-#include <iostream>
-#include <sstream>
-#include <stdexcept>
 
 namespace varn::http {
 
 using varn::runtime::Runtime;
-
-namespace {
-
-std::map<std::string, std::string> extractHeaders(const Poco::Net::HTTPRequest& request) {
-    std::map<std::string, std::string> headers;
-
-    for (auto it = request.begin(); it != request.end(); ++it) {
-        headers[it->first] = it->second;
-    }
-
-    return headers;
-}
-
-std::map<std::string, std::string> extractQuery(const Poco::URI& uri) {
-    std::map<std::string, std::string> query;
-    Poco::URI::QueryParameters params = uri.getQueryParameters();
-
-    for (const auto& param : params) {
-        query[param.first] = param.second;
-    }
-
-    return query;
-}
-
-std::map<std::string, std::string> extractCookies(const Poco::Net::HTTPServerRequest& request) {
-    std::map<std::string, std::string> cookies;
-    Poco::Net::NameValueCollection values;
-
-    try {
-        request.getCookies(values);
-        for (auto it = values.begin(); it != values.end(); ++it) {
-            cookies[it->first] = it->second;
-        }
-    } catch (const std::exception& ex) {
-        log::Log::line("http", std::string("The cookie header was rejected. ") + ex.what());
-    }
-
-    return cookies;
-}
-
-struct RequestBodyTooLarge : std::runtime_error {
-    RequestBodyTooLarge() : std::runtime_error("[http] The request body is too large.") {}
-};
-
-std::string stripHeaderControl(const std::string& value) {
-    std::string out;
-    out.reserve(value.size());
-    for (char c : value) {
-        // drop every control octet, not just cr and lf, to prevent header smuggling.
-        const unsigned char u = static_cast<unsigned char>(c);
-        if (u >= 0x20 && u != 0x7f) {
-            out += c;
-        }
-    }
-    return out;
-}
-
-std::string readBody(Poco::Net::HTTPServerRequest& request, int maxBytes) {
-    std::istream& input = request.stream();
-    std::ostringstream body;
-    char buffer[8192];
-    std::size_t total = 0;
-
-    while (input.good()) {
-        input.read(buffer, sizeof(buffer));
-        std::streamsize count = input.gcount();
-        if (count <= 0) {
-            break;
-        }
-
-        total += static_cast<std::size_t>(count);
-        if (total > static_cast<std::size_t>(maxBytes)) {
-            throw RequestBodyTooLarge();
-        }
-
-        body.write(buffer, count);
-    }
-
-    return body.str();
-}
-
-HttpRequest convertRequest(Poco::Net::HTTPServerRequest& request, const HttpServerOptions& opts) {
-    Poco::URI uri(request.getURI());
-
-    HttpRequest out;
-    out.host = request.getHost();
-    out.method = request.getMethod();
-    out.target = request.getURI();
-    out.path = uri.getPath().empty() ? "/" : uri.getPath();
-    out.queryString = uri.getRawQuery();
-    out.headers = extractHeaders(request);
-    out.cookies = extractCookies(request);
-    out.query = extractQuery(uri);
-    out.remoteAddress = request.clientAddress().toString();
-    out.body = readBody(request, opts.maxRequestBodyBytes);
-
-    return out;
-}
 
 class VarnRequestHandler final : public Poco::Net::HTTPRequestHandler {
 public:
@@ -154,7 +44,7 @@ public:
             }
 
             auto deferredResponse = std::make_shared<PocoDeferredResponse>(stopping, httpOptions.requestTimeoutMs);
-            HttpRequest inboundRequest = convertRequest(request, httpOptions);
+            HttpRequest inboundRequest = PocoRequestReader::convert(request, httpOptions);
 
             if (httpOptions.servePublic && publicFiles.tryServe(inboundRequest, *deferredResponse)) {
                 deferredResponse->flushTo(response);
@@ -203,103 +93,6 @@ private:
     std::shared_ptr<std::atomic<bool>> stopping;
 };
 
-#ifdef VARN_ENABLE_TLS
-namespace {
-
-#if defined(_WIN32)
-bool endsWithIgnoreCase(std::string_view value, std::string_view suffix) {
-    if (value.size() < suffix.size()) {
-        return false;
-    }
-    for (std::size_t i = 0; i < suffix.size(); ++i) {
-        const unsigned char a = static_cast<unsigned char>(value[value.size() - suffix.size() + i]);
-        const unsigned char b = static_cast<unsigned char>(suffix[i]);
-        if (std::tolower(a) != std::tolower(b)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool pathLooksLikePkcs12(const std::string& path) {
-    return endsWithIgnoreCase(path, ".pfx") || endsWithIgnoreCase(path, ".p12");
-}
-#endif
-
-} // namespace
-
-void requireTlsKeyMaterialExists(const HttpServerOptions& opts) {
-    if (opts.keyFile.empty() || opts.certFile.empty()) {
-        throw std::runtime_error("[http] TLS is enabled but the key or certificate path is empty.");
-    }
-    for (const auto& path : {opts.keyFile, opts.certFile}) {
-        if (!std::filesystem::exists(path)) {
-            throw std::runtime_error("[http] A TLS key or certificate file was not found.");
-        }
-    }
-}
-
-Poco::Net::Context::Ptr createTlsServerContext(const HttpServerOptions& opts) {
-    requireTlsKeyMaterialExists(opts);
-
-    static Poco::Crypto::OpenSSLInitializer openSslInitializer;
-
-    // a modern suite of forward-secret aead ciphers, leaving tls 1.3 to negotiate its own.
-    constexpr const char* kCipherList =
-        "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
-        "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
-        "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
-        "DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
-
-#if defined(_WIN32)
-    // windows tls uses one pkcs12 bundle instead of separate pem key and certificate paths
-    std::string pkcs12Path;
-    if (pathLooksLikePkcs12(opts.certFile)) {
-        pkcs12Path = opts.certFile;
-    } else if (pathLooksLikePkcs12(opts.keyFile)) {
-        pkcs12Path = opts.keyFile;
-    } else {
-        throw std::runtime_error("[http] On Windows the TLS certificate must be a single bundle file.");
-    }
-    const int winOptions = Poco::Net::Context::OPT_DEFAULTS | Poco::Net::Context::OPT_LOAD_CERT_FROM_FILE;
-    Poco::Net::Context::Ptr context = new Poco::Net::Context(
-        Poco::Net::Context::TLS_SERVER_USE,
-        pkcs12Path,
-        Poco::Net::Context::VERIFY_NONE,
-        winOptions,
-        Poco::Net::Context::CERT_STORE_MY);
-#else
-    Poco::Net::Context::Ptr context = new Poco::Net::Context(
-        Poco::Net::Context::TLS_SERVER_USE,
-        opts.keyFile,
-        opts.certFile,
-        "",
-        Poco::Net::Context::VERIFY_NONE,
-        9,
-        true,
-        kCipherList);
-#endif
-
-    // refuse the legacy protocols that modern deployments must not negotiate.
-    context->requireMinimumProtocol(Poco::Net::Context::PROTO_TLSV1_2);
-    return context;
-}
-
-void initializeSslManagerForServer(Poco::Net::Context::Ptr context) {
-    auto privateKeyHandler = Poco::SharedPtr<Poco::Net::PrivateKeyPassphraseHandler>(
-        new Poco::Net::KeyFileHandler(false)
-    );
-
-    auto invalidCertHandler = Poco::SharedPtr<Poco::Net::InvalidCertificateHandler>(
-        new Poco::Net::AcceptCertificateHandler(false)
-    );
-
-    Poco::Net::SSLManager::instance().initializeServer(privateKeyHandler, invalidCertHandler, context);
-}
-#endif
-
-} // namespace
-
 PocoHttpServer::PocoHttpServer(Runtime& rt, HttpServerOptions opts, HttpHandler onRequest, WebSocketUpgrade onUpgrade)
     : runtime(rt), serverOptions(std::move(opts)), httpHandler(std::move(onRequest)), upgradeHandler(std::move(onUpgrade)) {}
 
@@ -329,8 +122,8 @@ void PocoHttpServer::start() {
 
 #ifdef VARN_ENABLE_TLS
     if (serverOptions.tls) {
-        Poco::Net::Context::Ptr tlsContext = createTlsServerContext(serverOptions);
-        initializeSslManagerForServer(tlsContext);
+        Poco::Net::Context::Ptr tlsContext = TlsServerContext::create(serverOptions);
+        TlsServerContext::initializeSslManager(tlsContext);
 
         const Poco::Net::SecureServerSocket listeningSocket(socketAddress, listenBacklog, tlsContext);
         server = std::make_unique<Poco::Net::HTTPServer>(factory, listeningSocket, params);
@@ -361,14 +154,27 @@ void PocoDeferredResponse::setStatus(int code) {
     statusCode = code;
 }
 
+// drops every control octet, not just cr and lf, to prevent header smuggling.
+std::string PocoDeferredResponse::sanitizeHeader(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char c : value) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        if (u >= 0x20 && u != 0x7f) {
+            out += c;
+        }
+    }
+    return out;
+}
+
 void PocoDeferredResponse::setHeader(const std::string& name, const std::string& value) {
     std::lock_guard<std::mutex> lock(sync);
-    headerMap[stripHeaderControl(name)] = stripHeaderControl(value);
+    headerMap[sanitizeHeader(name)] = sanitizeHeader(value);
 }
 
 void PocoDeferredResponse::addHeader(const std::string& name, const std::string& value) {
     std::lock_guard<std::mutex> lock(sync);
-    extraHeaders.emplace_back(stripHeaderControl(name), stripHeaderControl(value));
+    extraHeaders.emplace_back(sanitizeHeader(name), sanitizeHeader(value));
 }
 
 void PocoDeferredResponse::write(const std::string& chunk) {

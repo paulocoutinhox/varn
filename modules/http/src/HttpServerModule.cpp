@@ -24,8 +24,6 @@ namespace varn::http {
 
 using varn::runtime::Runtime;
 
-namespace {
-
 class HttpServerLuaBindings {
 public:
     static int luaOpen(lua_State* L);
@@ -87,8 +85,7 @@ int HttpServerLuaBindings::luaResponseGc(lua_State* L) {
 
 int HttpServerLuaBindings::luaResponseStatus(lua_State* L) {
     auto* userdata = checkResponse(L);
-    int status = luaL_checkinteger(L, 2);
-    userdata->response->setStatus(status);
+    userdata->response->setStatus(static_cast<int>(luaL_checkinteger(L, 2)));
     return 0;
 }
 
@@ -146,9 +143,9 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
     if (lua_isinteger(L, 2)) {
         options.port = lua_tointeger(L, 2);
     } else if (lua_istable(L, 2)) {
-        options = readListenOptions(L, 2);
+        options = HttpServerModule::readListenOptions(L, 2);
     } else {
-        options = readListenOptions(L, 3);
+        options = HttpServerModule::readListenOptions(L, 3);
     }
 
     Runtime& rt = *builder->runtime;
@@ -167,7 +164,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
             lua_rawgeti(mainState, LUA_REGISTRYINDEX, persistedHandlerRef);
             lua_xmove(mainState, thread, 1);
 
-            pushRequestTable(thread, request);
+            HttpServerModule::pushRequestTable(thread, request);
             HttpServerLuaBindings::pushResponse(thread, response);
 
             int nres = 0;
@@ -275,9 +272,7 @@ int HttpServerLuaBindings::luaOpen(lua_State* L) {
     return 1;
 }
 
-} // namespace
-
-void pushRequestTable(lua_State* L, const HttpRequest& request) {
+void HttpServerModule::pushRequestTable(lua_State* L, const HttpRequest& request) {
     lua_newtable(L);
 
     lua_pushlstring(L, request.host.data(), request.host.size());
@@ -311,7 +306,7 @@ void pushRequestTable(lua_State* L, const HttpRequest& request) {
     lua_setfield(L, -2, "query");
 }
 
-HttpServerOptions readListenOptions(lua_State* L, int index) {
+HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index) {
     HttpServerOptions options;
 
     const char* envPort = std::getenv("VARN_PORT");

@@ -60,6 +60,7 @@ public:
     void flushTo(Poco::Net::HTTPServerResponse& response);
 
 private:
+    static std::string sanitizeHeader(const std::string& value);
     void writeHeaders(Poco::Net::HTTPServerResponse& response);
     void streamFile(Poco::Net::HTTPServerResponse& response, const std::string& path, std::uint64_t start,
                     std::uint64_t length, bool headersOnly);

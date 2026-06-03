@@ -6,14 +6,6 @@
 #include <string>
 #include <vector>
 
-namespace {
-
-varn::runtime::Runtime* asRuntime(varn_runtime* handle) {
-    return reinterpret_cast<varn::runtime::Runtime*>(handle);
-}
-
-} // namespace
-
 extern "C" {
 
 varn_runtime* varn_runtime_new(void) {
@@ -30,7 +22,7 @@ int varn_runtime_run_file(varn_runtime* runtime, const char* path) {
         return 2;
     }
     try {
-        return asRuntime(runtime)->runScript(path);
+        return reinterpret_cast<varn::runtime::Runtime*>(runtime)->runScript(path);
     } catch (...) {
         return 1;
     }
@@ -41,7 +33,7 @@ int varn_runtime_run_string(varn_runtime* runtime, const char* source, const cha
         return 2;
     }
     try {
-        return asRuntime(runtime)->runString(source, chunk_name ? chunk_name : "=(embedded)");
+        return reinterpret_cast<varn::runtime::Runtime*>(runtime)->runString(source, chunk_name ? chunk_name : "=(embedded)");
     } catch (...) {
         return 1;
     }
@@ -49,12 +41,12 @@ int varn_runtime_run_string(varn_runtime* runtime, const char* source, const cha
 
 void varn_runtime_stop(varn_runtime* runtime) {
     if (runtime) {
-        asRuntime(runtime)->stop();
+        reinterpret_cast<varn::runtime::Runtime*>(runtime)->stop();
     }
 }
 
 void varn_runtime_free(varn_runtime* runtime) {
-    delete asRuntime(runtime);
+    delete reinterpret_cast<varn::runtime::Runtime*>(runtime);
 }
 
 const char* varn_version(void) {

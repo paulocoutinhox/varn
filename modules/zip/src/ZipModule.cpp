@@ -183,8 +183,13 @@ std::vector<std::string> ZipModule::performList(const std::string& zipPath) {
         throw std::runtime_error("[zip] The archive could not be opened.");
     }
 
-    std::vector<std::string> names;
     const zip_int64_t n = zip_get_num_entries(za, 0);
+    if (n < 0) {
+        zip_discard(za);
+        throw std::runtime_error("[zip] The archive directory could not be read.");
+    }
+
+    std::vector<std::string> names;
     for (zip_uint64_t i = 0; i < static_cast<zip_uint64_t>(n); ++i) {
         const char* name = zip_get_name(za, i, ZIP_FL_ENC_GUESS);
         if (name == nullptr) {

@@ -21,10 +21,6 @@ namespace varn::http::client {
 
 using varn::async::Promise;
 
-static std::string buildWire(int status, const std::string& body) {
-    return "VARN/1 " + std::to_string(status) + " " + std::to_string(body.size()) + "\n" + body;
-}
-
 struct FetchContext {
     std::shared_ptr<Promise> promise;
     std::string method;
@@ -33,25 +29,33 @@ struct FetchContext {
     std::string headersJson;
 };
 
-static void finishSuccess(FetchContext* ctx, int status, const void* data, size_t numBytes) {
-    std::string respBody;
-    if (data != nullptr && numBytes > 0) {
-        respBody.assign(static_cast<const char*>(data), numBytes);
+class FetchResult {
+public:
+    static void succeed(FetchContext* ctx, int status, const void* data, size_t numBytes) {
+        std::string respBody;
+        if (data != nullptr && numBytes > 0) {
+            respBody.assign(static_cast<const char*>(data), numBytes);
+        }
+        try {
+            ctx->promise->resolve(wire(status, respBody));
+        } catch (...) {
+        }
+        delete ctx;
     }
-    try {
-        ctx->promise->resolve(buildWire(status, respBody));
-    } catch (...) {
-    }
-    delete ctx;
-}
 
-static void finishError(FetchContext* ctx, const std::string& message) {
-    try {
-        ctx->promise->reject(message);
-    } catch (...) {
+    static void fail(FetchContext* ctx, const std::string& message) {
+        try {
+            ctx->promise->reject(message);
+        } catch (...) {
+        }
+        delete ctx;
     }
-    delete ctx;
-}
+
+private:
+    static std::string wire(int status, const std::string& body) {
+        return "VARN/1 " + std::to_string(status) + " " + std::to_string(body.size()) + "\n" + body;
+    }
+};
 
 extern "C" {
 
@@ -61,7 +65,7 @@ EMSCRIPTEN_KEEPALIVE void varn_fetch_js_on_success(uintptr_t ctxHandle, int http
     const void* data = (bodyLen > 0 && bodyPtr != 0) ? reinterpret_cast<const void*>(bodyPtr) : nullptr;
     if (ctx != nullptr) {
         try {
-            finishSuccess(ctx, httpStatus, data, bodyLen);
+            FetchResult::succeed(ctx, httpStatus, data, bodyLen);
         } catch (...) {
         }
     }
@@ -82,7 +86,7 @@ EMSCRIPTEN_KEEPALIVE void varn_fetch_js_on_error(uintptr_t ctxHandle, uintptr_t 
     }
     if (ctx != nullptr) {
         try {
-            finishError(ctx, copy);
+            FetchResult::fail(ctx, copy);
         } catch (...) {
         }
     }

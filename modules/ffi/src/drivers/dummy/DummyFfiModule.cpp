@@ -1,35 +1,38 @@
 #include <lua.hpp>
 
-namespace {
+namespace varn::ffi {
 
-int ffiDisabled(lua_State* L) {
-    return luaL_error(L, "[ffi] The FFI module is not available in this build.");
-}
+class DummyFfi {
+public:
+    static int disabled(lua_State* L) {
+        return luaL_error(L, "[ffi] The FFI module is not available in this build.");
+    }
 
-constexpr luaL_Reg kFfiLib[] = {
-    {"cdef", ffiDisabled},
-    {"load", ffiDisabled},
-    {"new", ffiDisabled},
-    {"cast", ffiDisabled},
-    {"metatype", ffiDisabled},
-    {"typeof", ffiDisabled},
-    {"addressof", ffiDisabled},
-    {"gc", ffiDisabled},
-    {"sizeof", ffiDisabled},
-    {"offsetof", ffiDisabled},
-    {"istype", ffiDisabled},
-    {"tonumber", ffiDisabled},
-    {"string", ffiDisabled},
-    {"copy", ffiDisabled},
-    {"fill", ffiDisabled},
-    {"errno", ffiDisabled},
-    {nullptr, nullptr},
+    static constexpr luaL_Reg lib[] = {
+        {"cdef", disabled},
+        {"load", disabled},
+        {"new", disabled},
+        {"cast", disabled},
+        {"metatype", disabled},
+        {"typeof", disabled},
+        {"addressof", disabled},
+        {"gc", disabled},
+        {"sizeof", disabled},
+        {"offsetof", disabled},
+        {"istype", disabled},
+        {"tonumber", disabled},
+        {"string", disabled},
+        {"copy", disabled},
+        {"fill", disabled},
+        {"errno", disabled},
+        {nullptr, nullptr},
+    };
 };
 
-} // namespace
+} // namespace varn::ffi
 
 extern "C" int luaopen_ffi_dummy(lua_State* L) {
-    luaL_newlib(L, kFfiLib);
+    luaL_newlib(L, varn::ffi::DummyFfi::lib);
     lua_pushliteral(L, "0-dummy");
     lua_setfield(L, -2, "VERSION");
     lua_pushnil(L);

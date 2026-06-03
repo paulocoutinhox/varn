@@ -25,11 +25,7 @@
 
 namespace varn::crypto {
 
-namespace {
-
 constexpr std::size_t kMaxDigestInputBytes = 256u * 1024u * 1024u;
-
-} // namespace
 
 std::string CryptoPrimitives::trimAlgo(std::string_view in) {
     while (!in.empty() && (in.front() == ' ' || in.front() == '\t')) {

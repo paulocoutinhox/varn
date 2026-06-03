@@ -5,18 +5,12 @@
 
 namespace varn::fs {
 
-namespace {
-[[noreturn]] void disabled() {
-    throw std::runtime_error("[fs] The file system module is not available in this build.");
-}
-} // namespace
-
 std::string FsStorage::readAll(const std::string& /*path*/) {
-    disabled();
+    throw std::runtime_error("[fs] The file system module is not available in this build.");
 }
 
 void FsStorage::writeAll(const std::string& /*path*/, const std::string& /*content*/) {
-    disabled();
+    throw std::runtime_error("[fs] The file system module is not available in this build.");
 }
 
 bool FsStorage::exists(const std::string& /*path*/) {

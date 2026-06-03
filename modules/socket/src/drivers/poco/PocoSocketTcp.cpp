@@ -15,8 +15,6 @@
 
 namespace varn::socket {
 
-namespace {
-
 class PocoTcpConnection final : public TcpConnection {
 public:
     explicit PocoTcpConnection(Poco::Net::StreamSocket socket) : socket_(std::move(socket)) {}
@@ -90,8 +88,6 @@ private:
     std::mutex mutex_;
     Poco::Net::ServerSocket server_;
 };
-
-} // namespace
 
 void SocketTransport::checkPort(int port) {
     if (port <= 0 || port > 65535) {

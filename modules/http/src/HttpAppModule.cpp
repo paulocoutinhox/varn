@@ -5,6 +5,11 @@
 #include "varn/http/Router.h"
 #include "varn/http/StaticFileHandler.h"
 #include "varn/http/drivers/poco/PocoHttpServer.h"
+
+#include "HttpMultipart.h"
+#include "HttpText.h"
+#include "HttpToken.h"
+#include "HttpUrlForm.h"
 #include "varn/crypto/CryptoPrimitives.h"
 #include "varn/log/Log.h"
 #include "varn/lua/LuaHelpers.h"
@@ -46,15 +51,11 @@ namespace varn::http {
 using varn::lua::LuaHelpers;
 using varn::runtime::Runtime;
 
-namespace {
-
 constexpr const char* kAppMeta = "varn.HttpApp";
 constexpr const char* kGroupMeta = "varn.HttpGroup";
 constexpr const char* kRouteMeta = "varn.HttpRoute";
 constexpr const char* kContextMeta = "varn.HttpContext";
 constexpr const char* kWsConnMeta = "varn.HttpWsConn";
-
-bool constantTimeEqual(const std::string& a, const std::string& b);
 
 struct Group {
     std::string fullPrefix;
@@ -199,19 +200,125 @@ struct Target {
     int groupId = 0;
 };
 
-AppUserdata* checkApp(lua_State* L) {
+class HttpApp {
+public:
+    static AppUserdata* checkApp(lua_State* L);
+    static RouteUserdata* checkRoute(lua_State* L);
+    static ContextUserdata* checkContext(lua_State* L);
+    static Target resolveTarget(lua_State* L);
+    static void pushRoute(lua_State* L, std::shared_ptr<AppState> state, int routeId);
+    static std::string findContentType(const HttpRequest& request);
+    static long long nowMs();
+    static std::string randomSessionId();
+    static void sweepSessions(AppState& app, lua_State* L, long long now);
+    static void evictOldestSession(AppState& app, lua_State* L);
+    static int luaContextStatus(lua_State* L);
+    static int luaContextHeader(lua_State* L);
+    static int luaContextType(lua_State* L);
+    static int luaContextText(lua_State* L);
+    static int luaContextHtml(lua_State* L);
+    static int luaContextWrite(lua_State* L);
+    static int luaContextSend(lua_State* L);
+    static int luaContextRedirect(lua_State* L);
+    static bool invalidCookieToken(const std::string& token);
+    static bool invalidCookieAttribute(const std::string& value);
+    static int luaContextCookie(lua_State* L);
+    static int luaContextBody(lua_State* L);
+    static int luaContextSession(lua_State* L);
+    static int luaContextRegenerateSession(lua_State* L);
+    static std::string contentDispositionAttachment(const std::string& filename);
+    static int luaContextFile(lua_State* L);
+    static int luaContextJson(lua_State* L);
+    static int luaContextXml(lua_State* L);
+    static int luaContextIndex(lua_State* L);
+    static int luaContextGc(lua_State* L);
+    static int terminalNotFound(lua_State* L);
+    static int terminalMethodNotAllowed(lua_State* L);
+    static int terminalAutoOptions(lua_State* L);
+    static int chainContinue(lua_State* L, int status, lua_KContext ctx);
+    static int chainNext(lua_State* L);
+    static void pushContext(lua_State* L, std::shared_ptr<AppState> app, const HttpRequest& request, const MatchResult& match, std::shared_ptr<HttpResponse> response);
+    static int buildChain(lua_State* L, int chainIndex, const std::shared_ptr<AppState>& app, const MatchResult& match, const std::string& method);
+    static int dispatchFinalize(lua_State* L, int status, lua_KContext kctx);
+    static int dispatchBody(lua_State* L);
+    static void runDispatch(const std::shared_ptr<AppState>& app, const HttpRequest& request, std::shared_ptr<HttpResponse> response);
+    static std::string optString(lua_State* L, int optsIdx, const char* key, const std::string& fallback);
+    static bool optBool(lua_State* L, int optsIdx, const char* key, bool fallback);
+    static long long optInt(lua_State* L, int optsIdx, const char* key, long long fallback);
+    static std::string requestField(lua_State* L, const char* field);
+    static std::string requestHeaderCI(lua_State* L, const std::string& name);
+    static std::string clientIp(lua_State* L, bool trustProxy);
+    static void continueChain(lua_State* L);
+    static int corsMiddleware(lua_State* L);
+    static int securityHeadersMiddleware(lua_State* L);
+    static int apiKeyMiddleware(lua_State* L);
+    static int rateLimitMiddleware(lua_State* L);
+    static int luaCors(lua_State* L);
+    static int luaSecurityHeaders(lua_State* L);
+    static int luaApiKey(lua_State* L);
+    static int luaRateLimit(lua_State* L);
+    static int luaJwtSign(lua_State* L);
+    static int luaJwtVerify(lua_State* L);
+    static int jwtAuthMiddleware(lua_State* L);
+    static int requireAuthMiddleware(lua_State* L);
+    static int requireRoleMiddleware(lua_State* L);
+    static int csrfMiddleware(lua_State* L);
+    static int luaJwtAuth(lua_State* L);
+    static int luaRequireAuth(lua_State* L);
+    static int luaRequireRole(lua_State* L);
+    static int luaCsrf(lua_State* L);
+    static WsConnUserdata* checkWsConn(lua_State* L);
+    static int luaWsSend(lua_State* L);
+    static int luaWsClose(lua_State* L);
+    static int luaWsGc(lua_State* L);
+    static void pushWsConn(lua_State* L, std::shared_ptr<WsConnState> conn);
+    static bool wsClosed(const std::shared_ptr<WsConnState>& conn);
+    static void wsFlush(Poco::Net::WebSocket& socket, const std::shared_ptr<WsConnState>& conn);
+    static void waitForMainLoop(std::future<void>& ready, const std::shared_ptr<std::atomic<bool>>& stopping);
+    static void wsInvoke(const std::shared_ptr<AppState>& app, int ref, std::shared_ptr<WsConnState> conn, bool hasData, std::string data, const std::shared_ptr<std::atomic<bool>>& stopping);
+    static void wsRelease(const std::shared_ptr<AppState>& app, std::shared_ptr<WsConnState> conn, const std::shared_ptr<std::atomic<bool>>& stopping);
+    static void runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTPServerRequest& request, Poco::Net::HTTPServerResponse& response, std::shared_ptr<std::atomic<bool>> stopping);
+    static int luaWs(lua_State* L);
+    static int registerRoute(lua_State* L, const std::string& method, int pathIndex);
+    static int luaVerb(lua_State* L);
+    static int luaRouteMethod(lua_State* L);
+    static int luaUse(lua_State* L);
+    static int luaGroup(lua_State* L);
+    static int luaRouteName(lua_State* L);
+    static int luaRouteWhere(lua_State* L);
+    static int luaOnError(lua_State* L);
+    static int luaOnNotFound(lua_State* L);
+    static int luaUrl(lua_State* L);
+    static int luaPlugin(lua_State* L);
+    static int luaModule(lua_State* L);
+    static int luaOn(lua_State* L);
+    static int luaEmit(lua_State* L);
+    static int luaOnStart(lua_State* L);
+    static int luaOnRequest(lua_State* L);
+    static int luaOnResponse(lua_State* L);
+    static int luaConfig(lua_State* L);
+    static int luaAppListen(lua_State* L);
+    static int luaAppGc(lua_State* L);
+    static int luaGroupGc(lua_State* L);
+    static int luaRouteGc(lua_State* L);
+    static void installVerbs(lua_State* L);
+    static void createMetatables(lua_State* L);
+    static int luaCreateApp(lua_State* L);
+};
+
+AppUserdata* HttpApp::checkApp(lua_State* L) {
     return static_cast<AppUserdata*>(luaL_checkudata(L, 1, kAppMeta));
 }
 
-RouteUserdata* checkRoute(lua_State* L) {
+RouteUserdata* HttpApp::checkRoute(lua_State* L) {
     return static_cast<RouteUserdata*>(luaL_checkudata(L, 1, kRouteMeta));
 }
 
-ContextUserdata* checkContext(lua_State* L) {
+ContextUserdata* HttpApp::checkContext(lua_State* L) {
     return static_cast<ContextUserdata*>(luaL_checkudata(L, 1, kContextMeta));
 }
 
-Target resolveTarget(lua_State* L) {
+Target HttpApp::resolveTarget(lua_State* L) {
     if (void* app = luaL_testudata(L, 1, kAppMeta)) {
         return Target{static_cast<AppUserdata*>(app)->state, 0};
     }
@@ -224,7 +331,7 @@ Target resolveTarget(lua_State* L) {
     return Target{};
 }
 
-void pushRoute(lua_State* L, std::shared_ptr<AppState> state, int routeId) {
+void HttpApp::pushRoute(lua_State* L, std::shared_ptr<AppState> state, int routeId) {
     void* memory = lua_newuserdatauv(L, sizeof(RouteUserdata), 0);
     new (memory) RouteUserdata{std::move(state), routeId};
 
@@ -232,233 +339,20 @@ void pushRoute(lua_State* L, std::shared_ptr<AppState> state, int routeId) {
     lua_setmetatable(L, -2);
 }
 
-std::string toLower(std::string value) {
-    for (char& c : value) {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-    return value;
-}
-
-bool iequals(const std::string& a, const std::string& b) {
-    if (a.size() != b.size()) {
-        return false;
-    }
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) {
-            return false;
-        }
-    }
-    return true;
-}
-
-std::string findContentType(const HttpRequest& request) {
+std::string HttpApp::findContentType(const HttpRequest& request) {
     for (const auto& [name, value] : request.headers) {
-        if (iequals(name, "content-type")) {
+        if (HttpText::iequals(name, "content-type")) {
             return value;
         }
     }
     return "";
 }
 
-std::string urlDecode(const std::string& input) {
-    auto hexValue = [](char c) -> int {
-        if (c >= '0' && c <= '9') return c - '0';
-        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-        return -1;
-    };
-
-    std::string out;
-    out.reserve(input.size());
-
-    for (std::size_t i = 0; i < input.size(); ++i) {
-        const char c = input[i];
-
-        if (c == '+') {
-            out += ' ';
-            continue;
-        }
-
-        if (c == '%' && i + 2 < input.size()) {
-            const int hi = hexValue(input[i + 1]);
-            const int lo = hexValue(input[i + 2]);
-            if (hi >= 0 && lo >= 0) {
-                out += static_cast<char>(hi * 16 + lo);
-                i += 2;
-                continue;
-            }
-        }
-
-        out += c;
-    }
-
-    return out;
-}
-
-void pushFormUrlEncoded(lua_State* L, const std::string& body) {
-    lua_newtable(L);
-
-    // bound the field count so a body full of separators cannot drive unbounded parse work.
-    constexpr int maxFields = 10000;
-    int fields = 0;
-
-    std::size_t pos = 0;
-    while (pos <= body.size()) {
-        const std::size_t amp = body.find('&', pos);
-        const std::string pair = body.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
-
-        if (!pair.empty()) {
-            const std::size_t eq = pair.find('=');
-            const std::string key = urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq));
-            const std::string value = eq == std::string::npos ? std::string() : urlDecode(pair.substr(eq + 1));
-            lua_pushlstring(L, value.data(), value.size());
-            lua_setfield(L, -2, key.c_str());
-            if (++fields >= maxFields) {
-                break;
-            }
-        }
-
-        if (amp == std::string::npos) {
-            break;
-        }
-        pos = amp + 1;
-    }
-}
-
-std::string extractBoundary(const std::string& contentType) {
-    const std::size_t pos = contentType.find("boundary=");
-    if (pos == std::string::npos) {
-        return "";
-    }
-
-    std::string boundary = contentType.substr(pos + 9);
-    if (!boundary.empty() && boundary.front() == '"') {
-        const std::size_t end = boundary.find('"', 1);
-        return end == std::string::npos ? boundary.substr(1) : boundary.substr(1, end - 1);
-    }
-
-    const std::size_t semicolon = boundary.find(';');
-    if (semicolon != std::string::npos) {
-        boundary = boundary.substr(0, semicolon);
-    }
-    while (!boundary.empty() && (boundary.back() == ' ' || boundary.back() == '\r' || boundary.back() == '\n')) {
-        boundary.pop_back();
-    }
-    return boundary;
-}
-
-std::string multipartAttribute(const std::string& headers, const std::string& key) {
-    std::size_t pos = 0;
-    while ((pos = headers.find(key, pos)) != std::string::npos) {
-        // the attribute is only accepted when it starts at a real boundary.
-        // this avoids matching inside another token such as filename= or a custom x-name=.
-        const char previous = pos == 0 ? ' ' : headers[pos - 1];
-        if (pos == 0 || previous == ' ' || previous == ';') {
-            const std::size_t start = pos + key.size();
-            const std::size_t end = headers.find('"', start);
-            return end == std::string::npos ? "" : headers.substr(start, end - start);
-        }
-        pos += key.size();
-    }
-    return "";
-}
-
-std::string multipartContentType(const std::string& headers) {
-    const std::size_t pos = toLower(headers).find("content-type:");
-    if (pos == std::string::npos) {
-        return "";
-    }
-
-    const std::size_t start = pos + std::string("content-type:").size();
-    const std::size_t end = headers.find("\r\n", start);
-    std::string value = headers.substr(start, end == std::string::npos ? std::string::npos : end - start);
-
-    const std::size_t firstReal = value.find_first_not_of(" \t");
-    return firstReal == std::string::npos ? "" : value.substr(firstReal);
-}
-
-void pushMultipart(lua_State* L, const std::string& body, const std::string& boundary) {
-    lua_newtable(L);
-    lua_newtable(L);
-    lua_setfield(L, -2, "fields");
-    lua_newtable(L);
-    lua_setfield(L, -2, "files");
-
-    const std::string delimiter = "--" + boundary;
-    int fileIndex = 0;
-
-    // bound the number of parts so a body full of boundaries cannot drive unbounded parse work.
-    constexpr int maxParts = 1000;
-    int parts = 0;
-
-    std::size_t pos = body.find(delimiter);
-    while (pos != std::string::npos) {
-        pos += delimiter.size();
-
-        // a trailing "--" marks the final boundary.
-        if (pos + 1 < body.size() && body[pos] == '-' && body[pos + 1] == '-') {
-            break;
-        }
-        if (pos + 1 < body.size() && body[pos] == '\r' && body[pos + 1] == '\n') {
-            pos += 2;
-        }
-
-        const std::size_t headerEnd = body.find("\r\n\r\n", pos);
-        if (headerEnd == std::string::npos) {
-            break;
-        }
-
-        const std::string headers = body.substr(pos, headerEnd - pos);
-        const std::size_t dataStart = headerEnd + 4;
-
-        const std::size_t next = body.find(delimiter, dataStart);
-        if (next == std::string::npos) {
-            break;
-        }
-
-        std::size_t dataEnd = next;
-        if (dataEnd >= 2 && body[dataEnd - 2] == '\r' && body[dataEnd - 1] == '\n') {
-            dataEnd -= 2;
-        }
-        const std::string data = body.substr(dataStart, dataEnd - dataStart);
-
-        const std::string name = multipartAttribute(headers, "name=\"");
-        const std::string filename = multipartAttribute(headers, "filename=\"");
-
-        if (!filename.empty()) {
-            const std::string fileType = multipartContentType(headers);
-
-            lua_getfield(L, -1, "files");
-            lua_newtable(L);
-            lua_pushlstring(L, name.data(), name.size());
-            lua_setfield(L, -2, "field");
-            lua_pushlstring(L, filename.data(), filename.size());
-            lua_setfield(L, -2, "filename");
-            lua_pushlstring(L, fileType.data(), fileType.size());
-            lua_setfield(L, -2, "contentType");
-            lua_pushlstring(L, data.data(), data.size());
-            lua_setfield(L, -2, "data");
-            lua_rawseti(L, -2, ++fileIndex);
-            lua_pop(L, 1);
-        } else if (!name.empty()) {
-            lua_getfield(L, -1, "fields");
-            lua_pushlstring(L, data.data(), data.size());
-            lua_setfield(L, -2, name.c_str());
-            lua_pop(L, 1);
-        }
-
-        pos = next;
-        if (++parts >= maxParts) {
-            break;
-        }
-    }
-}
-
-long long nowMs() {
+long long HttpApp::nowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-std::string randomSessionId() {
+std::string HttpApp::randomSessionId() {
     // use the vetted csprng so session and csrf tokens are unpredictable on every platform.
     const std::string bytes = varn::crypto::CryptoPrimitives::randomBytes(16);
     std::ostringstream id;
@@ -468,7 +362,7 @@ std::string randomSessionId() {
     return id.str();
 }
 
-void sweepSessions(AppState& app, lua_State* L, long long now) {
+void HttpApp::sweepSessions(AppState& app, lua_State* L, long long now) {
     for (auto it = app.sessions.begin(); it != app.sessions.end();) {
         if (now - it->second.lastAccessMs > app.sessionTtlMs) {
             luaL_unref(L, LUA_REGISTRYINDEX, it->second.dataRef);
@@ -479,7 +373,7 @@ void sweepSessions(AppState& app, lua_State* L, long long now) {
     }
 }
 
-void evictOldestSession(AppState& app, lua_State* L) {
+void HttpApp::evictOldestSession(AppState& app, lua_State* L) {
     auto oldest = app.sessions.end();
     for (auto it = app.sessions.begin(); it != app.sessions.end(); ++it) {
         if (oldest == app.sessions.end() || it->second.lastAccessMs < oldest->second.lastAccessMs) {
@@ -492,14 +386,14 @@ void evictOldestSession(AppState& app, lua_State* L) {
     }
 }
 
-int luaContextStatus(lua_State* L) {
+int HttpApp::luaContextStatus(lua_State* L) {
     auto* context = checkContext(L);
     context->response->setStatus(static_cast<int>(luaL_checkinteger(L, 2)));
     lua_pushvalue(L, 1);
     return 1;
 }
 
-int luaContextHeader(lua_State* L) {
+int HttpApp::luaContextHeader(lua_State* L) {
     auto* context = checkContext(L);
     const std::string name = LuaHelpers::checkString(L, 2);
     const std::string value = LuaHelpers::checkString(L, 3);
@@ -519,28 +413,28 @@ int luaContextHeader(lua_State* L) {
     return 1;
 }
 
-int luaContextType(lua_State* L) {
+int HttpApp::luaContextType(lua_State* L) {
     auto* context = checkContext(L);
     context->response->setHeader("Content-Type", LuaHelpers::checkString(L, 2));
     lua_pushvalue(L, 1);
     return 1;
 }
 
-int luaContextText(lua_State* L) {
+int HttpApp::luaContextText(lua_State* L) {
     auto* context = checkContext(L);
     context->response->setHeader("Content-Type", "text/plain; charset=utf-8");
     context->response->end(LuaHelpers::optionalString(L, 2, ""));
     return 0;
 }
 
-int luaContextHtml(lua_State* L) {
+int HttpApp::luaContextHtml(lua_State* L) {
     auto* context = checkContext(L);
     context->response->setHeader("Content-Type", "text/html; charset=utf-8");
     context->response->end(LuaHelpers::optionalString(L, 2, ""));
     return 0;
 }
 
-int luaContextWrite(lua_State* L) {
+int HttpApp::luaContextWrite(lua_State* L) {
     auto* context = checkContext(L);
     size_t length = 0;
     const char* chunk = luaL_checklstring(L, 2, &length);
@@ -549,13 +443,13 @@ int luaContextWrite(lua_State* L) {
     return 1;
 }
 
-int luaContextSend(lua_State* L) {
+int HttpApp::luaContextSend(lua_State* L) {
     auto* context = checkContext(L);
     context->response->end(LuaHelpers::optionalString(L, 2, ""));
     return 0;
 }
 
-int luaContextRedirect(lua_State* L) {
+int HttpApp::luaContextRedirect(lua_State* L) {
     auto* context = checkContext(L);
     const std::string location = LuaHelpers::checkString(L, 2);
     context->response->setStatus(static_cast<int>(luaL_optinteger(L, 3, 302)));
@@ -565,7 +459,7 @@ int luaContextRedirect(lua_State* L) {
 }
 
 // rejects control chars and separators that would let a cookie value forge attributes or a second cookie.
-bool invalidCookieToken(const std::string& token) {
+bool HttpApp::invalidCookieToken(const std::string& token) {
     for (unsigned char c : token) {
         if (c < 0x20 || c == 0x7f || c == ';' || c == ',' || c == ' ' || c == '"' || c == '\\') {
             return true;
@@ -575,7 +469,7 @@ bool invalidCookieToken(const std::string& token) {
 }
 
 // an attribute value must not carry a control or a separator that would forge a second attribute.
-bool invalidCookieAttribute(const std::string& value) {
+bool HttpApp::invalidCookieAttribute(const std::string& value) {
     for (unsigned char c : value) {
         if (c < 0x20 || c == 0x7f || c == ';') {
             return true;
@@ -584,7 +478,7 @@ bool invalidCookieAttribute(const std::string& value) {
     return false;
 }
 
-int luaContextCookie(lua_State* L) {
+int HttpApp::luaContextCookie(lua_State* L) {
     auto* context = checkContext(L);
     const std::string name = LuaHelpers::checkString(L, 2);
     const std::string value = LuaHelpers::checkString(L, 3);
@@ -642,11 +536,11 @@ int luaContextCookie(lua_State* L) {
         lua_getfield(L, 4, "sameSite");
         if (lua_isstring(L, -1)) {
             const std::string raw = lua_tostring(L, -1);
-            if (iequals(raw, "Strict")) {
+            if (HttpText::iequals(raw, "Strict")) {
                 sameSite = "Strict";
-            } else if (iequals(raw, "Lax")) {
+            } else if (HttpText::iequals(raw, "Lax")) {
                 sameSite = "Lax";
-            } else if (iequals(raw, "None")) {
+            } else if (HttpText::iequals(raw, "None")) {
                 sameSite = "None";
             } else {
                 lua_pop(L, 1);
@@ -677,7 +571,7 @@ int luaContextCookie(lua_State* L) {
     return 1;
 }
 
-int luaContextBody(lua_State* L) {
+int HttpApp::luaContextBody(lua_State* L) {
     auto* context = checkContext(L);
 
     lua_getiuservalue(L, 1, 1);
@@ -688,7 +582,7 @@ int luaContextBody(lua_State* L) {
     lua_pop(L, 2);
 
     const std::string format = LuaHelpers::optionalString(L, 2, "");
-    const std::string type = toLower(context->contentType);
+    const std::string type = HttpText::toLower(context->contentType);
 
 #if VARN_JSON_DRIVER_NLOHMANN
     if (format == "json" || (format.empty() && type.find("application/json") != std::string::npos)) {
@@ -700,16 +594,16 @@ int luaContextBody(lua_State* L) {
 #endif
 
     if (format == "form" || (format.empty() && type.find("application/x-www-form-urlencoded") != std::string::npos)) {
-        pushFormUrlEncoded(L, body);
+        HttpUrlForm::pushFormUrlEncoded(L, body);
         return 1;
     }
 
     if (format == "multipart" || (format.empty() && type.find("multipart/form-data") != std::string::npos)) {
-        const std::string boundary = extractBoundary(context->contentType);
+        const std::string boundary = HttpMultipart::extractBoundary(context->contentType);
         if (boundary.empty()) {
             return luaL_error(L, "[http] The multipart body has no boundary.");
         }
-        pushMultipart(L, body, boundary);
+        HttpMultipart::pushMultipart(L, body, boundary);
         return 1;
     }
 
@@ -717,7 +611,7 @@ int luaContextBody(lua_State* L) {
     return 1;
 }
 
-int luaContextSession(lua_State* L) {
+int HttpApp::luaContextSession(lua_State* L) {
     auto* context = checkContext(L);
     AppState* app = context->app.get();
 
@@ -771,7 +665,7 @@ int luaContextSession(lua_State* L) {
     return 1;
 }
 
-int luaContextRegenerateSession(lua_State* L) {
+int HttpApp::luaContextRegenerateSession(lua_State* L) {
     auto* context = checkContext(L);
     AppState* app = context->app.get();
     const long long now = nowMs();
@@ -809,7 +703,7 @@ int luaContextRegenerateSession(lua_State* L) {
 }
 
 // builds an attachment disposition with a sanitized ascii name and an rfc 5987 encoded original.
-std::string contentDispositionAttachment(const std::string& filename) {
+std::string HttpApp::contentDispositionAttachment(const std::string& filename) {
     static const char* hex = "0123456789ABCDEF";
     std::string fallback;
     std::string encoded;
@@ -838,7 +732,7 @@ std::string contentDispositionAttachment(const std::string& filename) {
     return "attachment; filename=\"" + fallback + "\"; filename*=UTF-8''" + encoded;
 }
 
-int luaContextFile(lua_State* L) {
+int HttpApp::luaContextFile(lua_State* L) {
     auto* context = checkContext(L);
     const std::string path = LuaHelpers::checkString(L, 2);
 
@@ -871,7 +765,7 @@ int luaContextFile(lua_State* L) {
 }
 
 #if VARN_JSON_DRIVER_NLOHMANN
-int luaContextJson(lua_State* L) {
+int HttpApp::luaContextJson(lua_State* L) {
     auto* context = checkContext(L);
     const std::string body = lua_istable(L, 2) ? json::JsonSerializer::serialize(L, 2) : std::string("{}");
     context->response->setHeader("Content-Type", "application/json; charset=utf-8");
@@ -881,7 +775,7 @@ int luaContextJson(lua_State* L) {
 #endif
 
 #if VARN_XML_DRIVER_PUGIXML
-int luaContextXml(lua_State* L) {
+int HttpApp::luaContextXml(lua_State* L) {
     auto* context = checkContext(L);
     const std::string body =
         lua_istable(L, 2) ? xml::XmlSerializer::serialize(L, 2) : std::string("<?xml version=\"1.0\" encoding=\"UTF-8\"?><root/>\n");
@@ -891,7 +785,7 @@ int luaContextXml(lua_State* L) {
 }
 #endif
 
-int luaContextIndex(lua_State* L) {
+int HttpApp::luaContextIndex(lua_State* L) {
     luaL_checkudata(L, 1, kContextMeta);
     const char* key = lua_tostring(L, 2);
     if (!key) {
@@ -943,13 +837,13 @@ int luaContextIndex(lua_State* L) {
     return 1;
 }
 
-int luaContextGc(lua_State* L) {
+int HttpApp::luaContextGc(lua_State* L) {
     auto* context = checkContext(L);
     context->~ContextUserdata();
     return 0;
 }
 
-int terminalNotFound(lua_State* L) {
+int HttpApp::terminalNotFound(lua_State* L) {
     auto* context = checkContext(L);
     context->response->setStatus(404);
     context->response->setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -957,7 +851,7 @@ int terminalNotFound(lua_State* L) {
     return 0;
 }
 
-int terminalMethodNotAllowed(lua_State* L) {
+int HttpApp::terminalMethodNotAllowed(lua_State* L) {
     auto* context = checkContext(L);
     const char* allow = lua_tostring(L, lua_upvalueindex(1));
     context->response->setStatus(405);
@@ -970,7 +864,7 @@ int terminalMethodNotAllowed(lua_State* L) {
 }
 
 // answers an unhandled OPTIONS request for a known path by advertising the supported methods.
-int terminalAutoOptions(lua_State* L) {
+int HttpApp::terminalAutoOptions(lua_State* L) {
     auto* context = checkContext(L);
     const char* allow = lua_tostring(L, lua_upvalueindex(1));
     context->response->setStatus(204);
@@ -982,7 +876,7 @@ int terminalAutoOptions(lua_State* L) {
 }
 
 // continuation for lua_callk so an await inside a middleware can yield across the chain.
-int chainContinue(lua_State* L, int status, lua_KContext ctx) {
+int HttpApp::chainContinue(lua_State* L, int status, lua_KContext ctx) {
     (void)L;
     (void)status;
     (void)ctx;
@@ -990,7 +884,7 @@ int chainContinue(lua_State* L, int status, lua_KContext ctx) {
 }
 
 // upvalues: 1 = chain table, 2 = context, 3 = entry count, 4 = current index.
-int chainNext(lua_State* L) {
+int HttpApp::chainNext(lua_State* L) {
     const int index = static_cast<int>(lua_tointeger(L, lua_upvalueindex(4)));
     const int count = static_cast<int>(lua_tointeger(L, lua_upvalueindex(3)));
 
@@ -1017,7 +911,7 @@ int chainNext(lua_State* L) {
     return 0;
 }
 
-void pushContext(lua_State* L, std::shared_ptr<AppState> app, const HttpRequest& request, const MatchResult& match,
+void HttpApp::pushContext(lua_State* L, std::shared_ptr<AppState> app, const HttpRequest& request, const MatchResult& match,
                  std::shared_ptr<HttpResponse> response) {
     void* memory = lua_newuserdatauv(L, sizeof(ContextUserdata), 4);
     new (memory) ContextUserdata{std::move(response), std::move(app), findContentType(request), LUA_NOREF, LUA_NOREF, LUA_NOREF, std::string()};
@@ -1025,7 +919,7 @@ void pushContext(lua_State* L, std::shared_ptr<AppState> app, const HttpRequest&
     luaL_getmetatable(L, kContextMeta);
     lua_setmetatable(L, -2);
 
-    pushRequestTable(L, request);
+    HttpServerModule::pushRequestTable(L, request);
     lua_setiuservalue(L, -2, 1);
 
     lua_createtable(L, 0, static_cast<int>(match.params.size()));
@@ -1040,7 +934,7 @@ void pushContext(lua_State* L, std::shared_ptr<AppState> app, const HttpRequest&
 }
 
 // builds the ordered chain (middleware then a terminal) into the table at chainIndex and returns its length.
-int buildChain(lua_State* L, int chainIndex, const std::shared_ptr<AppState>& app, const MatchResult& match,
+int HttpApp::buildChain(lua_State* L, int chainIndex, const std::shared_ptr<AppState>& app, const MatchResult& match,
                const std::string& method) {
     int length = 0;
 
@@ -1111,7 +1005,7 @@ int buildChain(lua_State* L, int chainIndex, const std::shared_ptr<AppState>& ap
 }
 
 // runs once when the chain completes, whether synchronously or after an awaited promise resumes it.
-int dispatchFinalize(lua_State* L, int status, lua_KContext kctx) {
+int HttpApp::dispatchFinalize(lua_State* L, int status, lua_KContext kctx) {
     const int contextRef = static_cast<int>(kctx);
     const bool failed = status != LUA_OK && status != LUA_YIELD;
 
@@ -1169,7 +1063,7 @@ int dispatchFinalize(lua_State* L, int status, lua_KContext kctx) {
 }
 
 // the coroutine body protects the chain so an error or a late completion still finalizes the response.
-int dispatchBody(lua_State* L) {
+int HttpApp::dispatchBody(lua_State* L) {
     lua_pushvalue(L, lua_upvalueindex(1));
     lua_pushvalue(L, lua_upvalueindex(2));
     lua_pushvalue(L, lua_upvalueindex(3));
@@ -1181,7 +1075,7 @@ int dispatchBody(lua_State* L) {
     return dispatchFinalize(L, status, kctx);
 }
 
-void runDispatch(const std::shared_ptr<AppState>& app, const HttpRequest& request, std::shared_ptr<HttpResponse> response) {
+void HttpApp::runDispatch(const std::shared_ptr<AppState>& app, const HttpRequest& request, std::shared_ptr<HttpResponse> response) {
     lua_State* mainState = app->runtime->luaState();
     const MatchResult match = app->router.match(request.method, request.path);
 
@@ -1233,7 +1127,7 @@ void runDispatch(const std::shared_ptr<AppState>& app, const HttpRequest& reques
     }
 }
 
-std::string optString(lua_State* L, int optsIdx, const char* key, const std::string& fallback) {
+std::string HttpApp::optString(lua_State* L, int optsIdx, const char* key, const std::string& fallback) {
     if (!lua_istable(L, optsIdx)) {
         return fallback;
     }
@@ -1243,7 +1137,7 @@ std::string optString(lua_State* L, int optsIdx, const char* key, const std::str
     return value;
 }
 
-bool optBool(lua_State* L, int optsIdx, const char* key, bool fallback) {
+bool HttpApp::optBool(lua_State* L, int optsIdx, const char* key, bool fallback) {
     if (!lua_istable(L, optsIdx)) {
         return fallback;
     }
@@ -1253,7 +1147,7 @@ bool optBool(lua_State* L, int optsIdx, const char* key, bool fallback) {
     return value;
 }
 
-long long optInt(lua_State* L, int optsIdx, const char* key, long long fallback) {
+long long HttpApp::optInt(lua_State* L, int optsIdx, const char* key, long long fallback) {
     if (!lua_istable(L, optsIdx)) {
         return fallback;
     }
@@ -1263,7 +1157,7 @@ long long optInt(lua_State* L, int optsIdx, const char* key, long long fallback)
     return value;
 }
 
-std::string requestField(lua_State* L, const char* field) {
+std::string HttpApp::requestField(lua_State* L, const char* field) {
     lua_getiuservalue(L, 1, 1);
     lua_getfield(L, -1, field);
     const std::string value = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
@@ -1271,13 +1165,13 @@ std::string requestField(lua_State* L, const char* field) {
     return value;
 }
 
-std::string requestHeaderCI(lua_State* L, const std::string& name) {
+std::string HttpApp::requestHeaderCI(lua_State* L, const std::string& name) {
     std::string result;
     lua_getiuservalue(L, 1, 1);
     lua_getfield(L, -1, "headers");
     lua_pushnil(L);
     while (lua_next(L, -2) != 0) {
-        if (lua_type(L, -2) == LUA_TSTRING && lua_isstring(L, -1) && iequals(lua_tostring(L, -2), name)) {
+        if (lua_type(L, -2) == LUA_TSTRING && lua_isstring(L, -1) && HttpText::iequals(lua_tostring(L, -2), name)) {
             result = lua_tostring(L, -1);
         }
         lua_pop(L, 1);
@@ -1286,7 +1180,7 @@ std::string requestHeaderCI(lua_State* L, const std::string& name) {
     return result;
 }
 
-std::string clientIp(lua_State* L, bool trustProxy) {
+std::string HttpApp::clientIp(lua_State* L, bool trustProxy) {
     // behind a trusted proxy the original client is the leftmost entry of x-forwarded-for.
     if (trustProxy) {
         const std::string forwarded = requestHeaderCI(L, "X-Forwarded-For");
@@ -1318,12 +1212,12 @@ std::string clientIp(lua_State* L, bool trustProxy) {
     return address;
 }
 
-void continueChain(lua_State* L) {
+void HttpApp::continueChain(lua_State* L) {
     lua_pushvalue(L, 2);
     lua_callk(L, 0, 0, 0, &chainContinue);
 }
 
-int corsMiddleware(lua_State* L) {
+int HttpApp::corsMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
 
@@ -1388,7 +1282,7 @@ int corsMiddleware(lua_State* L) {
     return 0;
 }
 
-int securityHeadersMiddleware(lua_State* L) {
+int HttpApp::securityHeadersMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
 
@@ -1412,7 +1306,7 @@ int securityHeadersMiddleware(lua_State* L) {
     return 0;
 }
 
-int apiKeyMiddleware(lua_State* L) {
+int HttpApp::apiKeyMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
 
@@ -1422,7 +1316,7 @@ int apiKeyMiddleware(lua_State* L) {
     bool authorized = false;
     if (!provided.empty() && lua_istable(L, opts)) {
         lua_getfield(L, opts, "key");
-        if (lua_isstring(L, -1) && constantTimeEqual(provided, lua_tostring(L, -1))) {
+        if (lua_isstring(L, -1) && HttpToken::constantTimeEqual(provided, lua_tostring(L, -1))) {
             authorized = true;
         }
         lua_pop(L, 1);
@@ -1433,7 +1327,7 @@ int apiKeyMiddleware(lua_State* L) {
                 const int count = static_cast<int>(lua_rawlen(L, -1));
                 for (int i = 1; i <= count && !authorized; ++i) {
                     lua_rawgeti(L, -1, i);
-                    if (lua_isstring(L, -1) && constantTimeEqual(provided, lua_tostring(L, -1))) {
+                    if (lua_isstring(L, -1) && HttpToken::constantTimeEqual(provided, lua_tostring(L, -1))) {
                         authorized = true;
                     }
                     lua_pop(L, 1);
@@ -1454,7 +1348,7 @@ int apiKeyMiddleware(lua_State* L) {
     return 0;
 }
 
-int rateLimitMiddleware(lua_State* L) {
+int HttpApp::rateLimitMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
     const int state = lua_upvalueindex(2);
@@ -1544,7 +1438,7 @@ int rateLimitMiddleware(lua_State* L) {
     return 0;
 }
 
-int luaCors(lua_State* L) {
+int HttpApp::luaCors(lua_State* L) {
     if (lua_istable(L, 1)) {
         // reject the invalid wildcard-with-credentials combination at setup time, never silently.
         lua_getfield(L, 1, "credentials");
@@ -1568,7 +1462,7 @@ int luaCors(lua_State* L) {
     return 1;
 }
 
-int luaSecurityHeaders(lua_State* L) {
+int HttpApp::luaSecurityHeaders(lua_State* L) {
     if (lua_istable(L, 1)) {
         lua_pushvalue(L, 1);
     } else {
@@ -1578,14 +1472,14 @@ int luaSecurityHeaders(lua_State* L) {
     return 1;
 }
 
-int luaApiKey(lua_State* L) {
+int HttpApp::luaApiKey(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     lua_pushvalue(L, 1);
     lua_pushcclosure(L, &apiKeyMiddleware, 1);
     return 1;
 }
 
-int luaRateLimit(lua_State* L) {
+int HttpApp::luaRateLimit(lua_State* L) {
     if (lua_istable(L, 1)) {
         lua_pushvalue(L, 1);
     } else {
@@ -1596,289 +1490,7 @@ int luaRateLimit(lua_State* L) {
     return 1;
 }
 
-bool constantTimeEqual(const std::string& a, const std::string& b) {
-    if (a.size() != b.size()) {
-        return false;
-    }
-    unsigned char diff = 0;
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
-    }
-    return diff == 0;
-}
-
-std::string base64UrlEncode(const std::string& input) {
-    static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    std::string out;
-    int value = 0;
-    int bits = -6;
-    for (unsigned char c : input) {
-        value = (value << 8) + c;
-        bits += 8;
-        while (bits >= 0) {
-            out += table[(value >> bits) & 0x3F];
-            bits -= 6;
-        }
-    }
-    if (bits > -6) {
-        out += table[((value << 8) >> (bits + 8)) & 0x3F];
-    }
-    return out;
-}
-
-bool base64UrlDecode(const std::string& input, std::string& out) {
-    auto sextet = [](char c) -> int {
-        if (c >= 'A' && c <= 'Z') return c - 'A';
-        if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-        if (c >= '0' && c <= '9') return c - '0' + 52;
-        if (c == '-') return 62;
-        if (c == '_') return 63;
-        return -1;
-    };
-
-    out.clear();
-    int value = 0;
-    int bits = -8;
-    for (char c : input) {
-        const int decoded = sextet(c);
-        if (decoded < 0) {
-            // reject any character outside the base64url alphabet so malformed segments cannot decode.
-            return false;
-        }
-        value = (value << 6) + decoded;
-        bits += 6;
-        if (bits >= 0) {
-            out += static_cast<char>((value >> bits) & 0xFF);
-            bits -= 8;
-        }
-    }
-    return true;
-}
-
-struct JwtVerifyOptions {
-    bool hasAudience = false;
-    std::string audience;
-    bool hasIssuer = false;
-    std::string issuer;
-    long long leewaySeconds = 0;
-};
-
-JwtVerifyOptions readJwtVerifyOptions(lua_State* L, int optsIdx) {
-    JwtVerifyOptions opts;
-    if (!lua_istable(L, optsIdx)) {
-        return opts;
-    }
-
-    lua_getfield(L, optsIdx, "audience");
-    if (lua_isstring(L, -1)) {
-        opts.hasAudience = true;
-        opts.audience = lua_tostring(L, -1);
-    }
-    lua_pop(L, 1);
-
-    lua_getfield(L, optsIdx, "issuer");
-    if (lua_isstring(L, -1)) {
-        opts.hasIssuer = true;
-        opts.issuer = lua_tostring(L, -1);
-    }
-    lua_pop(L, 1);
-
-    lua_getfield(L, optsIdx, "leeway");
-    if (lua_isnumber(L, -1)) {
-        const long long leeway = static_cast<long long>(lua_tointeger(L, -1));
-        opts.leewaySeconds = leeway > 0 ? leeway : 0;
-    }
-    lua_pop(L, 1);
-
-    return opts;
-}
-
-// matches the expected audience against an "aud" claim that may be a single string or a list.
-bool audienceMatches(lua_State* L, int claimsIdx, const std::string& expected) {
-    lua_getfield(L, claimsIdx, "aud");
-
-    bool matched = false;
-    if (lua_type(L, -1) == LUA_TSTRING) {
-        matched = expected == lua_tostring(L, -1);
-    } else if (lua_istable(L, -1)) {
-        const int count = static_cast<int>(lua_rawlen(L, -1));
-        for (int i = 1; i <= count && !matched; ++i) {
-            lua_rawgeti(L, -1, i);
-            if (lua_type(L, -1) == LUA_TSTRING && expected == lua_tostring(L, -1)) {
-                matched = true;
-            }
-            lua_pop(L, 1);
-        }
-    }
-
-    lua_pop(L, 1);
-    return matched;
-}
-
-// verifies the signature, claims and time window, pushing the claims table on success.
-bool verifyJwt(lua_State* L, const std::string& token, const std::string& secret, const JwtVerifyOptions& opts, std::string& error) {
-    // refuse to verify without a configured secret so an empty key cannot be used to forge tokens.
-    if (secret.empty()) {
-        error = "missing secret";
-        return false;
-    }
-
-    const std::size_t first = token.find('.');
-    const std::size_t second = token.find('.', first == std::string::npos ? first : first + 1);
-    if (first == std::string::npos || second == std::string::npos) {
-        error = "malformed token";
-        return false;
-    }
-
-    const std::string signingInput = token.substr(0, second);
-    const std::string signature = token.substr(second + 1);
-
-    // enforce the algorithm so a token with alg none or a different scheme cannot be accepted.
-    std::string header;
-    if (!base64UrlDecode(token.substr(0, first), header)) {
-        error = "malformed header";
-        return false;
-    }
-
-    bool headerDecoded = false;
-    try {
-        headerDecoded = json::JsonSerializer::deserialize(L, header);
-    } catch (const std::exception& ex) {
-        error = ex.what();
-        return false;
-    }
-
-    bool algorithmOk = false;
-    bool hasCrit = false;
-    if (headerDecoded) {
-        // a header that decodes to a non-object cannot be indexed, so guard before reading alg.
-        if (lua_istable(L, -1)) {
-            lua_getfield(L, -1, "alg");
-            algorithmOk = lua_type(L, -1) == LUA_TSTRING && std::string(lua_tostring(L, -1)) == "HS256";
-            lua_pop(L, 1);
-
-            lua_getfield(L, -1, "crit");
-            hasCrit = !lua_isnil(L, -1);
-            lua_pop(L, 1);
-        }
-        lua_pop(L, 1);
-    }
-    if (!algorithmOk) {
-        error = "unsupported algorithm";
-        return false;
-    }
-
-    // a token demanding a critical extension this verifier cannot process must be rejected.
-    if (hasCrit) {
-        error = "unsupported crit";
-        return false;
-    }
-
-    std::string expected;
-    try {
-        expected = base64UrlEncode(varn::crypto::CryptoPrimitives::hmac("SHA256", secret, signingInput, false));
-    } catch (const std::exception& ex) {
-        error = ex.what();
-        return false;
-    }
-
-    if (!constantTimeEqual(expected, signature)) {
-        error = "bad signature";
-        return false;
-    }
-
-    std::string payload;
-    if (!base64UrlDecode(token.substr(first + 1, second - first - 1), payload)) {
-        error = "malformed payload";
-        return false;
-    }
-
-    bool decoded = false;
-    try {
-        decoded = json::JsonSerializer::deserialize(L, payload);
-    } catch (const std::exception& ex) {
-        error = ex.what();
-        return false;
-    }
-    if (!decoded) {
-        error = "bad payload";
-        return false;
-    }
-
-    // a payload that decodes to a non-object cannot carry claims, so reject before indexing it.
-    if (!lua_istable(L, -1)) {
-        lua_pop(L, 1);
-        error = "bad payload";
-        return false;
-    }
-
-    // a json array decodes to a table with a positive length, but claims must be a named object.
-    if (lua_rawlen(L, -1) > 0) {
-        lua_pop(L, 1);
-        error = "bad payload";
-        return false;
-    }
-
-    const double now = static_cast<double>(std::time(nullptr));
-    const double leeway = static_cast<double>(opts.leewaySeconds);
-
-    // a present expiry must be numeric and must not be in the past beyond the allowed clock skew.
-    lua_getfield(L, -1, "exp");
-    const int expType = lua_type(L, -1);
-    if (expType != LUA_TNIL) {
-        if (expType != LUA_TNUMBER) {
-            lua_pop(L, 2);
-            error = "invalid exp";
-            return false;
-        }
-        if (now >= lua_tonumber(L, -1) + leeway) {
-            lua_pop(L, 2);
-            error = "token expired";
-            return false;
-        }
-    }
-    lua_pop(L, 1);
-
-    // a present not-before must be numeric and must not be in the future beyond the allowed clock skew.
-    lua_getfield(L, -1, "nbf");
-    const int nbfType = lua_type(L, -1);
-    if (nbfType != LUA_TNIL) {
-        if (nbfType != LUA_TNUMBER) {
-            lua_pop(L, 2);
-            error = "invalid nbf";
-            return false;
-        }
-        if (now < lua_tonumber(L, -1) - leeway) {
-            lua_pop(L, 2);
-            error = "token not yet valid";
-            return false;
-        }
-    }
-    lua_pop(L, 1);
-
-    // when an audience is expected the claim must be present and contain it.
-    if (opts.hasAudience && !audienceMatches(L, lua_gettop(L), opts.audience)) {
-        lua_pop(L, 1);
-        error = "invalid audience";
-        return false;
-    }
-
-    // when an issuer is expected the claim must be present and match exactly.
-    if (opts.hasIssuer) {
-        lua_getfield(L, -1, "iss");
-        const bool ok = lua_type(L, -1) == LUA_TSTRING && opts.issuer == lua_tostring(L, -1);
-        lua_pop(L, 1);
-        if (!ok) {
-            lua_pop(L, 1);
-            error = "invalid issuer";
-            return false;
-        }
-    }
-
-    return true;
-}
-
-int luaJwtSign(lua_State* L) {
+int HttpApp::luaJwtSign(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     const std::string secret = LuaHelpers::checkString(L, 2);
 
@@ -1922,8 +1534,8 @@ int luaJwtSign(lua_State* L) {
     std::string signature;
     try {
         payload = json::JsonSerializer::serialize(L, claims);
-        const std::string signingInput = base64UrlEncode("{\"alg\":\"HS256\",\"typ\":\"JWT\"}") + "." + base64UrlEncode(payload);
-        signature = base64UrlEncode(varn::crypto::CryptoPrimitives::hmac("SHA256", secret, signingInput, false));
+        const std::string signingInput = HttpToken::base64UrlEncode("{\"alg\":\"HS256\",\"typ\":\"JWT\"}") + "." + HttpToken::base64UrlEncode(payload);
+        signature = HttpToken::base64UrlEncode(varn::crypto::CryptoPrimitives::hmac("SHA256", secret, signingInput, false));
         const std::string token = signingInput + "." + signature;
         lua_pushlstring(L, token.data(), token.size());
     } catch (const std::exception& ex) {
@@ -1932,13 +1544,13 @@ int luaJwtSign(lua_State* L) {
     return 1;
 }
 
-int luaJwtVerify(lua_State* L) {
+int HttpApp::luaJwtVerify(lua_State* L) {
     const std::string token = LuaHelpers::checkString(L, 1);
     const std::string secret = LuaHelpers::checkString(L, 2);
-    const JwtVerifyOptions options = readJwtVerifyOptions(L, 3);
+    const JwtVerifyOptions options = HttpToken::readJwtVerifyOptions(L, 3);
 
     std::string error;
-    if (!verifyJwt(L, token, secret, options, error)) {
+    if (!HttpToken::verifyJwt(L, token, secret, options, error)) {
         lua_pushnil(L);
         lua_pushlstring(L, error.data(), error.size());
         return 2;
@@ -1946,11 +1558,11 @@ int luaJwtVerify(lua_State* L) {
     return 1;
 }
 
-int jwtAuthMiddleware(lua_State* L) {
+int HttpApp::jwtAuthMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
     const std::string secret = optString(L, opts, "secret", "");
-    const JwtVerifyOptions options = readJwtVerifyOptions(L, opts);
+    const JwtVerifyOptions options = HttpToken::readJwtVerifyOptions(L, opts);
 
     const std::string authorization = requestHeaderCI(L, "Authorization");
     std::string token;
@@ -1959,7 +1571,7 @@ int jwtAuthMiddleware(lua_State* L) {
     }
 
     std::string error;
-    if (token.empty() || !verifyJwt(L, token, secret, options, error)) {
+    if (token.empty() || !HttpToken::verifyJwt(L, token, secret, options, error)) {
         context->response->setStatus(401);
         context->response->setHeader("Content-Type", "application/json; charset=utf-8");
         context->response->end("{\"error\":\"unauthorized\"}");
@@ -1976,7 +1588,7 @@ int jwtAuthMiddleware(lua_State* L) {
     return 0;
 }
 
-int requireAuthMiddleware(lua_State* L) {
+int HttpApp::requireAuthMiddleware(lua_State* L) {
     auto* context = checkContext(L);
 
     lua_getiuservalue(L, 1, 3);
@@ -1995,7 +1607,7 @@ int requireAuthMiddleware(lua_State* L) {
     return 0;
 }
 
-int requireRoleMiddleware(lua_State* L) {
+int HttpApp::requireRoleMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const std::string wanted = lua_tostring(L, lua_upvalueindex(1));
 
@@ -2043,26 +1655,7 @@ int requireRoleMiddleware(lua_State* L) {
     return 0;
 }
 
-// a signed double-submit token carries a random nonce and an hmac that binds it to the session.
-std::string makeCsrfToken(const std::string& secret, const std::string& sessionId) {
-    const std::string nonce = base64UrlEncode(varn::crypto::CryptoPrimitives::randomBytes(16));
-    const std::string mac = base64UrlEncode(varn::crypto::CryptoPrimitives::hmac("SHA256", secret, sessionId + ":" + nonce, false));
-    return nonce + "." + mac;
-}
-
-bool validCsrfToken(const std::string& secret, const std::string& sessionId, const std::string& token) {
-    const std::size_t dot = token.find('.');
-    if (dot == std::string::npos) {
-        return false;
-    }
-
-    const std::string nonce = token.substr(0, dot);
-    const std::string mac = token.substr(dot + 1);
-    const std::string expected = base64UrlEncode(varn::crypto::CryptoPrimitives::hmac("SHA256", secret, sessionId + ":" + nonce, false));
-    return constantTimeEqual(expected, mac);
-}
-
-int csrfMiddleware(lua_State* L) {
+int HttpApp::csrfMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
     const std::string cookieName = optString(L, opts, "cookie", "csrf_token");
@@ -2097,7 +1690,7 @@ int csrfMiddleware(lua_State* L) {
     if (safeMethod) {
         bool valid = false;
         try {
-            valid = !cookieToken.empty() && validCsrfToken(app->csrfSecret, sessionId, cookieToken);
+            valid = !cookieToken.empty() && HttpToken::validCsrfToken(app->csrfSecret, sessionId, cookieToken);
         } catch (const std::exception&) {
             valid = false;
         }
@@ -2105,7 +1698,7 @@ int csrfMiddleware(lua_State* L) {
         // issue a fresh token only when the client lacks a valid one, keeping it readable for the header echo.
         if (!valid) {
             try {
-                cookieToken = makeCsrfToken(app->csrfSecret, sessionId);
+                cookieToken = HttpToken::makeCsrfToken(app->csrfSecret, sessionId);
             } catch (const std::exception& ex) {
                 return luaL_error(L, "%s", ex.what());
             }
@@ -2127,8 +1720,8 @@ int csrfMiddleware(lua_State* L) {
     const std::string submitted = requestHeaderCI(L, headerName);
     bool authorized = false;
     try {
-        authorized = !cookieToken.empty() && !submitted.empty() && constantTimeEqual(cookieToken, submitted) &&
-                     validCsrfToken(app->csrfSecret, sessionId, cookieToken);
+        authorized = !cookieToken.empty() && !submitted.empty() && HttpToken::constantTimeEqual(cookieToken, submitted) &&
+                     HttpToken::validCsrfToken(app->csrfSecret, sessionId, cookieToken);
     } catch (const std::exception&) {
         authorized = false;
     }
@@ -2144,27 +1737,27 @@ int csrfMiddleware(lua_State* L) {
     return 0;
 }
 
-int luaJwtAuth(lua_State* L) {
+int HttpApp::luaJwtAuth(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     lua_pushvalue(L, 1);
     lua_pushcclosure(L, &jwtAuthMiddleware, 1);
     return 1;
 }
 
-int luaRequireAuth(lua_State* L) {
+int HttpApp::luaRequireAuth(lua_State* L) {
     (void)L;
     lua_pushcfunction(L, &requireAuthMiddleware);
     return 1;
 }
 
-int luaRequireRole(lua_State* L) {
+int HttpApp::luaRequireRole(lua_State* L) {
     luaL_checkstring(L, 1);
     lua_pushvalue(L, 1);
     lua_pushcclosure(L, &requireRoleMiddleware, 1);
     return 1;
 }
 
-int luaCsrf(lua_State* L) {
+int HttpApp::luaCsrf(lua_State* L) {
     if (lua_istable(L, 1)) {
         lua_pushvalue(L, 1);
     } else {
@@ -2174,11 +1767,11 @@ int luaCsrf(lua_State* L) {
     return 1;
 }
 
-WsConnUserdata* checkWsConn(lua_State* L) {
+WsConnUserdata* HttpApp::checkWsConn(lua_State* L) {
     return static_cast<WsConnUserdata*>(luaL_checkudata(L, 1, kWsConnMeta));
 }
 
-int luaWsSend(lua_State* L) {
+int HttpApp::luaWsSend(lua_State* L) {
     auto* userdata = checkWsConn(L);
     std::size_t length = 0;
     const char* data = luaL_checklstring(L, 2, &length);
@@ -2190,7 +1783,7 @@ int luaWsSend(lua_State* L) {
     return 1;
 }
 
-int luaWsClose(lua_State* L) {
+int HttpApp::luaWsClose(lua_State* L) {
     auto* userdata = checkWsConn(L);
     {
         std::lock_guard<std::mutex> lock(userdata->conn->mutex);
@@ -2199,25 +1792,25 @@ int luaWsClose(lua_State* L) {
     return 0;
 }
 
-int luaWsGc(lua_State* L) {
+int HttpApp::luaWsGc(lua_State* L) {
     auto* userdata = checkWsConn(L);
     userdata->conn.~shared_ptr<WsConnState>();
     return 0;
 }
 
-void pushWsConn(lua_State* L, std::shared_ptr<WsConnState> conn) {
+void HttpApp::pushWsConn(lua_State* L, std::shared_ptr<WsConnState> conn) {
     void* memory = lua_newuserdatauv(L, sizeof(WsConnUserdata), 0);
     new (memory) WsConnUserdata{std::move(conn)};
     luaL_getmetatable(L, kWsConnMeta);
     lua_setmetatable(L, -2);
 }
 
-bool wsClosed(const std::shared_ptr<WsConnState>& conn) {
+bool HttpApp::wsClosed(const std::shared_ptr<WsConnState>& conn) {
     std::lock_guard<std::mutex> lock(conn->mutex);
     return conn->closed;
 }
 
-void wsFlush(Poco::Net::WebSocket& socket, const std::shared_ptr<WsConnState>& conn) {
+void HttpApp::wsFlush(Poco::Net::WebSocket& socket, const std::shared_ptr<WsConnState>& conn) {
     std::deque<std::string> pending;
     {
         std::lock_guard<std::mutex> lock(conn->mutex);
@@ -2234,7 +1827,7 @@ void wsFlush(Poco::Net::WebSocket& socket, const std::shared_ptr<WsConnState>& c
 
 // blocks until the posted task runs, but gives up once the server starts shutting down.
 // this keeps the transport thread from deadlocking against a main loop that is being joined.
-void waitForMainLoop(std::future<void>& ready, const std::shared_ptr<std::atomic<bool>>& stopping) {
+void HttpApp::waitForMainLoop(std::future<void>& ready, const std::shared_ptr<std::atomic<bool>>& stopping) {
     while (ready.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
         if (stopping && stopping->load(std::memory_order_acquire)) {
             return;
@@ -2243,7 +1836,7 @@ void waitForMainLoop(std::future<void>& ready, const std::shared_ptr<std::atomic
 }
 
 // runs a websocket callback on the main loop and waits, so lua only ever runs on its owning thread.
-void wsInvoke(const std::shared_ptr<AppState>& app, int ref, std::shared_ptr<WsConnState> conn, bool hasData,
+void HttpApp::wsInvoke(const std::shared_ptr<AppState>& app, int ref, std::shared_ptr<WsConnState> conn, bool hasData,
               std::string data, const std::shared_ptr<std::atomic<bool>>& stopping) {
     auto done = std::make_shared<std::promise<void>>();
     std::future<void> ready = done->get_future();
@@ -2274,7 +1867,7 @@ void wsInvoke(const std::shared_ptr<AppState>& app, int ref, std::shared_ptr<WsC
     waitForMainLoop(ready, stopping);
 }
 
-void wsRelease(const std::shared_ptr<AppState>& app, std::shared_ptr<WsConnState> conn,
+void HttpApp::wsRelease(const std::shared_ptr<AppState>& app, std::shared_ptr<WsConnState> conn,
                const std::shared_ptr<std::atomic<bool>>& stopping) {
     auto done = std::make_shared<std::promise<void>>();
     std::future<void> ready = done->get_future();
@@ -2290,7 +1883,7 @@ void wsRelease(const std::shared_ptr<AppState>& app, std::shared_ptr<WsConnState
     waitForMainLoop(ready, stopping);
 }
 
-void runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTPServerRequest& request,
+void HttpApp::runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTPServerRequest& request,
                          Poco::Net::HTTPServerResponse& response, std::shared_ptr<std::atomic<bool>> stopping) {
     std::string path;
     try {
@@ -2405,7 +1998,7 @@ void runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTPServerReq
     }
 }
 
-int luaWs(lua_State* L) {
+int HttpApp::luaWs(lua_State* L) {
     auto* app = checkApp(L);
     const std::string path = LuaHelpers::checkString(L, 2);
     luaL_checktype(L, 3, LUA_TTABLE);
@@ -2445,7 +2038,7 @@ int luaWs(lua_State* L) {
     return 1;
 }
 
-int registerRoute(lua_State* L, const std::string& method, int pathIndex) {
+int HttpApp::registerRoute(lua_State* L, const std::string& method, int pathIndex) {
     Target target = resolveTarget(L);
     const std::string path = LuaHelpers::checkString(L, pathIndex);
 
@@ -2476,17 +2069,17 @@ int registerRoute(lua_State* L, const std::string& method, int pathIndex) {
     return 1;
 }
 
-int luaVerb(lua_State* L) {
+int HttpApp::luaVerb(lua_State* L) {
     const std::string method = lua_tostring(L, lua_upvalueindex(1));
     return registerRoute(L, method, 2);
 }
 
-int luaRouteMethod(lua_State* L) {
+int HttpApp::luaRouteMethod(lua_State* L) {
     const std::string method = LuaHelpers::checkString(L, 2);
     return registerRoute(L, method, 3);
 }
 
-int luaUse(lua_State* L) {
+int HttpApp::luaUse(lua_State* L) {
     Target target = resolveTarget(L);
     luaL_checktype(L, 2, LUA_TFUNCTION);
 
@@ -2497,7 +2090,7 @@ int luaUse(lua_State* L) {
     return 1;
 }
 
-int luaGroup(lua_State* L) {
+int HttpApp::luaGroup(lua_State* L) {
     Target target = resolveTarget(L);
     const std::string prefix = LuaHelpers::checkString(L, 2);
 
@@ -2515,7 +2108,7 @@ int luaGroup(lua_State* L) {
     return 1;
 }
 
-int luaRouteName(lua_State* L) {
+int HttpApp::luaRouteName(lua_State* L) {
     auto* route = checkRoute(L);
     const std::string name = LuaHelpers::checkString(L, 2);
 
@@ -2529,7 +2122,7 @@ int luaRouteName(lua_State* L) {
     return 1;
 }
 
-int luaRouteWhere(lua_State* L) {
+int HttpApp::luaRouteWhere(lua_State* L) {
     auto* route = checkRoute(L);
     const std::string param = LuaHelpers::checkString(L, 2);
     const std::string constraint = LuaHelpers::checkString(L, 3);
@@ -2544,7 +2137,7 @@ int luaRouteWhere(lua_State* L) {
     return 1;
 }
 
-int luaOnError(lua_State* L) {
+int HttpApp::luaOnError(lua_State* L) {
     auto* app = checkApp(L);
     luaL_checktype(L, 2, LUA_TFUNCTION);
 
@@ -2556,7 +2149,7 @@ int luaOnError(lua_State* L) {
     return 1;
 }
 
-int luaOnNotFound(lua_State* L) {
+int HttpApp::luaOnNotFound(lua_State* L) {
     auto* app = checkApp(L);
     luaL_checktype(L, 2, LUA_TFUNCTION);
 
@@ -2568,7 +2161,7 @@ int luaOnNotFound(lua_State* L) {
     return 1;
 }
 
-int luaUrl(lua_State* L) {
+int HttpApp::luaUrl(lua_State* L) {
     auto* app = checkApp(L);
     const std::string name = LuaHelpers::checkString(L, 2);
 
@@ -2595,7 +2188,7 @@ int luaUrl(lua_State* L) {
     return 1;
 }
 
-int luaPlugin(lua_State* L) {
+int HttpApp::luaPlugin(lua_State* L) {
     checkApp(L);
     luaL_checktype(L, 2, LUA_TFUNCTION);
 
@@ -2613,7 +2206,7 @@ int luaPlugin(lua_State* L) {
     return 1;
 }
 
-int luaModule(lua_State* L) {
+int HttpApp::luaModule(lua_State* L) {
     checkApp(L);
     luaL_checkstring(L, 2);
     luaL_checktype(L, 3, LUA_TFUNCTION);
@@ -2625,7 +2218,7 @@ int luaModule(lua_State* L) {
     return 1;
 }
 
-int luaOn(lua_State* L) {
+int HttpApp::luaOn(lua_State* L) {
     auto* app = checkApp(L);
     const std::string event = LuaHelpers::checkString(L, 2);
     luaL_checktype(L, 3, LUA_TFUNCTION);
@@ -2637,7 +2230,7 @@ int luaOn(lua_State* L) {
     return 1;
 }
 
-int luaEmit(lua_State* L) {
+int HttpApp::luaEmit(lua_State* L) {
     auto* app = checkApp(L);
     const std::string event = LuaHelpers::checkString(L, 2);
     const int top = lua_gettop(L);
@@ -2663,7 +2256,7 @@ int luaEmit(lua_State* L) {
     return 1;
 }
 
-int luaOnStart(lua_State* L) {
+int HttpApp::luaOnStart(lua_State* L) {
     auto* app = checkApp(L);
     luaL_checktype(L, 2, LUA_TFUNCTION);
 
@@ -2674,7 +2267,7 @@ int luaOnStart(lua_State* L) {
     return 1;
 }
 
-int luaOnRequest(lua_State* L) {
+int HttpApp::luaOnRequest(lua_State* L) {
     auto* app = checkApp(L);
     luaL_checktype(L, 2, LUA_TFUNCTION);
 
@@ -2685,7 +2278,7 @@ int luaOnRequest(lua_State* L) {
     return 1;
 }
 
-int luaOnResponse(lua_State* L) {
+int HttpApp::luaOnResponse(lua_State* L) {
     auto* app = checkApp(L);
     luaL_checktype(L, 2, LUA_TFUNCTION);
 
@@ -2696,7 +2289,7 @@ int luaOnResponse(lua_State* L) {
     return 1;
 }
 
-int luaConfig(lua_State* L) {
+int HttpApp::luaConfig(lua_State* L) {
     auto* app = checkApp(L);
     const int argc = lua_gettop(L);
     lua_rawgeti(L, LUA_REGISTRYINDEX, app->state->configRef);
@@ -2735,7 +2328,7 @@ int luaConfig(lua_State* L) {
     return 1;
 }
 
-int luaAppListen(lua_State* L) {
+int HttpApp::luaAppListen(lua_State* L) {
     auto* app = checkApp(L);
     std::shared_ptr<AppState> state = app->state;
 
@@ -2743,9 +2336,9 @@ int luaAppListen(lua_State* L) {
     if (lua_isinteger(L, 2)) {
         options.port = lua_tointeger(L, 2);
     } else if (lua_istable(L, 2)) {
-        options = readListenOptions(L, 2);
+        options = HttpServerModule::readListenOptions(L, 2);
     } else {
-        options = readListenOptions(L, 3);
+        options = HttpServerModule::readListenOptions(L, 3);
     }
 
     // the app owns static serving so routes always take precedence over files.
@@ -2794,25 +2387,25 @@ int luaAppListen(lua_State* L) {
     return 0;
 }
 
-int luaAppGc(lua_State* L) {
+int HttpApp::luaAppGc(lua_State* L) {
     auto* app = checkApp(L);
     app->state.~shared_ptr<AppState>();
     return 0;
 }
 
-int luaGroupGc(lua_State* L) {
+int HttpApp::luaGroupGc(lua_State* L) {
     auto* group = static_cast<GroupUserdata*>(luaL_checkudata(L, 1, kGroupMeta));
     group->state.~shared_ptr<AppState>();
     return 0;
 }
 
-int luaRouteGc(lua_State* L) {
+int HttpApp::luaRouteGc(lua_State* L) {
     auto* route = checkRoute(L);
     route->state.~shared_ptr<AppState>();
     return 0;
 }
 
-void installVerbs(lua_State* L) {
+void HttpApp::installVerbs(lua_State* L) {
     static constexpr const char* verbs[] = {"get", "post", "put", "patch", "delete", "options", "head", "all"};
     static constexpr const char* methods[] = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "ALL"};
 
@@ -2823,7 +2416,7 @@ void installVerbs(lua_State* L) {
     }
 }
 
-void createMetatables(lua_State* L) {
+void HttpApp::createMetatables(lua_State* L) {
     if (luaL_newmetatable(L, kContextMeta)) {
         lua_pushcfunction(L, &luaContextGc);
         lua_setfield(L, -2, "__gc");
@@ -2915,7 +2508,7 @@ void createMetatables(lua_State* L) {
     lua_pop(L, 1);
 }
 
-int luaCreateApp(lua_State* L) {
+int HttpApp::luaCreateApp(lua_State* L) {
     auto& rt = *static_cast<Runtime*>(LuaHelpers::getRuntime(L));
 
     void* memory = lua_newuserdatauv(L, sizeof(AppUserdata), 0);
@@ -2932,37 +2525,35 @@ int luaCreateApp(lua_State* L) {
     return 1;
 }
 
-} // namespace
-
 void HttpAppModule::registerApp(lua_State* L) {
-    createMetatables(L);
+    HttpApp::createMetatables(L);
 
-    lua_pushcfunction(L, &luaCreateApp);
+    lua_pushcfunction(L, &HttpApp::luaCreateApp);
     lua_setfield(L, -2, "createApp");
 
-    lua_pushcfunction(L, &luaCors);
+    lua_pushcfunction(L, &HttpApp::luaCors);
     lua_setfield(L, -2, "cors");
-    lua_pushcfunction(L, &luaSecurityHeaders);
+    lua_pushcfunction(L, &HttpApp::luaSecurityHeaders);
     lua_setfield(L, -2, "securityHeaders");
-    lua_pushcfunction(L, &luaApiKey);
+    lua_pushcfunction(L, &HttpApp::luaApiKey);
     lua_setfield(L, -2, "apiKey");
-    lua_pushcfunction(L, &luaRateLimit);
+    lua_pushcfunction(L, &HttpApp::luaRateLimit);
     lua_setfield(L, -2, "rateLimit");
 
     lua_newtable(L);
-    lua_pushcfunction(L, &luaJwtSign);
+    lua_pushcfunction(L, &HttpApp::luaJwtSign);
     lua_setfield(L, -2, "sign");
-    lua_pushcfunction(L, &luaJwtVerify);
+    lua_pushcfunction(L, &HttpApp::luaJwtVerify);
     lua_setfield(L, -2, "verify");
     lua_setfield(L, -2, "jwt");
 
-    lua_pushcfunction(L, &luaJwtAuth);
+    lua_pushcfunction(L, &HttpApp::luaJwtAuth);
     lua_setfield(L, -2, "jwtAuth");
-    lua_pushcfunction(L, &luaCsrf);
+    lua_pushcfunction(L, &HttpApp::luaCsrf);
     lua_setfield(L, -2, "csrf");
-    lua_pushcfunction(L, &luaRequireAuth);
+    lua_pushcfunction(L, &HttpApp::luaRequireAuth);
     lua_setfield(L, -2, "requireAuth");
-    lua_pushcfunction(L, &luaRequireRole);
+    lua_pushcfunction(L, &HttpApp::luaRequireRole);
     lua_setfield(L, -2, "requireRole");
 }
 
