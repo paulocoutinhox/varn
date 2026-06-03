@@ -45,13 +45,17 @@ Every feature ships with runnable examples under `modules/<module>/lua/examples/
 
 ## ✨ Features
 
+Every module is independent and used through `require`, so you pull in only what a script needs.
+
 | Module | What you get |
 |----------------|--------------|
-| 🌐 `http` | web server and client, static file serving, JSON and XML responses |
+| 🌐 `http` | web server and client, routing, middleware, WebSockets, and static file serving |
 | 🔌 `socket` | network client and server connections |
 | ⏳ `async` | background tasks, timers, and awaitable promises |
 | 📁 `fs` | read and write files, check what already exists |
 | 🔐 `crypto` | hashing, signatures, and secure random data |
+| 🧾 `json` | encode and decode JSON, on its own or as an http response |
+| 🧬 `xml` | encode and decode XML, on its own or as an http response |
 | 🗜️ `zip` | create, extract, and list archives |
 | 🧩 `ffi` | call functions from native libraries |
 | 🖥️ `platform` | system, architecture, processor, and path information |

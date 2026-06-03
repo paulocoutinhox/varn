@@ -9,11 +9,18 @@ print(ffi.C.strlen("hello")) -- 5
 ```
 
 - `ffi.cdef(declarations)` — register C declarations.
-- `ffi.C.<name>(...)` — call a declared function.
+- `ffi.C.<name>(...)` — call a function from the default process namespace.
+- `ffi.load(name)` — load a shared library and return a namespace for its declared symbols (resolve the platform name with `platform.libraryFilename`).
+- `ffi.new(ct [, n] [, init...])` — allocate a cdata object of C type `ct`, such as `"sqlite3*[1]"` or `"unsigned char[?]"`.
+- `ffi.cast(ct, value)` — reinterpret a value or pointer as C type `ct`.
+- `ffi.string(ptr [, len])` — copy a C string, or `len` raw bytes, into a Lua string.
+- `ffi.copy(dst, src [, len])` — copy bytes into a cdata buffer.
+- `ffi.sizeof`, `ffi.typeof`, `ffi.offsetof`, `ffi.metatype`, `ffi.gc`, `ffi.istype`, `ffi.tonumber`, `ffi.fill`, `ffi.addressof`, `ffi.errno` — the rest of the LuaJIT-style surface.
 - `ffi.nullptr` — the null pointer value.
+- `ffi.VERSION` — the FFI backend version string.
 
-This calls arbitrary native code by design; treat declarations and inputs as trusted. Not
-available in the browser build.
+This calls arbitrary native code by design; treat declarations and inputs as trusted. In the
+browser build the module loads but its calls return a clear error.
 
 ## Examples
 

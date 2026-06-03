@@ -29,10 +29,12 @@ end):listen(3000)
 
 If the handler returns without ending the response, the server sends `204 No Content`.
 
-`builder:listen(port)` or `builder:listen(options)` starts the server. Options: `host`,
-`port`, `publicDir`, `servePublic`, `tls`, `certFile`, `keyFile`. The environment variables
-`VARN_PORT`, `VARN_TLS_CERT`, and `VARN_TLS_KEY` override the matching options. When
-`servePublic` is on and `publicDir` is omitted, it defaults to `apps/lua/public`.
+`builder:listen(port)` or `builder:listen(options)` starts the server. The same options
+work for both `http.createServer` and `app:listen`: `host`, `port`, `publicDir`,
+`servePublic`, `directoryListing`, `requestTimeoutMs`, `maxQueued`, `maxThreads`, `tls`,
+`certFile`, `keyFile`. The environment variables `VARN_PORT`, `VARN_TLS_CERT`, and
+`VARN_TLS_KEY` override the matching options. When `servePublic` is on and `publicDir` is
+omitted, it defaults to `apps/lua/public`.
 
 ## App framework
 
