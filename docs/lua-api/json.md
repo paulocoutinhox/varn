@@ -1,6 +1,6 @@
 # 🧾 json
 
-A standalone JSON module with full type conversion between Lua and JSON, backed by the C++
+A standalone JSON module that converts between JSON text and Lua values, backed by the C++
 serializer.
 
 - `json.encode(value [, options])` → JSON text for any Lua value. Alias: `json.stringify`.

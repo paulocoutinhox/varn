@@ -13,8 +13,8 @@ its full API and every runnable example. The examples also live next to each mod
 | [⏳ async](lua-api/async.md) | Coroutines, promises, and the event loop |
 | [📁 fs](lua-api/fs.md) | Filesystem read/write/exists |
 | [🔐 crypto](lua-api/crypto.md) | Digests, HMAC, and secure random bytes |
-| [🧾 json](lua-api/json.md) | JSON encode/decode with full Lua type mapping |
-| [🧬 xml](lua-api/xml.md) | XML encode/decode with a lossless Lua node model |
+| [🧾 json](lua-api/json.md) | JSON encode/decode with a full Lua mapping |
+| [🧬 xml](lua-api/xml.md) | XML encode/decode with a full Lua mapping |
 | [🗜️ zip](lua-api/zip.md) | Create, extract, and list ZIP archives |
 | [🧩 ffi](lua-api/ffi.md) | Declare and call C functions |
 | [🖥️ platform](lua-api/platform.md) | Host and build information |
