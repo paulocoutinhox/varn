@@ -44,6 +44,15 @@ built-in security middleware (`http.cors`, `http.securityHeaders`, `http.apiKey`
 `http.rateLimit`, `http.csrf`, `http.jwtAuth`, `http.requireAuth`, `http.requireRole`, and
 `http.jwt.sign` / `http.jwt.verify`). The full tour is in the `app_full` example below.
 
+## Execution model
+
+Lua runs on a single thread (its own `lua_State`); blocking I/O is offloaded to a worker pool and
+results are marshalled back. Request handlers, middleware, and WebSocket callbacks therefore run
+**one at a time** on that thread — like Node's event loop. Use `:await()` for I/O so the loop stays
+free; a handler that busy-loops or makes a synchronous blocking call will stall every other
+connection until it returns. HTTP requests are bounded by `requestTimeoutMs` (the server answers
+504 if a handler runs too long); WebSocket messages for one connection are processed in order.
+
 ## Client
 
 ```lua

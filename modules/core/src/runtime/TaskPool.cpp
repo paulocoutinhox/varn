@@ -2,17 +2,16 @@
 
 namespace varn::runtime {
 
-TaskPool::TaskPool(std::size_t threadCount, std::shared_ptr<WorkLedger> ledger) : ledger_(std::move(ledger)) {
-#if defined(__EMSCRIPTEN__)
-    (void)threadCount;
-#else
-    if (threadCount == 0) {
-        threadCount = 4;
+TaskPool::TaskPool(std::size_t threadCount, std::shared_ptr<WorkLedger> ledger)
+    : ledger_(std::move(ledger)), threadCount_(threadCount == 0 ? 4 : threadCount) {}
+
+void TaskPool::start() {
+#if !defined(__EMSCRIPTEN__)
+    if (!workers_.empty()) {
+        return;
     }
-
-    workers_.reserve(threadCount);
-
-    for (std::size_t i = 0; i < threadCount; ++i) {
+    workers_.reserve(threadCount_);
+    for (std::size_t i = 0; i < threadCount_; ++i) {
         workers_.emplace_back([this] {
             workerLoop();
         });
@@ -68,9 +67,14 @@ void TaskPool::stop() {
 #if defined(__EMSCRIPTEN__)
     running_ = false;
 #else
-    bool expected = true;
-    if (!running_.compare_exchange_strong(expected, false)) {
-        return;
+    {
+        // the flag must change under the same mutex the workers wait on, otherwise a worker that
+        // has already evaluated the predicate but not yet blocked misses the notify and never wakes.
+        std::lock_guard<std::mutex> lock(mutex_);
+        bool expected = true;
+        if (!running_.compare_exchange_strong(expected, false)) {
+            return;
+        }
     }
 
     cv_.notify_all();

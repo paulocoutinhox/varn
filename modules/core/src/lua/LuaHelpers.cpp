@@ -50,7 +50,7 @@ void* LuaHelpers::getRuntime(lua_State* L) {
     lua_pop(L, 1);
 
     if (!runtime) {
-        luaL_error(L, "[varn] The runtime is not available.");
+        luaL_error(L, "[LuaHelpers] The runtime is not available.");
     }
 
     return runtime;

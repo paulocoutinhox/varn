@@ -85,6 +85,14 @@ struct WsRoute {
 // caps an assembled websocket message so a fragmented stream cannot exhaust memory.
 constexpr std::size_t kWsMaxMessageBytes = 1u << 20;
 
+// shared between the transport thread that owns the socket and the main loop that runs lua callbacks.
+struct WsConnState {
+    std::mutex mutex;
+    std::deque<std::string> outgoing;
+    bool closed = false;
+    int luaRef = LUA_NOREF;
+};
+
 struct AppState {
     Router router;
     Runtime* runtime = nullptr;
@@ -105,6 +113,9 @@ struct AppState {
     std::vector<int> requestHooks;
     std::vector<int> responseHooks;
     std::vector<WsRoute> wsRoutes;
+    // live websocket connections, tracked on the loop thread so their registry refs are released
+    // deterministically here even if a session is cut short by shutdown before wsRelease runs.
+    std::vector<std::shared_ptr<WsConnState>> liveWsConns;
     int configRef = LUA_NOREF;
 
     ~AppState() {
@@ -153,6 +164,14 @@ struct AppState {
             luaL_unref(luaMain, LUA_REGISTRYINDEX, route.closeRef);
         }
 
+        // release any websocket connection ref whose session ended without wsRelease running.
+        for (const auto& conn : liveWsConns) {
+            if (conn && conn->luaRef != LUA_NOREF) {
+                luaL_unref(luaMain, LUA_REGISTRYINDEX, conn->luaRef);
+                conn->luaRef = LUA_NOREF;
+            }
+        }
+
         luaL_unref(luaMain, LUA_REGISTRYINDEX, configRef);
         luaL_unref(luaMain, LUA_REGISTRYINDEX, errorHandlerRef);
         luaL_unref(luaMain, LUA_REGISTRYINDEX, notFoundHandlerRef);
@@ -181,14 +200,6 @@ struct ContextUserdata {
     int chainRef = LUA_NOREF;
     int selfRef = LUA_NOREF;
     std::string sessionId;
-};
-
-// shared between the transport thread that owns the socket and the main loop that runs lua callbacks.
-struct WsConnState {
-    std::mutex mutex;
-    std::deque<std::string> outgoing;
-    bool closed = false;
-    int luaRef = LUA_NOREF;
 };
 
 struct WsConnUserdata {
@@ -327,7 +338,7 @@ Target HttpApp::resolveTarget(lua_State* L) {
         return Target{userdata->state, userdata->groupId};
     }
 
-    luaL_error(L, "[http] Expected an app or a route group.");
+    luaL_error(L, "[HttpApp] Expected an app or a route group.");
     return Target{};
 }
 
@@ -400,11 +411,11 @@ int HttpApp::luaContextHeader(lua_State* L) {
 
     // an rfc 9110 field name is a token, so reject controls, whitespace and the colon separator.
     if (name.empty()) {
-        return luaL_error(L, "[http] A header name is required.");
+        return luaL_error(L, "[HttpApp] A header name is required.");
     }
     for (unsigned char c : name) {
         if (c <= 0x20 || c == 0x7f || c == ':') {
-            return luaL_error(L, "[http] The header name '%s' is not a valid token.", name.c_str());
+            return luaL_error(L, "[HttpApp] The header name '%s' is not a valid token.", name.c_str());
         }
     }
 
@@ -484,7 +495,7 @@ int HttpApp::luaContextCookie(lua_State* L) {
     const std::string value = LuaHelpers::checkString(L, 3);
 
     if (name.empty() || invalidCookieToken(name) || invalidCookieToken(value)) {
-        return luaL_error(L, "[http] The cookie name or value contains invalid characters.");
+        return luaL_error(L, "[HttpApp] The cookie name or value contains invalid characters.");
     }
 
     std::string cookie = name + "=" + value;
@@ -495,7 +506,7 @@ int HttpApp::luaContextCookie(lua_State* L) {
             const std::string path = lua_tostring(L, -1);
             if (invalidCookieAttribute(path)) {
                 lua_pop(L, 1);
-                return luaL_error(L, "[http] The cookie path contains invalid characters.");
+                return luaL_error(L, "[HttpApp] The cookie path contains invalid characters.");
             }
             cookie += "; Path=" + path;
         }
@@ -506,7 +517,7 @@ int HttpApp::luaContextCookie(lua_State* L) {
             const std::string domain = lua_tostring(L, -1);
             if (invalidCookieAttribute(domain)) {
                 lua_pop(L, 1);
-                return luaL_error(L, "[http] The cookie domain contains invalid characters.");
+                return luaL_error(L, "[HttpApp] The cookie domain contains invalid characters.");
             }
             cookie += "; Domain=" + domain;
         }
@@ -521,7 +532,7 @@ int HttpApp::luaContextCookie(lua_State* L) {
             const std::string expires = lua_tostring(L, -1);
             if (invalidCookieAttribute(expires)) {
                 lua_pop(L, 1);
-                return luaL_error(L, "[http] The cookie expires value contains invalid characters.");
+                return luaL_error(L, "[HttpApp] The cookie expires value contains invalid characters.");
             }
             cookie += "; Expires=" + expires;
         }
@@ -544,14 +555,14 @@ int HttpApp::luaContextCookie(lua_State* L) {
                 sameSite = "None";
             } else {
                 lua_pop(L, 1);
-                return luaL_error(L, "[http] The cookie sameSite value must be Strict, Lax or None.");
+                return luaL_error(L, "[HttpApp] The cookie sameSite value must be Strict, Lax or None.");
             }
         }
         lua_pop(L, 1);
 
         // browsers reject a SameSite=None cookie that is not also marked Secure.
         if (sameSite == "None" && !secure) {
-            return luaL_error(L, "[http] A SameSite=None cookie must also be Secure.");
+            return luaL_error(L, "[HttpApp] A SameSite=None cookie must also be Secure.");
         }
 
         if (!sameSite.empty()) {
@@ -587,7 +598,7 @@ int HttpApp::luaContextBody(lua_State* L) {
 #if VARN_JSON_DRIVER_NLOHMANN
     if (format == "json" || (format.empty() && type.find("application/json") != std::string::npos)) {
         if (!json::JsonSerializer::deserialize(L, body)) {
-            return luaL_error(L, "[http] The request body is not valid JSON.");
+            return luaL_error(L, "[HttpApp] The request body is not valid JSON.");
         }
         return 1;
     }
@@ -601,7 +612,7 @@ int HttpApp::luaContextBody(lua_State* L) {
     if (format == "multipart" || (format.empty() && type.find("multipart/form-data") != std::string::npos)) {
         const std::string boundary = HttpMultipart::extractBoundary(context->contentType);
         if (boundary.empty()) {
-            return luaL_error(L, "[http] The multipart body has no boundary.");
+            return luaL_error(L, "[HttpApp] The multipart body has no boundary.");
         }
         HttpMultipart::pushMultipart(L, body, boundary);
         return 1;
@@ -885,6 +896,18 @@ int HttpApp::chainContinue(lua_State* L, int status, lua_KContext ctx) {
 
 // upvalues: 1 = chain table, 2 = context, 3 = entry count, 4 = current index.
 int HttpApp::chainNext(lua_State* L) {
+    // single-fire guard (upvalue 5 is a one-slot flag table): a middleware that calls next() more than
+    // once must not re-run the rest of the chain, which would double session writes, Set-Cookie headers,
+    // rate-limit increments, and so on.
+    lua_rawgeti(L, lua_upvalueindex(5), 1);
+    const bool alreadyFired = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+    if (alreadyFired) {
+        return 0;
+    }
+    lua_pushboolean(L, 1);
+    lua_rawseti(L, lua_upvalueindex(5), 1);
+
     const int index = static_cast<int>(lua_tointeger(L, lua_upvalueindex(4)));
     const int count = static_cast<int>(lua_tointeger(L, lua_upvalueindex(3)));
 
@@ -905,7 +928,8 @@ int HttpApp::chainNext(lua_State* L) {
     lua_pushvalue(L, lua_upvalueindex(2));
     lua_pushvalue(L, lua_upvalueindex(3));
     lua_pushinteger(L, index + 1);
-    lua_pushcclosure(L, &chainNext, 4);
+    lua_newtable(L); // fresh single-fire flag for the next link
+    lua_pushcclosure(L, &chainNext, 5);
 
     lua_callk(L, 2, 0, 0, &chainContinue);
     return 0;
@@ -1014,7 +1038,7 @@ int HttpApp::dispatchFinalize(lua_State* L, int status, lua_KContext kctx) {
         const char* message = lua_tostring(L, -1);
         detail = message ? message : "A request handler failed without a message.";
         lua_pop(L, 1);
-        log::Log::error("http", detail);
+        log::Log::error("HttpApp", detail);
     }
 
     lua_rawgeti(L, LUA_REGISTRYINDEX, contextRef);
@@ -1032,7 +1056,7 @@ int HttpApp::dispatchFinalize(lua_State* L, int status, lua_KContext kctx) {
         lua_pushlstring(L, detail.data(), detail.size());
         if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
             const char* secondary = lua_tostring(L, -1);
-            log::Log::error("http", secondary ? secondary : "The error handler failed.");
+            log::Log::error("HttpApp", secondary ? secondary : "The error handler failed.");
             lua_pop(L, 1);
         }
     }
@@ -1051,7 +1075,7 @@ int HttpApp::dispatchFinalize(lua_State* L, int status, lua_KContext kctx) {
         lua_rawgeti(L, LUA_REGISTRYINDEX, contextRef);
         if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
             const char* hookError = lua_tostring(L, -1);
-            log::Log::error("http", hookError ? hookError : "An onResponse hook failed.");
+            log::Log::error("HttpApp", hookError ? hookError : "An onResponse hook failed.");
             lua_pop(L, 1);
         }
     }
@@ -1068,7 +1092,8 @@ int HttpApp::dispatchBody(lua_State* L) {
     lua_pushvalue(L, lua_upvalueindex(2));
     lua_pushvalue(L, lua_upvalueindex(3));
     lua_pushinteger(L, 1);
-    lua_pushcclosure(L, &chainNext, 4);
+    lua_newtable(L); // single-fire flag for the chain's first link
+    lua_pushcclosure(L, &chainNext, 5);
 
     const lua_KContext kctx = static_cast<lua_KContext>(lua_tointeger(L, lua_upvalueindex(4)));
     const int status = lua_pcallk(L, 0, 0, 0, kctx, &dispatchFinalize);
@@ -1104,7 +1129,7 @@ void HttpApp::runDispatch(const std::shared_ptr<AppState>& app, const HttpReques
         lua_rawgeti(thread, LUA_REGISTRYINDEX, context->selfRef);
         if (lua_pcall(thread, 1, 0, 0) != LUA_OK) {
             const char* hookError = lua_tostring(thread, -1);
-            log::Log::error("http", hookError ? hookError : "An onRequest hook failed.");
+            log::Log::error("HttpApp", hookError ? hookError : "An onRequest hook failed.");
             lua_pop(thread, 1);
         }
     }
@@ -1123,7 +1148,7 @@ void HttpApp::runDispatch(const std::shared_ptr<AppState>& app, const HttpReques
     // dispatchFinalize owns cleanup, so only a dispatcher-level failure is handled here.
     if (status != LUA_OK && status != LUA_YIELD) {
         const char* message = lua_tostring(thread, -1);
-        log::Log::error("http", message ? message : "The request dispatcher failed.");
+        log::Log::error("HttpApp", message ? message : "The request dispatcher failed.");
     }
 }
 
@@ -1451,7 +1476,7 @@ int HttpApp::luaCors(lua_State* L) {
         lua_pop(L, 1);
 
         if (credentials && wildcardOrigin) {
-            return luaL_error(L, "[http] cors credentials cannot be combined with origin '*'.");
+            return luaL_error(L, "[HttpApp] cors credentials cannot be combined with origin '*'.");
         }
 
         lua_pushvalue(L, 1);
@@ -1495,7 +1520,7 @@ int HttpApp::luaJwtSign(lua_State* L) {
     const std::string secret = LuaHelpers::checkString(L, 2);
 
     if (secret.empty()) {
-        return luaL_error(L, "[http] A jwt secret is required.");
+        return luaL_error(L, "[HttpApp] A jwt secret is required.");
     }
 
     const long long now = static_cast<long long>(std::time(nullptr));
@@ -1846,6 +1871,8 @@ void HttpApp::wsInvoke(const std::shared_ptr<AppState>& app, int ref, std::share
         if (conn->luaRef == LUA_NOREF) {
             pushWsConn(L, conn);
             conn->luaRef = luaL_ref(L, LUA_REGISTRYINDEX);
+            // track it on the loop thread so ~AppState can release the ref if shutdown skips wsRelease.
+            app->liveWsConns.push_back(conn);
         }
         if (ref != LUA_NOREF) {
             lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
@@ -1857,7 +1884,7 @@ void HttpApp::wsInvoke(const std::shared_ptr<AppState>& app, int ref, std::share
             }
             if (lua_pcall(L, nargs, 0, 0) != LUA_OK) {
                 const char* error = lua_tostring(L, -1);
-                log::Log::error("http", error ? error : "A websocket handler failed.");
+                log::Log::error("HttpApp", error ? error : "A websocket handler failed.");
                 lua_pop(L, 1);
             }
         }
@@ -1877,6 +1904,8 @@ void HttpApp::wsRelease(const std::shared_ptr<AppState>& app, std::shared_ptr<Ws
             luaL_unref(app->runtime->luaState(), LUA_REGISTRYINDEX, conn->luaRef);
             conn->luaRef = LUA_NOREF;
         }
+        auto& live = app->liveWsConns;
+        live.erase(std::remove(live.begin(), live.end(), conn), live.end());
         done->set_value();
     });
 
@@ -1931,7 +1960,7 @@ void HttpApp::runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTP
     try {
         socket = std::make_unique<Poco::Net::WebSocket>(request, response);
     } catch (const std::exception& ex) {
-        log::Log::error("http", std::string("The websocket handshake failed. ") + ex.what());
+        log::Log::error("HttpApp", std::string("The websocket handshake failed. ") + ex.what());
         return;
     }
     socket->setReceiveTimeout(Poco::Timespan(0, 200 * 1000));
@@ -1955,6 +1984,11 @@ void HttpApp::runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTP
             break;
         }
 
+        // a negative count should not occur, but guard it so it is never cast to a huge size below.
+        if (received < 0) {
+            break;
+        }
+
         const int opcode = flags & Poco::Net::WebSocket::FRAME_OP_BITMASK;
 
         // a zero-length read with no opcode means the peer closed the connection.
@@ -1975,10 +2009,11 @@ void HttpApp::runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTP
         }
 
         // assemble continuation frames until the final fragment, bounding the total size.
-        fragment.append(buffer.data(), static_cast<std::size_t>(received));
-        if (fragment.size() > kWsMaxMessageBytes) {
+        // check before appending so the buffer never overshoots the cap by a whole frame.
+        if (fragment.size() + static_cast<std::size_t>(received) > kWsMaxMessageBytes) {
             break;
         }
+        fragment.append(buffer.data(), static_cast<std::size_t>(received));
         if ((flags & Poco::Net::WebSocket::FRAME_FLAG_FIN) == 0) {
             continue;
         }
@@ -2045,7 +2080,7 @@ int HttpApp::registerRoute(lua_State* L, const std::string& method, int pathInde
     const int firstHandler = pathIndex + 1;
     const int top = lua_gettop(L);
     if (top < firstHandler) {
-        return luaL_error(L, "[http] A route handler is required.");
+        return luaL_error(L, "[HttpApp] A route handler is required.");
     }
     for (int i = firstHandler; i <= top; ++i) {
         luaL_checktype(L, i, LUA_TFUNCTION);
@@ -2130,7 +2165,7 @@ int HttpApp::luaRouteWhere(lua_State* L) {
     try {
         route->state->router.setConstraint(route->routeId, param, constraint);
     } catch (const std::exception&) {
-        return luaL_error(L, "[http] The constraint for '%s' is not a valid pattern.", param.c_str());
+        return luaL_error(L, "[HttpApp] The constraint for '%s' is not a valid pattern.", param.c_str());
     }
 
     lua_pushvalue(L, 1);
@@ -2181,7 +2216,7 @@ int HttpApp::luaUrl(lua_State* L) {
 
     const auto url = app->state->router.buildUrl(name, params);
     if (!url) {
-        return luaL_error(L, "[http] Cannot build a url for the route '%s'.", name.c_str());
+        return luaL_error(L, "[HttpApp] Cannot build a url for the route '%s'.", name.c_str());
     }
 
     lua_pushlstring(L, url->data(), url->size());
@@ -2246,7 +2281,7 @@ int HttpApp::luaEmit(lua_State* L) {
             }
             if (lua_pcall(L, top - 2, 0, 0) != LUA_OK) {
                 const char* error = lua_tostring(L, -1);
-                log::Log::error("http", error ? error : "An event handler failed.");
+                log::Log::error("HttpApp", error ? error : "An event handler failed.");
                 lua_pop(L, 1);
             }
         }
@@ -2373,14 +2408,14 @@ int HttpApp::luaAppListen(lua_State* L) {
 
     std::ostringstream started;
     started << "Listening on " << (tls ? "https" : "http") << "://" << host << ":" << port << ".";
-    log::Log::line("http", started.str());
+    log::Log::line("HttpApp", started.str());
 
     for (int ref : state->startHooks) {
         lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
         lua_pushvalue(L, 1);
         if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
             const char* error = lua_tostring(L, -1);
-            log::Log::error("http", error ? error : "An onStart hook failed.");
+            log::Log::error("HttpApp", error ? error : "An onStart hook failed.");
             lua_pop(L, 1);
         }
     }

@@ -1,5 +1,6 @@
 #include "StaticContent.h"
 
+#include "HttpRange.h"
 #include "varn/http/MimeTypes.h"
 
 #include <cctype>
@@ -93,48 +94,6 @@ std::string StaticContent::makeEtag(std::uintmax_t size, long long writeTime) {
     return tag.str();
 }
 
-bool StaticContent::parseByteRange(const std::string& header, std::uintmax_t total, std::uintmax_t& start, std::uintmax_t& end) {
-    const std::string prefix = "bytes=";
-    if (header.rfind(prefix, 0) != 0 || total == 0) {
-        return false;
-    }
-
-    const std::string spec = header.substr(prefix.size());
-    const std::size_t dash = spec.find('-');
-    if (dash == std::string::npos) {
-        return false;
-    }
-
-    const std::string first = spec.substr(0, dash);
-    const std::string last = spec.substr(dash + 1);
-
-    try {
-        if (first.empty()) {
-            // a suffix range asks for the final bytes of the file.
-            if (last.empty()) {
-                return false;
-            }
-            const std::uintmax_t count = std::stoull(last);
-            if (count == 0) {
-                return false;
-            }
-            start = count >= total ? 0 : total - count;
-            end = total - 1;
-            return true;
-        }
-
-        start = std::stoull(first);
-        end = last.empty() ? total - 1 : std::stoull(last);
-    } catch (const std::exception&) {
-        return false;
-    }
-
-    if (end >= total) {
-        end = total - 1;
-    }
-    return start <= end && start < total;
-}
-
 bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response, const std::filesystem::path& path) {
     std::error_code ec;
     const std::uintmax_t size = std::filesystem::file_size(path, ec);
@@ -175,7 +134,7 @@ bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response
     if (!range.empty() && range.find(',') == std::string::npos) {
         std::uintmax_t start = 0;
         std::uintmax_t end = 0;
-        if (!parseByteRange(range, size, start, end)) {
+        if (!HttpRange::parse(range, size, start, end)) {
             response.setStatus(416);
             response.setHeader("Content-Range", "bytes */" + std::to_string(size));
             response.end("");

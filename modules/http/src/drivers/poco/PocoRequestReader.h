@@ -12,7 +12,7 @@
 namespace varn::http {
 
 struct RequestBodyTooLarge : std::runtime_error {
-    RequestBodyTooLarge() : std::runtime_error("[http] The request body is too large.") {}
+    RequestBodyTooLarge() : std::runtime_error("[PocoRequestReader] The request body is too large.") {}
 };
 
 class PocoRequestReader {
@@ -23,7 +23,7 @@ private:
     static std::map<std::string, std::string> headers(const Poco::Net::HTTPRequest& request);
     static std::map<std::string, std::string> query(const Poco::URI& uri);
     static std::map<std::string, std::string> cookies(const Poco::Net::HTTPServerRequest& request);
-    static std::string body(Poco::Net::HTTPServerRequest& request, int maxBytes);
+    static std::string body(Poco::Net::HTTPServerRequest& request, long long maxBytes);
 };
 
 } // namespace varn::http

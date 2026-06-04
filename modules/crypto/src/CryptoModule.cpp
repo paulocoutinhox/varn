@@ -32,7 +32,7 @@ int CryptoModule::luaDigest(lua_State* L) {
         const std::string data = varn::lua::LuaHelpers::checkString(L, 2);
         bool hexOut = true;
         if (!parseDigestFormat(L, 3, hexOut)) {
-            return luaL_error(L, "[crypto] Output format must be hex or raw.");
+            return luaL_error(L, "[CryptoModule] Output format must be hex or raw.");
         }
         const std::string out = CryptoPrimitives::digest(algorithm, data, hexOut);
         lua_pushlstring(L, out.data(), out.size());
@@ -49,7 +49,7 @@ int CryptoModule::luaHmac(lua_State* L) {
         const std::string data = varn::lua::LuaHelpers::checkString(L, 3);
         bool hexOut = true;
         if (!parseDigestFormat(L, 4, hexOut)) {
-            return luaL_error(L, "[crypto] Output format must be hex or raw.");
+            return luaL_error(L, "[CryptoModule] Output format must be hex or raw.");
         }
         const std::string out = CryptoPrimitives::hmac(digestAlgo, key, data, hexOut);
         lua_pushlstring(L, out.data(), out.size());
@@ -62,8 +62,8 @@ int CryptoModule::luaHmac(lua_State* L) {
 int CryptoModule::luaRandomBytes(lua_State* L) {
     try {
         lua_Integer count = luaL_checkinteger(L, 1);
-        if (count < 0 || count > 1024 * 1024) {
-            return luaL_error(L, "[crypto] Random byte count must be between zero and one million.");
+        if (count < 0) {
+            return luaL_error(L, "[CryptoModule] Random byte count must not be negative.");
         }
         std::string bytes = CryptoPrimitives::randomBytes(static_cast<std::size_t>(count));
         lua_pushlstring(L, bytes.data(), bytes.size());
@@ -71,6 +71,24 @@ int CryptoModule::luaRandomBytes(lua_State* L) {
     } catch (const std::exception& ex) {
         return luaL_error(L, "%s", ex.what());
     }
+}
+
+int CryptoModule::luaEquals(lua_State* L) {
+    std::size_t lenA = 0;
+    std::size_t lenB = 0;
+    const char* a = luaL_checklstring(L, 1, &lenA);
+    const char* b = luaL_checklstring(L, 2, &lenB);
+
+    // constant-time comparison so verifying a mac or token does not leak its bytes through timing.
+    // a length mismatch folds into the accumulator and reports unequal.
+    std::size_t diff = lenA ^ lenB;
+    const std::size_t common = lenA < lenB ? lenA : lenB;
+    for (std::size_t i = 0; i < common; ++i) {
+        diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+    }
+
+    lua_pushboolean(L, diff == 0 ? 1 : 0);
+    return 1;
 }
 
 int CryptoModule::luaOpen(lua_State* L) {
@@ -84,6 +102,9 @@ int CryptoModule::luaOpen(lua_State* L) {
 
     lua_pushcfunction(L, &CryptoModule::luaRandomBytes);
     lua_setfield(L, -2, "randomBytes");
+
+    lua_pushcfunction(L, &CryptoModule::luaEquals);
+    lua_setfield(L, -2, "equals");
 
     return 1;
 }

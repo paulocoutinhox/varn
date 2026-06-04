@@ -1,18 +1,18 @@
 -- zip: create an archive, list it, extract it, and verify the entry round-trips.
 local async = require("async")
 
+local dir = assert(os.getenv("VARN_TEST_DIR"), "VARN_TEST_DIR is not set; run tests with: python3 varn.py test")
+
 async.run(function()
     local zip = require("zip")
 
-    local src = "build/_zip_src.txt"
-    local archive = "build/_zip_test.zip"
-    local outDir = "build/_zip_out"
+    local src = dir .. "/zip_src.txt"
+    local archive = dir .. "/zip_test.zip"
+    local outDir = dir .. "/zip_out"
 
     local f = assert(io.open(src, "w"), "cannot create fixture")
     f:write("zip-test\n")
     f:close()
-
-    os.execute("rm -rf '" .. outDir .. "' && mkdir -p '" .. outDir .. "'")
 
     local _, createErr = zip.create(archive, { { file = src, entry = "inside/data.txt" } }):await()
     assert(not createErr, createErr)
@@ -28,10 +28,6 @@ async.run(function()
     local body = rf:read("*a")
     rf:close()
     assert(body == "zip-test\n", "extracted content mismatch")
-
-    os.execute("rm -rf '" .. outDir .. "'")
-    os.remove(archive)
-    os.remove(src)
 
     print("zip ok")
 end)

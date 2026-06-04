@@ -105,10 +105,11 @@ int SocketModule::luaUdpSocketGc(lua_State* L) {
 
 int SocketModule::luaTcpConnect(lua_State* L) {
     const char* host = luaL_checkstring(L, 1);
-    const int port = static_cast<int>(luaL_checkinteger(L, 2));
-    if (port <= 0 || port > 65535) {
-        return luaL_error(L, "[socket] Port must be between 1 and 65535.");
+    const lua_Integer portArg = luaL_checkinteger(L, 2);
+    if (portArg < 1 || portArg > 65535) {
+        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
+    const int port = static_cast<int>(portArg);
 
     auto& rt = luaRuntime(L);
     std::string hostStr = host;
@@ -129,14 +130,16 @@ int SocketModule::luaTcpConnect(lua_State* L) {
 
 int SocketModule::luaTcpListen(lua_State* L) {
     const char* host = luaL_checkstring(L, 1);
-    const int port = static_cast<int>(luaL_checkinteger(L, 2));
-    const int backlog = static_cast<int>(luaL_optinteger(L, 3, 64));
-    if (port <= 0 || port > 65535) {
-        return luaL_error(L, "[socket] Port must be between 1 and 65535.");
+    const lua_Integer portArg = luaL_checkinteger(L, 2);
+    const lua_Integer backlogArg = luaL_optinteger(L, 3, 64);
+    if (portArg < 1 || portArg > 65535) {
+        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
-    if (backlog <= 0 || backlog > 4096) {
-        return luaL_error(L, "[socket] Backlog must be between 1 and 4096.");
+    if (backlogArg < 1 || backlogArg > 4096) {
+        return luaL_error(L, "[SocketModule] Backlog must be between 1 and 4096.");
     }
+    const int port = static_cast<int>(portArg);
+    const int backlog = static_cast<int>(backlogArg);
 
     auto& rt = luaRuntime(L);
     std::string hostStr = host;
@@ -182,7 +185,7 @@ int SocketModule::luaTcpSocketReceive(lua_State* L) {
     auto* holder = checkTcpSocket(L, 1);
     const int maxBytes = static_cast<int>(luaL_optinteger(L, 2, 65536));
     if (maxBytes <= 0) {
-        return luaL_error(L, "[socket] The maximum number of bytes to receive must be positive.");
+        return luaL_error(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
     }
 
     auto& rt = luaRuntime(L);
@@ -229,7 +232,11 @@ int SocketModule::luaTcpListenerAccept(lua_State* L) {
     rt.taskPool().post([promise, listener] {
         try {
             auto conn = listener->acceptBlocking();
-            promise->resolveCustom([conn](lua_State* lua) { pushTcpSocket(lua, conn); });
+            if (!conn) {
+                promise->reject("[SocketModule] The listener was closed.");
+            } else {
+                promise->resolveCustom([conn](lua_State* lua) { pushTcpSocket(lua, conn); });
+            }
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         }
@@ -260,10 +267,11 @@ int SocketModule::luaTcpListenerClose(lua_State* L) {
 
 int SocketModule::luaUdpBind(lua_State* L) {
     const char* host = luaL_checkstring(L, 1);
-    const int port = static_cast<int>(luaL_checkinteger(L, 2));
-    if (port <= 0 || port > 65535) {
-        return luaL_error(L, "[socket] Port must be between 1 and 65535.");
+    const lua_Integer portArg = luaL_checkinteger(L, 2);
+    if (portArg < 1 || portArg > 65535) {
+        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
+    const int port = static_cast<int>(portArg);
 
     auto& rt = luaRuntime(L);
     std::string hostStr = host;
@@ -285,10 +293,11 @@ int SocketModule::luaUdpBind(lua_State* L) {
 int SocketModule::luaUdpSocketSendTo(lua_State* L) {
     auto* holder = checkUdpSocket(L, 1);
     const char* host = luaL_checkstring(L, 2);
-    const int port = static_cast<int>(luaL_checkinteger(L, 3));
-    if (port <= 0 || port > 65535) {
-        return luaL_error(L, "[socket] Port must be between 1 and 65535.");
+    const lua_Integer portArg = luaL_checkinteger(L, 3);
+    if (portArg < 1 || portArg > 65535) {
+        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
+    const int port = static_cast<int>(portArg);
     size_t len = 0;
     const char* data = luaL_checklstring(L, 4, &len);
     std::string payload(data, len);
@@ -315,7 +324,7 @@ int SocketModule::luaUdpSocketRecvFrom(lua_State* L) {
     auto* holder = checkUdpSocket(L, 1);
     const int maxBytes = static_cast<int>(luaL_optinteger(L, 2, 65536));
     if (maxBytes <= 0) {
-        return luaL_error(L, "[socket] The maximum number of bytes to receive must be positive.");
+        return luaL_error(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
     }
 
     auto& rt = luaRuntime(L);

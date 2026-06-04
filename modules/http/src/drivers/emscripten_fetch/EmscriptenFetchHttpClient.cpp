@@ -82,7 +82,7 @@ EMSCRIPTEN_KEEPALIVE void varn_fetch_js_on_error(uintptr_t ctxHandle, uintptr_t 
         copy.assign(reinterpret_cast<const char*>(msgPtr));
         std::free(reinterpret_cast<void*>(msgPtr));
     } else {
-        copy = "[http] The request failed.";
+        copy = "[EmscriptenFetchHttpClient] The request failed.";
     }
     if (ctx != nullptr) {
         try {
@@ -96,7 +96,7 @@ EMSCRIPTEN_KEEPALIVE void varn_fetch_js_on_error(uintptr_t ctxHandle, uintptr_t 
 } // extern "C"
 
 EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const char* method, const char* headers_json,
-                                         const char* body_ptr, int body_len, int timeout_sec), {
+                                         const char* body_ptr, int body_len, int timeout_sec, double max_bytes), {
     function reportError(message) {
         const len = lengthBytesUTF8(message) + 1;
         const eptr = _malloc(len);
@@ -155,11 +155,15 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
             }
             const u8 = new Uint8Array(x.ab);
             const len = u8.byteLength;
+            if (max_bytes > 0 && len > max_bytes) {
+                reportError("[EmscriptenFetchHttpClient] The response body exceeds the maximum allowed size.");
+                return;
+            }
             let ptr = 0;
             if (len > 0) {
                 ptr = _malloc(len);
                 if (!ptr) {
-                    throw new Error("[http] The response body could not be allocated.");
+                    throw new Error("[EmscriptenFetchHttpClient] The response body could not be allocated.");
                 }
                 HEAPU8.set(u8, ptr);
             }
@@ -179,7 +183,8 @@ void performRequestWireEmscriptenAsync(
     const std::string& url,
     const std::map<std::string, std::string>& headers,
     const std::string& body,
-    int timeoutSeconds) {
+    int timeoutSeconds,
+    std::size_t maxResponseBytes) {
     auto* ctx = new FetchContext{promise, method, url, body, {}};
     nlohmann::json hdr = nlohmann::json::object();
     for (const auto& kv : headers) {
@@ -191,7 +196,8 @@ void performRequestWireEmscriptenAsync(
 
     varn_browser_fetch_start(reinterpret_cast<uintptr_t>(ctx), ctx->url.c_str(), ctx->method.c_str(),
                                ctx->headersJson.c_str(), ctx->body.empty() ? nullptr : ctx->body.data(),
-                               static_cast<int>(ctx->body.size()), timeoutSeconds);
+                               static_cast<int>(ctx->body.size()), timeoutSeconds,
+                               static_cast<double>(maxResponseBytes));
 }
 
 } // namespace varn::http::client

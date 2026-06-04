@@ -45,6 +45,8 @@ option(VARN_ENABLE_TLS "enable TLS (HTTPS) support" ON)
 option(VARN_ENABLE_STATIC_FILES "enable public static file serving" ON)
 option(VARN_WARNINGS_AS_ERRORS "treat warnings as errors" OFF)
 option(VARN_ENABLE_ZIP "build the zip module (libzip + zlib)" ON)
+option(VARN_BUILD_TESTS "build the native C++ test target (googletest)" OFF)
+set(VARN_SANITIZE "" CACHE STRING "comma-separated sanitizers to build with, e.g. address,undefined (clang/gcc only)")
 
 # the browser cannot host raw tcp or an in-page server, so force the wasm-capable driver set.
 if(VARN_BUILDING_FOR_EMSCRIPTEN)
@@ -160,6 +162,7 @@ else()
     set_target_properties(varn_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
     varn_apply_usage(varn_core PUBLIC)
     varn_apply_warnings(varn_core)
+    varn_apply_sanitize(varn_core PUBLIC)
 
     if(VARN_TARGET STREQUAL "wasm")
         add_executable(varn_wasm "${VARN_ROOT}/src/wasm/VarnWasm.cpp")
@@ -185,4 +188,10 @@ else()
         target_link_libraries(varn PRIVATE varn_core)
         install(TARGETS varn RUNTIME DESTINATION bin)
     endif()
+endif()
+
+# native C++ unit tests, kept off the shippable build and out of the wasm/mobile targets.
+if(VARN_BUILD_TESTS AND TARGET varn_core AND NOT VARN_BUILDING_FOR_EMSCRIPTEN)
+    enable_testing()
+    add_subdirectory("${VARN_ROOT}/tests/cpp")
 endif()

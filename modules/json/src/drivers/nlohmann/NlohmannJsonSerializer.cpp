@@ -38,7 +38,9 @@ void JsonSerializer::appendValue(lua_State* L, int index, std::string& out, int 
             out += "null";
             return;
         case LUA_TTABLE: {
-            constexpr int maxDepth = 64;
+            // matches the decode side (parse/convert caps) so a value that round-trips in can round-trip
+            // out; this is a stack-overflow guard, not a usage limit, so it sits well above real data.
+            constexpr int maxDepth = 256;
             if (depth >= maxDepth) {
                 out += JsonConvert::dumpString("[max depth]");
                 return;
@@ -124,7 +126,9 @@ std::string JsonSerializer::encode(lua_State* L, int index, int indent) {
 }
 
 bool JsonSerializer::deserialize(lua_State* L, const std::string& text) {
-    // reject pathologically nested input before the recursive parser can overflow the stack.
+    // reject pathologically nested input before the recursive parser can overflow the stack. kept below
+    // JsonConvert::pushJson's depth cap so any accepted document converts fully and is never silently
+    // truncated to nil.
     constexpr int maxParseDepth = 200;
     int depth = 0;
     bool inString = false;

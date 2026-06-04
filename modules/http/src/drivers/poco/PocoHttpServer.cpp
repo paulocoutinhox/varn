@@ -56,13 +56,13 @@ public:
             // write the buffered response after the handler returns when the library still owns the stream
             deferredResponse->flushTo(response);
         } catch (const RequestBodyTooLarge& ex) {
-            log::Log::error("http", ex.what());
+            log::Log::error("VarnRequestHandler", ex.what());
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_REQUEST_ENTITY_TOO_LARGE);
             response.setContentType("text/plain; charset=utf-8");
             response.send() << "Payload too large.";
         } catch (const std::exception& ex) {
             // log the detail but never echo internal errors back to the client.
-            log::Log::error("http", std::string("A request failed unexpectedly. ") + ex.what());
+            log::Log::error("VarnRequestHandler", std::string("A request failed unexpectedly. ") + ex.what());
             response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
             response.setContentType("text/plain; charset=utf-8");
             response.send() << "Internal server error.";

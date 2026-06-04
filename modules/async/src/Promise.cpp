@@ -135,6 +135,11 @@ int Promise::prepareAwait(lua_State* L) {
 }
 
 void Promise::runPendingResumes() {
+    // during teardown the loop is stopping and the lua state is about to go away; never touch it.
+    if (runtime_.stopped()) {
+        return;
+    }
+
     lua_State* mainState = runtime_.luaState();
     std::vector<int> refs;
     State state;
@@ -158,7 +163,7 @@ void Promise::runPendingResumes() {
         lua_State* coroutine = lua_tothread(mainState, -1);
         lua_pop(mainState, 1);
         if (coroutine == nullptr) {
-            log::Log::error("async", "A pending task is no longer a valid coroutine.");
+            log::Log::error("Promise", "A pending task is no longer a valid coroutine.");
             luaL_unref(mainState, LUA_REGISTRYINDEX, ref);
             continue;
         }
@@ -187,7 +192,7 @@ void Promise::runPendingResumes() {
         if (status != LUA_OK && status != LUA_YIELD) {
             const char* message = lua_tostring(coroutine, -1);
             std::string detail = message ? message : "A task failed without a message.";
-            log::Log::error("async", detail);
+            log::Log::error("Promise", detail);
             if (nres > 0) {
                 lua_pop(coroutine, nres);
             }

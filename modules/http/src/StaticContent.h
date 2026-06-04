@@ -20,7 +20,6 @@ private:
     static std::string htmlEscape(const std::string& value);
     static std::string urlEncodePath(const std::string& value);
     static std::string makeEtag(std::uintmax_t size, long long writeTime);
-    static bool parseByteRange(const std::string& header, std::uintmax_t total, std::uintmax_t& start, std::uintmax_t& end);
 };
 
 } // namespace varn::http

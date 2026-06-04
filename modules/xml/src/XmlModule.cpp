@@ -50,7 +50,7 @@ int XmlModule::luaDecode(lua_State* L) {
 
     try {
         if (!XmlSerializer::parse(L, std::string(text, length))) {
-            return luaL_error(L, "[xml] The input is not valid XML.");
+            return luaL_error(L, "[XmlModule] The input is not valid XML.");
         }
         return 1;
     } catch (const std::exception& ex) {

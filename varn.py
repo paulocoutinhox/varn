@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from tools.core import android, apple, cxx, general, wasm
+from tools.core import android, apple, cxx, general, tests, wasm
 
 
 def _common(
@@ -42,6 +42,29 @@ def _opt_wasm(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--zip", help="ON or OFF")
 
 
+def _opt_test(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--build-dir", default="build", help="build directory holding bin/varn (default: build)"
+    )
+
+
+def _opt_test_cpp(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--build-dir", default="build/test", help="build directory for the C++ tests (default: build/test)"
+    )
+    parser.add_argument(
+        "--config", default="Release", help="CMake build type (default: Release)"
+    )
+    parser.add_argument(
+        "-D",
+        "--define",
+        action="append",
+        default=[],
+        metavar="VAR=VALUE",
+        help="extra -D cache entry forwarded to cmake (repeatable)",
+    )
+
+
 def _opt_clean(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--build-dir", default="build", help="build directory (default: build)"
@@ -54,6 +77,16 @@ _TASKS = {
         cxx.build,
         _opt_build,
         "Build the native varn executable for the current desktop OS.",
+    ),
+    "test": (
+        tests.run,
+        _opt_test,
+        "Run the Lua test suite against the built varn binary.",
+    ),
+    "test-cpp": (
+        tests.run_cpp,
+        _opt_test_cpp,
+        "Build and run the native C++ test target (googletest).",
     ),
     "apple": (apple.build, _common, "Build Varn.xcframework for all Apple slices."),
     "android": (

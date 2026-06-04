@@ -2,28 +2,30 @@
 
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <stdexcept>
+#include <string>
 
 namespace varn::fs {
 
 std::string FsStorage::readAll(const std::string& path) {
-    // bound how much a single read can pull into memory so a huge file cannot exhaust it.
-    constexpr std::uintmax_t kMaxReadBytes = 256ull * 1024 * 1024;
-    std::error_code ec;
-    const std::uintmax_t size = std::filesystem::file_size(path, ec);
-    if (!ec && size > kMaxReadBytes) {
-        throw std::runtime_error("[fs] The file is too large to read into memory.");
-    }
-
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        throw std::runtime_error("[fs] The file could not be opened for reading.");
+        throw std::runtime_error("[FsStorage] The file could not be opened for reading.");
     }
 
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
+    // read the whole file, like node's readFile — the caller owns the machine, so there is no
+    // artificial size cap; a file too large for memory fails the allocation, which is the caller's call.
+    std::string out;
+    char chunk[65536];
+    while (file) {
+        file.read(chunk, sizeof(chunk));
+        const std::streamsize got = file.gcount();
+        if (got <= 0) {
+            break;
+        }
+        out.append(chunk, static_cast<std::size_t>(got));
+    }
+    return out;
 }
 
 void FsStorage::writeAll(const std::string& path, const std::string& content) {
@@ -34,13 +36,13 @@ void FsStorage::writeAll(const std::string& path, const std::string& content) {
 
     std::ofstream file(path, std::ios::binary);
     if (!file) {
-        throw std::runtime_error("[fs] The file could not be opened for writing.");
+        throw std::runtime_error("[FsStorage] The file could not be opened for writing.");
     }
 
     file.write(content.data(), static_cast<std::streamsize>(content.size()));
     file.flush();
     if (!file) {
-        throw std::runtime_error("[fs] The file could not be written.");
+        throw std::runtime_error("[FsStorage] The file could not be written.");
     }
 }
 

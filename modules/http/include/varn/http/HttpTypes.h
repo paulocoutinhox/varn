@@ -52,7 +52,7 @@ struct HttpServerOptions {
     int maxQueued = 65536;
     int maxThreads = 0;
     int keepAliveTimeoutSeconds = 30;
-    int maxRequestBodyBytes = 16 * 1024 * 1024;
+    long long maxRequestBodyBytes = 16 * 1024 * 1024;
     long long requestTimeoutMs = 30000;
 };
 

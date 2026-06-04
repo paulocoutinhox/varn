@@ -2,8 +2,10 @@
 local async = require("async")
 local fs = require("fs")
 
+local dir = assert(os.getenv("VARN_TEST_DIR"), "VARN_TEST_DIR is not set; run tests with: python3 varn.py test")
+
 async.run(function()
-    local path = "build/_fs_test.txt"
+    local path = dir .. "/fs_test.txt"
     local payload = "varn-fs-test\n"
 
     fs.writeFile(path, payload):await()

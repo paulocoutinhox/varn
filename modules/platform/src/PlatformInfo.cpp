@@ -126,7 +126,7 @@ std::string PlatformInfo::shlibSuffix() {
 
 std::string PlatformInfo::libraryFilenameForName(std::string_view logicalName) {
     if (logicalName.empty()) {
-        throw std::invalid_argument("[platform] The library name must not be empty.");
+        throw std::invalid_argument("[PlatformInfo] The library name must not be empty.");
     }
 
     std::string s(logicalName);

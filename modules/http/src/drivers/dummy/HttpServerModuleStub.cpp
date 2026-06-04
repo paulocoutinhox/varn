@@ -18,7 +18,7 @@ private:
 };
 
 int HttpServerLuaStub::luaStubCreateServer(lua_State* L) {
-    return luaL_error(L, "[http] The HTTP server is not available in this build.");
+    return luaL_error(L, "[HttpServerLuaStub] The HTTP server is not available in this build.");
 }
 
 int HttpServerLuaStub::luaOpen(lua_State* L) {

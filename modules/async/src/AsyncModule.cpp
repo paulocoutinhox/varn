@@ -3,10 +3,8 @@
 #include "varn/lua/LuaHelpers.h"
 #include "varn/runtime/Runtime.h"
 
-#include <chrono>
 #include <memory>
 #include <string>
-#include <thread>
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
@@ -25,14 +23,17 @@ int AsyncModule::luaSleep(lua_State* L) {
     auto ms = static_cast<int>(luaL_checkinteger(L, 1));
     auto promise = std::make_shared<Promise>(rt);
 
-    rt.taskPool().post([promise, ms] {
 #if defined(__EMSCRIPTEN__)
+    rt.taskPool().post([promise, ms] {
         emscripten_sleep(ms);
-#else
-        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-#endif
         promise->resolve("ok");
     });
+#else
+    // schedule on the loop timer so the sleep does not occupy a worker thread for its whole duration.
+    rt.mainLoop().postDelayed(ms, [promise] {
+        promise->resolve("ok");
+    });
+#endif
 
     Promise::push(L, promise);
     return 1;
@@ -82,7 +83,7 @@ int AsyncModule::startEntry(lua_State* L, bool stopLoopOnSuccess) {
     if (status != LUA_OK && status != LUA_YIELD) {
         const char* message = lua_tostring(thread, -1);
         luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
-        return luaL_error(L, "%s", message ? message : "[async] The task could not be started.");
+        return luaL_error(L, "%s", message ? message : "[AsyncModule] The task could not be started.");
     }
 
     // once the entry yields the promise machinery owns the coroutine, so release our ref in every case.

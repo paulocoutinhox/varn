@@ -1,5 +1,6 @@
 #include "varn/zip/ZipModule.h"
 
+#include "ZipPath.h"
 #include "varn/async/Promise.h"
 #include "varn/lua/LuaHelpers.h"
 #include "varn/runtime/Runtime.h"
@@ -11,7 +12,6 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -32,34 +32,11 @@ Runtime& ZipModule::luaRuntime(lua_State* L) {
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
 }
 
-bool ZipModule::entryPathSafe(std::string_view entry) {
-    if (entry.empty()) {
-        return false;
-    }
-    if (entry.front() == '/' || entry.front() == '\\') {
-        return false;
-    }
-    if (entry.find("..") != std::string_view::npos) {
-        return false;
-    }
-    return true;
-}
-
-bool ZipModule::isSubpath(const fs::path& baseCanon, const fs::path& candidateCanon) {
-    fs::path rel = fs::relative(candidateCanon, baseCanon);
-    for (const auto& part : rel) {
-        if (part == "..") {
-            return false;
-        }
-    }
-    return true;
-}
-
 void ZipModule::performExtract(const std::string& zipPath, const std::string& destDir) {
     int err = 0;
     zip_t* za = zip_open(zipPath.c_str(), ZIP_RDONLY, &err);
     if (!za) {
-        throw std::runtime_error("[zip] The archive could not be opened.");
+        throw std::runtime_error("[ZipModule] The archive could not be opened.");
     }
 
     fs::create_directories(destDir);
@@ -72,7 +49,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
     const zip_int64_t n = zip_get_num_entries(za, 0);
     if (n < 0 || static_cast<zip_uint64_t>(n) > kMaxEntries) {
         zip_discard(za);
-        throw std::runtime_error("[zip] The archive declares too many entries.");
+        throw std::runtime_error("[ZipModule] The archive declares too many entries.");
     }
 
     std::uint64_t totalWritten = 0;
@@ -82,9 +59,9 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             continue;
         }
         const std::string nm(name);
-        if (!entryPathSafe(nm)) {
+        if (!ZipPath::entryPathSafe(nm)) {
             zip_discard(za);
-            throw std::runtime_error("[zip] The archive contains an unsafe entry name.");
+            throw std::runtime_error("[ZipModule] The archive contains an unsafe entry name.");
         }
 
         const fs::path outFile = destRoot / nm;
@@ -92,9 +69,9 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
         fs::create_directories(parentDir);
 
         const fs::path canonParent = fs::weakly_canonical(parentDir);
-        if (!isSubpath(destRoot, canonParent)) {
+        if (!ZipPath::isSubpath(destRoot, canonParent)) {
             zip_discard(za);
-            throw std::runtime_error("[zip] An entry tried to escape the destination directory.");
+            throw std::runtime_error("[ZipModule] An entry tried to escape the destination directory.");
         }
 
         if (!nm.empty() && nm.back() == '/') {
@@ -104,14 +81,14 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
         zip_file_t* zf = zip_fopen_index(za, i, 0);
         if (!zf) {
             zip_discard(za);
-            throw std::runtime_error("[zip] An entry inside the archive could not be opened.");
+            throw std::runtime_error("[ZipModule] An entry inside the archive could not be opened.");
         }
 
         std::ofstream out(outFile, std::ios::binary);
         if (!out) {
             zip_fclose(zf);
             zip_discard(za);
-            throw std::runtime_error("[zip] An output file could not be created.");
+            throw std::runtime_error("[ZipModule] An output file could not be created.");
         }
 
         char buf[8192];
@@ -120,7 +97,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             if (r < 0) {
                 zip_fclose(zf);
                 zip_discard(za);
-                throw std::runtime_error("[zip] An entry could not be read from the archive.");
+                throw std::runtime_error("[ZipModule] An entry could not be read from the archive.");
             }
             if (r == 0) {
                 break;
@@ -129,7 +106,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             if (totalWritten > kMaxTotalBytes) {
                 zip_fclose(zf);
                 zip_discard(za);
-                throw std::runtime_error("[zip] The archive expands beyond the allowed size.");
+                throw std::runtime_error("[ZipModule] The archive expands beyond the allowed size.");
             }
             out.write(buf, static_cast<std::size_t>(r));
         }
@@ -137,7 +114,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
     }
 
     if (zip_close(za) != 0) {
-        throw std::runtime_error("[zip] The archive could not be closed after extraction.");
+        throw std::runtime_error("[ZipModule] The archive could not be closed after extraction.");
     }
 }
 
@@ -145,34 +122,34 @@ void ZipModule::performCreate(const std::string& zipPath, const std::vector<std:
     int err = 0;
     zip_t* za = zip_open(zipPath.c_str(), ZIP_CREATE | ZIP_TRUNCATE, &err);
     if (!za) {
-        throw std::runtime_error("[zip] The archive could not be created.");
+        throw std::runtime_error("[ZipModule] The archive could not be created.");
     }
 
     for (const auto& [localPath, entryName] : items) {
-        if (!entryPathSafe(entryName)) {
+        if (!ZipPath::entryPathSafe(entryName)) {
             zip_discard(za);
-            throw std::runtime_error("[zip] An entry name is unsafe.");
+            throw std::runtime_error("[ZipModule] An entry name is unsafe.");
         }
         if (!fs::is_regular_file(localPath)) {
             zip_discard(za);
-            throw std::runtime_error("[zip] A source path is not a regular file.");
+            throw std::runtime_error("[ZipModule] A source path is not a regular file.");
         }
 
         zip_source_t* s = zip_source_file(za, localPath.c_str(), 0, 0);
         if (!s) {
             zip_discard(za);
-            throw std::runtime_error("[zip] A source file could not be read.");
+            throw std::runtime_error("[ZipModule] A source file could not be read.");
         }
         const zip_int64_t idx = zip_file_add(za, entryName.c_str(), s, ZIP_FL_ENC_UTF_8);
         if (idx < 0) {
             zip_source_free(s);
             zip_discard(za);
-            throw std::runtime_error("[zip] An entry could not be added to the archive.");
+            throw std::runtime_error("[ZipModule] An entry could not be added to the archive.");
         }
     }
 
     if (zip_close(za) != 0) {
-        throw std::runtime_error("[zip] The archive could not be closed after creation.");
+        throw std::runtime_error("[ZipModule] The archive could not be closed after creation.");
     }
 }
 
@@ -180,13 +157,13 @@ std::vector<std::string> ZipModule::performList(const std::string& zipPath) {
     int err = 0;
     zip_t* za = zip_open(zipPath.c_str(), ZIP_RDONLY, &err);
     if (!za) {
-        throw std::runtime_error("[zip] The archive could not be opened.");
+        throw std::runtime_error("[ZipModule] The archive could not be opened.");
     }
 
     const zip_int64_t n = zip_get_num_entries(za, 0);
     if (n < 0) {
         zip_discard(za);
-        throw std::runtime_error("[zip] The archive directory could not be read.");
+        throw std::runtime_error("[ZipModule] The archive directory could not be read.");
     }
 
     std::vector<std::string> names;
@@ -196,15 +173,15 @@ std::vector<std::string> ZipModule::performList(const std::string& zipPath) {
             continue;
         }
         const std::string nm(name);
-        if (!entryPathSafe(nm)) {
+        if (!ZipPath::entryPathSafe(nm)) {
             zip_discard(za);
-            throw std::runtime_error("[zip] The archive contains an unsafe entry name.");
+            throw std::runtime_error("[ZipModule] The archive contains an unsafe entry name.");
         }
         names.push_back(nm);
     }
 
     if (zip_close(za) != 0) {
-        throw std::runtime_error("[zip] The archive could not be closed after listing.");
+        throw std::runtime_error("[ZipModule] The archive could not be closed after listing.");
     }
     return names;
 }
@@ -228,7 +205,7 @@ int ZipModule::luaExtract(lua_State* L) {
     Promise::push(L, promise);
     return 1;
 #else
-    return luaL_error(L, "[zip] The zip module is not available in this build.");
+    return luaL_error(L, "[ZipModule] The zip module is not available in this build.");
 #endif
 }
 
@@ -238,7 +215,7 @@ int ZipModule::luaCreate(lua_State* L) {
     luaL_checktype(L, 2, LUA_TTABLE);
     const int len = static_cast<int>(lua_rawlen(L, 2));
     if (len <= 0) {
-        return luaL_error(L, "[zip] The list of entries must not be empty.");
+        return luaL_error(L, "[ZipModule] The list of entries must not be empty.");
     }
 
     std::vector<std::pair<std::string, std::string>> items;
@@ -248,7 +225,7 @@ int ZipModule::luaCreate(lua_State* L) {
         lua_rawgeti(L, 2, i);
         if (!lua_istable(L, -1)) {
             lua_pop(L, 1);
-            return luaL_error(L, "[zip] Each entry must be a table.");
+            return luaL_error(L, "[ZipModule] Each entry must be a table.");
         }
         lua_getfield(L, -1, "file");
         const std::string file = varn::lua::LuaHelpers::checkString(L, -1);
@@ -273,7 +250,7 @@ int ZipModule::luaCreate(lua_State* L) {
     Promise::push(L, promise);
     return 1;
 #else
-    return luaL_error(L, "[zip] The zip module is not available in this build.");
+    return luaL_error(L, "[ZipModule] The zip module is not available in this build.");
 #endif
 }
 
@@ -301,7 +278,7 @@ int ZipModule::luaList(lua_State* L) {
     Promise::push(L, promise);
     return 1;
 #else
-    return luaL_error(L, "[zip] The zip module is not available in this build.");
+    return luaL_error(L, "[ZipModule] The zip module is not available in this build.");
 #endif
 }
 

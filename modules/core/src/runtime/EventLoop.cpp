@@ -18,6 +18,21 @@ void EventLoop::post(Job job) {
 #endif
 }
 
+void EventLoop::postDelayed(long long delayMs, Job job) {
+    ledger_->enter();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMs);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        timers_.emplace(deadline, [ledger = ledger_, j = std::move(job)]() mutable {
+            j();
+            ledger->leave();
+        });
+    }
+#if !defined(__EMSCRIPTEN__)
+    cv_.notify_one();
+#endif
+}
+
 void EventLoop::run() {
     running_ = true;
 
@@ -27,22 +42,40 @@ void EventLoop::run() {
 
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [&] {
+            // a pending timer keeps the loop waiting until its deadline (handled by wait_until's timeout),
+            // not via the predicate, so the wait does not spin while a timer is still in the future.
+            const auto predicate = [&] {
                 if (!running_) {
                     return true;
                 }
                 if (!jobs_.empty()) {
                     return true;
                 }
+                if (!timers_.empty()) {
+                    return false;
+                }
                 return static_cast<bool>(idleExitEligible_) && idleExitEligible_();
-            });
+            };
+
+            if (!timers_.empty()) {
+                cv_.wait_until(lock, timers_.begin()->first, predicate);
+            } else {
+                cv_.wait(lock, predicate);
+            }
 
             if (!running_) {
                 break;
             }
 
+            // move every timer whose deadline has passed into the ready queue.
+            const auto now = std::chrono::steady_clock::now();
+            while (!timers_.empty() && timers_.begin()->first <= now) {
+                jobs_.push(std::move(timers_.begin()->second));
+                timers_.erase(timers_.begin());
+            }
+
             if (jobs_.empty()) {
-                if (idleExitEligible_ && idleExitEligible_()) {
+                if (timers_.empty() && idleExitEligible_ && idleExitEligible_()) {
                     running_ = false;
                     break;
                 }
@@ -67,6 +100,13 @@ void EventLoop::stop() {
         running_ = false;
     }
     cv_.notify_all();
+}
+
+void EventLoop::clearPendingJobs() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::queue<Job> drained;
+    jobs_.swap(drained);
+    timers_.clear();
 }
 
 void EventLoop::wake() {

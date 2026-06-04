@@ -7,13 +7,16 @@ namespace varn::runtime {
 
 using varn::lua::LuaEngine;
 
-Runtime::Runtime(std::vector<std::string> args)
+Runtime::Runtime(std::vector<std::string> args, std::size_t scriptArgIndex)
     : args_(std::move(args)),
+      scriptArgIndex_(scriptArgIndex),
       workLedger_(std::make_shared<WorkLedger>()),
       mainLoop_(workLedger_),
       taskPool_(std::thread::hardware_concurrency(), workLedger_),
       lua_(std::make_unique<LuaEngine>(*this)) {
+    // install the notify hook before the pool spins up any worker, so no worker can observe it unset.
     workLedger_->setNotify([this] { mainLoop_.wake(); });
+    taskPool_.start();
 }
 
 Runtime::~Runtime() {
@@ -58,7 +61,7 @@ int Runtime::finishAfterUserChunk(int loadRunExitCode) {
 void Runtime::onAsyncComplete(bool ok, bool stopLoopOnSuccess, const std::string& error) {
     if (!ok) {
         unhandledError_ = true;
-        log::Log::error("async", error.empty() ? "A task failed without a message." : error);
+        log::Log::error("Runtime", error.empty() ? "A task failed without a message." : error);
         mainLoop_.stop();
         return;
     }
@@ -109,6 +112,10 @@ void Runtime::stop() {
 
     taskPool_.stop();
     mainLoop_.stop();
+    // workers are joined and the loop is stopped; drop any job still queued so its captured state
+    // (e.g. AppState holding lua registry refs) is released now, while the lua_State is still alive,
+    // rather than during member teardown after lua_close.
+    mainLoop_.clearPendingJobs();
 }
 
 const std::vector<std::string>& Runtime::args() const {

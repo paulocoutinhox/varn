@@ -23,6 +23,9 @@ public:
     TaskPool(const TaskPool&) = delete;
     TaskPool& operator=(const TaskPool&) = delete;
 
+    // spawns the worker threads; called after the ledger's notify hook is installed so no worker can
+    // ever observe a half-set notify callback.
+    void start();
     void post(Job job);
     void stop();
 
@@ -35,6 +38,7 @@ private:
     void workerLoop();
 
     std::shared_ptr<WorkLedger> ledger_;
+    std::size_t threadCount_;
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     std::queue<Job> jobs_;

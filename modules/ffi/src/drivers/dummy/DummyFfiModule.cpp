@@ -5,7 +5,7 @@ namespace varn::ffi {
 class DummyFfi {
 public:
     static int disabled(lua_State* L) {
-        return luaL_error(L, "[ffi] The FFI module is not available in this build.");
+        return luaL_error(L, "[DummyFfi] The FFI module is not available in this build.");
     }
 
     static constexpr luaL_Reg lib[] = {

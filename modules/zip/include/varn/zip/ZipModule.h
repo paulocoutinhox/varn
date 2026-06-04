@@ -1,8 +1,6 @@
 #pragma once
 
-#include <filesystem>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -22,8 +20,6 @@ public:
 private:
     static varn::runtime::Runtime& luaRuntime(lua_State* L);
 
-    static bool entryPathSafe(std::string_view entry);
-    static bool isSubpath(const std::filesystem::path& baseCanon, const std::filesystem::path& candidateCanon);
     static void performExtract(const std::string& zipPath, const std::string& destDir);
     static void performCreate(const std::string& zipPath, const std::vector<std::pair<std::string, std::string>>& items);
     static std::vector<std::string> performList(const std::string& zipPath);

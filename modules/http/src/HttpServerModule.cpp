@@ -155,9 +155,10 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
     lua_rawgeti(L, LUA_REGISTRYINDEX, builder->handlerRef);
     const int persistedHandlerRef = luaL_ref(L, LUA_REGISTRYINDEX);
 
-    auto handler = [&rt, persistedHandlerRef](const HttpRequest& request, std::shared_ptr<HttpResponse> response) {
-        rt.mainLoop().post([&rt, persistedHandlerRef, request, response = std::move(response)] {
-            lua_State* mainState = rt.luaState();
+    Runtime* rtPtr = &rt;
+    auto handler = [rtPtr, persistedHandlerRef](const HttpRequest& request, std::shared_ptr<HttpResponse> response) {
+        rtPtr->mainLoop().post([rtPtr, persistedHandlerRef, request, response = std::move(response)] {
+            lua_State* mainState = rtPtr->luaState();
             lua_State* thread = lua_newthread(mainState);
             int threadRef = luaL_ref(mainState, LUA_REGISTRYINDEX);
 
@@ -172,7 +173,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
             if (status != LUA_OK && status != LUA_YIELD) {
                 const char* message = lua_tostring(thread, -1);
                 std::string detail = message ? message : "A request handler failed without a message.";
-                log::Log::error("http", detail);
+                log::Log::error("HttpServerLuaBindings", detail);
                 response->setStatus(500);
                 response->end("Internal server error.");
                 if (nres > 0) {
@@ -203,7 +204,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
 
     std::ostringstream started;
     started << "Listening on " << (options.tls ? "https" : "http") << "://" << options.host << ":" << options.port << ".";
-    log::Log::line("http", started.str());
+    log::Log::line("HttpServerLuaBindings", started.str());
 
     return 0;
 }
@@ -311,7 +312,12 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index) {
 
     const char* envPort = std::getenv("VARN_PORT");
     if (envPort) {
-        options.port = std::atoi(envPort);
+        const int parsed = std::atoi(envPort);
+        if (parsed >= 1 && parsed <= 65535) {
+            options.port = parsed;
+        } else {
+            log::Log::line("HttpServerModule", "VARN_PORT is not a valid port (1-65535) and was ignored.");
+        }
     }
 
     const char* cert = std::getenv("VARN_TLS_CERT");
@@ -331,7 +337,12 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index) {
     lua_pop(L, 1);
 
     lua_getfield(L, index, "port");
-    if (lua_isinteger(L, -1)) options.port = lua_tointeger(L, -1);
+    if (lua_isinteger(L, -1)) {
+        const lua_Integer portValue = lua_tointeger(L, -1);
+        if (portValue >= 1 && portValue <= 65535) {
+            options.port = static_cast<int>(portValue);
+        }
+    }
     lua_pop(L, 1);
 
     lua_getfield(L, index, "publicDir");

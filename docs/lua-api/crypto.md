@@ -4,9 +4,10 @@ Hashing, keyed hashing, and cryptographically secure random bytes (OpenSSL-backe
 
 - `crypto.digest(algorithm, data, format?)` → a digest of `data`. `algorithm` is a name like `"SHA256"` or `"SHA512"`. `format` is `"hex"` (default) or `"raw"`.
 - `crypto.hmac(algorithm, key, data, format?)` → an HMAC, with the same `format` options.
-- `crypto.randomBytes(n)` → `n` random bytes as a string (`n` up to one million).
+- `crypto.randomBytes(n)` → `n` random bytes as a string.
+- `crypto.equals(a, b)` → `true` if the two strings are equal, compared in constant time. Use this to verify a MAC, token, or any secret-derived value instead of `==`, which leaks bytes through timing.
 
-Input is capped at 256 MB per call. Not available in the browser build.
+There is no artificial input-size limit — Varn runs your own code on your own machine, so hashing or generating large data is allowed (bounded only by memory and the platform's integer limits). Not available in the browser build.
 
 ## Examples
 

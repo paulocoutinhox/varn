@@ -88,6 +88,15 @@ function(varn_apply_usage target scope)
     endif()
 endfunction()
 
+# builds a target with the requested sanitizers so the test suite can detect memory and ub bugs.
+function(varn_apply_sanitize target scope)
+    if(VARN_SANITIZE STREQUAL "" OR MSVC)
+        return()
+    endif()
+    target_compile_options(${target} ${scope} -fsanitize=${VARN_SANITIZE} -fno-omit-frame-pointer -g)
+    target_link_options(${target} ${scope} -fsanitize=${VARN_SANITIZE})
+endfunction()
+
 # applies the project warning flags to a target that compiles varn's own sources.
 function(varn_apply_warnings target)
     if(MSVC)

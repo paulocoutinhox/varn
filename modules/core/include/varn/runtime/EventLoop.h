@@ -3,8 +3,10 @@
 #include "varn/runtime/WorkLedger.h"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -19,9 +21,15 @@ public:
     explicit EventLoop(std::shared_ptr<WorkLedger> ledger);
 
     void post(Job job);
+    // schedules a job to run on the loop after delayMs, without occupying a worker thread.
+    void postDelayed(long long delayMs, Job job);
     void run();
     void stop();
     void wake();
+
+    // discards queued jobs and timers without running them; used at shutdown so captured state
+    // (e.g. AppState) is released before the lua_State is destroyed, not after.
+    void clearPendingJobs();
 
     void setIdleExitPredicate(IdleExitPredicate predicate);
 
@@ -36,6 +44,7 @@ private:
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     std::queue<Job> jobs_;
+    std::multimap<std::chrono::steady_clock::time_point, Job> timers_;
     std::atomic<bool> running_{false};
     IdleExitPredicate idleExitEligible_;
 };

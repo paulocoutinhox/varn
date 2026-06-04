@@ -50,7 +50,7 @@ int JsonModule::luaDecode(lua_State* L) {
 
     try {
         if (!JsonSerializer::deserialize(L, std::string(text, length))) {
-            return luaL_error(L, "[json] The input is not valid JSON.");
+            return luaL_error(L, "[JsonModule] The input is not valid JSON.");
         }
         return 1;
     } catch (const std::exception& ex) {

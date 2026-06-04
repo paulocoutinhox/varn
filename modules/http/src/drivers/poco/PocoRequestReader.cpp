@@ -52,16 +52,19 @@ std::map<std::string, std::string> PocoRequestReader::cookies(const Poco::Net::H
             result[it->first] = it->second;
         }
     } catch (const std::exception& ex) {
-        log::Log::line("http", std::string("The cookie header was rejected. ") + ex.what());
+        log::Log::line("PocoRequestReader", std::string("The cookie header was rejected. ") + ex.what());
     }
     return result;
 }
 
-std::string PocoRequestReader::body(Poco::Net::HTTPServerRequest& request, int maxBytes) {
+std::string PocoRequestReader::body(Poco::Net::HTTPServerRequest& request, long long maxBytes) {
     std::istream& input = request.stream();
     std::ostringstream out;
     char buffer[8192];
     std::size_t total = 0;
+
+    // a non-positive limit is treated as "no body allowed" rather than wrapping into a huge cap.
+    const std::size_t limit = maxBytes > 0 ? static_cast<std::size_t>(maxBytes) : 0;
 
     while (input.good()) {
         input.read(buffer, sizeof(buffer));
@@ -71,7 +74,7 @@ std::string PocoRequestReader::body(Poco::Net::HTTPServerRequest& request, int m
         }
 
         total += static_cast<std::size_t>(count);
-        if (total > static_cast<std::size_t>(maxBytes)) {
+        if (total > limit) {
             throw RequestBodyTooLarge();
         }
 

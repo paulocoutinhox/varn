@@ -14,7 +14,14 @@ bool App::isEvalFlag(std::string_view flag) {
 
 int App::run(int argc, char** argv) {
     if (argc < 2) {
-        log::Log::error("varn", "A script file or an inline source string is required.");
+        log::Log::error("App", "A script file or an inline source string is required.");
+        return 2;
+    }
+
+    const std::string_view first = argv[1];
+    const bool eval = isEvalFlag(first);
+    if (eval && argc < 3) {
+        log::Log::error("App", "The inline evaluation option needs a Lua source string.");
         return 2;
     }
 
@@ -24,14 +31,11 @@ int App::run(int argc, char** argv) {
         args.emplace_back(argv[i]);
     }
 
-    Runtime runtime(std::move(args));
+    // the chunk (script path, or the -e source) becomes arg[0]; arguments after it become arg[1..].
+    const std::size_t scriptArgIndex = eval ? 2 : 1;
+    Runtime runtime(std::move(args), scriptArgIndex);
 
-    const std::string_view first = argv[1];
-    if (isEvalFlag(first)) {
-        if (argc < 3) {
-            log::Log::error("varn", "The inline evaluation option needs a Lua source string.");
-            return 2;
-        }
+    if (eval) {
         return runtime.runString(argv[2], "=(eval)");
     }
 

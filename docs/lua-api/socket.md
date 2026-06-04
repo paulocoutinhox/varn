@@ -15,6 +15,13 @@ Async TCP and UDP sockets. Every operation returns a promise.
 - UDP socket: `sock:sendTo(host, port, data)`, `sock:recvFrom(maxBytes?)` (default `65536`), and `sock:close()` all return promises.
 - `recvFrom` resolves to a table `{ data, host, port }` carrying the payload and the sender's address.
 
+## Closing and limits
+
+- `close()` is safe to call while a `receive`/`recvFrom`/`accept` is still pending. It signals the socket and returns promptly instead of blocking; the pending operation is released on its next internal poll (within ~200 ms).
+- Once a socket is closed, a pending `receive`/`recvFrom` resolves to an empty/last result and a pending `accept` rejects with a "listener was closed" error.
+- `receive` and `recvFrom` cap the read buffer (16 MB for TCP, 64 KB for UDP) regardless of the requested `maxBytes`, so an oversized request cannot drive a huge allocation.
+- `host`/`port` are validated before use: the port must be in `1..65535` (the full integer is checked, not a truncated value).
+
 ## Examples
 
 ### `echo_server.lua`

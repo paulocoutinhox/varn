@@ -10,6 +10,7 @@
 
 #include <cctype>
 #include <filesystem>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -36,7 +37,7 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts) 
     } else if (pathLooksLikePkcs12(opts.keyFile)) {
         pkcs12Path = opts.keyFile;
     } else {
-        throw std::runtime_error("[http] On Windows the TLS certificate must be a single bundle file.");
+        throw std::runtime_error("[TlsServerContext] On Windows the TLS certificate must be a single bundle file.");
     }
     const int winOptions = Poco::Net::Context::OPT_DEFAULTS | Poco::Net::Context::OPT_LOAD_CERT_FROM_FILE;
     Poco::Net::Context::Ptr context = new Poco::Net::Context(
@@ -63,24 +64,30 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts) 
 }
 
 void TlsServerContext::initializeSslManager(Poco::Net::Context::Ptr context) {
-    auto privateKeyHandler = Poco::SharedPtr<Poco::Net::PrivateKeyPassphraseHandler>(
-        new Poco::Net::KeyFileHandler(false)
-    );
+    // the ssl manager is a process-global singleton; initialize its default handlers once so a second
+    // server start does not clobber the first server's configuration. each server still binds its own
+    // context to its socket, so the global default only supplies the passphrase/invalid-cert handlers.
+    static std::once_flag onceFlag;
+    std::call_once(onceFlag, [&context] {
+        auto privateKeyHandler = Poco::SharedPtr<Poco::Net::PrivateKeyPassphraseHandler>(
+            new Poco::Net::KeyFileHandler(false)
+        );
 
-    auto invalidCertHandler = Poco::SharedPtr<Poco::Net::InvalidCertificateHandler>(
-        new Poco::Net::AcceptCertificateHandler(false)
-    );
+        auto invalidCertHandler = Poco::SharedPtr<Poco::Net::InvalidCertificateHandler>(
+            new Poco::Net::AcceptCertificateHandler(false)
+        );
 
-    Poco::Net::SSLManager::instance().initializeServer(privateKeyHandler, invalidCertHandler, context);
+        Poco::Net::SSLManager::instance().initializeServer(privateKeyHandler, invalidCertHandler, context);
+    });
 }
 
 void TlsServerContext::requireKeyMaterial(const HttpServerOptions& opts) {
     if (opts.keyFile.empty() || opts.certFile.empty()) {
-        throw std::runtime_error("[http] TLS is enabled but the key or certificate path is empty.");
+        throw std::runtime_error("[TlsServerContext] TLS is enabled but the key or certificate path is empty.");
     }
     for (const auto& path : {opts.keyFile, opts.certFile}) {
         if (!std::filesystem::exists(path)) {
-            throw std::runtime_error("[http] A TLS key or certificate file was not found.");
+            throw std::runtime_error("[TlsServerContext] A TLS key or certificate file was not found.");
         }
     }
 }

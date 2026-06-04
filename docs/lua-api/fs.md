@@ -2,7 +2,7 @@
 
 Filesystem access. Reads and writes run off the main loop and return promises.
 
-- `fs.readFile(path)` → promise resolving to the file contents (binary-safe). Rejects for files larger than 256 MB.
+- `fs.readFile(path)` → promise resolving to the file contents (binary-safe). Reads the whole file with no artificial size cap, like Node.
 - `fs.writeFile(path, content)` → promise resolving to `"ok"`.
 - `fs.exists(path)` → boolean, checked synchronously.
 

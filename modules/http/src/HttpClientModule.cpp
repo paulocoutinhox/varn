@@ -102,7 +102,7 @@ int HttpClientModule::luaClientRequest(lua_State* L) {
 #if VARN_HTTP_CLIENT_EMSCRIPTEN_FETCH_ASYNC
     try {
         varn::http::client::performRequestWireEmscriptenAsync(
-            promise, methodStr, urlStr, headers, body, options.timeoutSeconds);
+            promise, methodStr, urlStr, headers, body, options.timeoutSeconds, options.maxResponseBytes);
     } catch (const std::exception& ex) {
         promise->reject(ex.what());
     }

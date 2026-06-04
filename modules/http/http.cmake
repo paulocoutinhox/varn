@@ -32,6 +32,7 @@ if(VARN_HTTP_SERVER_DRIVER STREQUAL "POCO")
         "${CMAKE_CURRENT_LIST_DIR}/src/HttpMultipart.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/HttpToken.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/Router.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/HttpRange.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/StaticFileHandler.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/StaticContent.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/MimeTypes.cpp"

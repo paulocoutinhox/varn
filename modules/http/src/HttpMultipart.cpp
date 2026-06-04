@@ -125,8 +125,10 @@ void HttpMultipart::pushMultipart(lua_State* L, const std::string& body, const s
             lua_pop(L, 1);
         } else if (!name.empty()) {
             lua_getfield(L, -1, "fields");
+            // a length-safe key so a field name with an embedded nul is not truncated.
+            lua_pushlstring(L, name.data(), name.size());
             lua_pushlstring(L, data.data(), data.size());
-            lua_setfield(L, -2, name.c_str());
+            lua_settable(L, -3);
             lua_pop(L, 1);
         }
 

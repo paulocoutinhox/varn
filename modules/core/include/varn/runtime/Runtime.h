@@ -23,7 +23,9 @@ namespace varn::runtime {
 
 class Runtime {
 public:
-    explicit Runtime(std::vector<std::string> args);
+    // scriptArgIndex is the position in args that becomes Lua's arg[0]; later entries become arg[1..]
+    // and earlier ones arg[-1..], matching the standard Lua argument convention.
+    explicit Runtime(std::vector<std::string> args, std::size_t scriptArgIndex = 1);
     ~Runtime();
 
     int runScript(const std::string& scriptPath);
@@ -37,6 +39,7 @@ public:
 
     void addServer(std::shared_ptr<varn::http::HttpServer> server);
     void stop();
+    bool stopped() const { return stopped_.load(std::memory_order_acquire); }
 
     void onAsyncComplete(bool ok, bool stopLoopOnSuccess, const std::string& error);
 
@@ -44,9 +47,11 @@ public:
     void releaseBackgroundDriver();
 
     const std::vector<std::string>& args() const;
+    std::size_t scriptArgIndex() const { return scriptArgIndex_; }
 
 private:
     std::vector<std::string> args_;
+    std::size_t scriptArgIndex_;
     std::shared_ptr<WorkLedger> workLedger_;
     EventLoop mainLoop_;
     TaskPool taskPool_;

@@ -83,7 +83,7 @@ void Router::setConstraint(int routeId, const std::string& param, const std::str
 void Router::setName(int routeId, const std::string& name) {
     const auto existing = namedRoutes_.find(name);
     if (existing != namedRoutes_.end()) {
-        throw std::runtime_error("[http] The route name '" + name + "' is already in use.");
+        throw std::runtime_error("[Router] The route name '" + name + "' is already in use.");
     }
 
     routes_.at(routeId).name = name;

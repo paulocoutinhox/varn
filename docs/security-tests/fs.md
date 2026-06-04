@@ -216,7 +216,7 @@ non-sandboxed filesystem API; path confinement is the caller's responsibility.
 
 | ID | Name | Class | Exploit |
 |----|------|-------|---------|
-| FS-151 | Read OOM (no cap) boundary | CWE-400 | at/over the 256 MB cap |
+| FS-151 | Large file read (no cap) | CWE-400 | reads any size, like Node; bounded only by memory (trusted local code) |
 | FS-152 | File grows during read | CWE-367 | size-then-read mismatch |
 | FS-153 | Disk fill via write | CWE-400 | ENOSPC handling |
 | FS-154 | Inode exhaustion | CWE-400 | many tiny files |
@@ -351,7 +351,7 @@ non-sandboxed filesystem API; path confinement is the caller's responsibility.
 | FS-249 | Missing fsync durability | CWE-662 | data loss |
 | FS-250 | Backup/temp left behind | CWE-459 | leftover with secrets |
 | FS-251 | Predictable temp name | CWE-377 | guessable temp |
-| FS-252 | Read-OOM cap boundary | CWE-193 | exactly at 256 MB |
+| FS-252 | Large file read boundary | CWE-193 | a large file reads fully; no artificial size cap |
 | FS-253 | File grows during read | CWE-367 | size-then-read mismatch |
 | FS-254 | Disk fill via write | CWE-400 | ENOSPC handling |
 | FS-255 | Inode exhaustion | CWE-400 | many tiny files |

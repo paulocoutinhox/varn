@@ -62,11 +62,9 @@ jobs:
       - name: Build
         run: cmake --build build/release --config ${{ env.BUILD_TYPE }} -j$(sysctl -n hw.ncpu)
 
-      - name: Smoke test
+      - name: Run Lua test suite
         if: matrix.cmake_extra == ''
-        run: |
-          echo 'print("ok")' > /tmp/varn-smoke.lua
-          ./build/release/bin/varn /tmp/varn-smoke.lua
+        run: python3 varn.py test --build-dir build/release
 
       - name: Verify binary architecture
         if: matrix.cmake_extra != ''

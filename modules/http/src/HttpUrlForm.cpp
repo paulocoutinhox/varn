@@ -57,8 +57,10 @@ void HttpUrlForm::pushFormUrlEncoded(lua_State* L, const std::string& body) {
             const std::size_t eq = pair.find('=');
             const std::string key = urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq));
             const std::string value = eq == std::string::npos ? std::string() : urlDecode(pair.substr(eq + 1));
+            // length-safe key so a decoded nul byte cannot truncate the field name.
+            lua_pushlstring(L, key.data(), key.size());
             lua_pushlstring(L, value.data(), value.size());
-            lua_setfield(L, -2, key.c_str());
+            lua_settable(L, -3);
             if (++fields >= maxFields) {
                 break;
             }

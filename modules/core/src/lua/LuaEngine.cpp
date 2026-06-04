@@ -6,8 +6,17 @@
 
 namespace varn::lua {
 
+// last-resort handler for an error raised outside any protected call. lua is built as C, so without
+// this the default panic handler aborts the process with no message; here we at least log the cause.
+static int handlePanic(lua_State* L) {
+    const char* message = lua_tostring(L, -1);
+    log::Log::error("LuaEngine", message ? message : "An unprotected Lua error occurred.");
+    return 0;
+}
+
 LuaEngine::LuaEngine(varn::runtime::Runtime& runtime) : runtime_(runtime) {
     L_ = luaL_newstate();
+    lua_atpanic(L_, &handlePanic);
     luaL_openlibs(L_);
 
     varn::lua::LuaHelpers::pushRuntime(L_, &runtime_);
@@ -27,14 +36,14 @@ int LuaEngine::runFile(const std::string& path) {
 
     if (luaL_loadfile(L_, path.c_str()) != LUA_OK) {
         const char* message = lua_tostring(L_, -1);
-        log::Log::error("lua", message ? message : "The script could not be loaded.");
+        log::Log::error("LuaEngine", message ? message : "The script could not be loaded.");
         lua_pop(L_, 2);
         return 1;
     }
 
     if (lua_pcall(L_, 0, 0, tracebackIndex) != LUA_OK) {
         const char* message = lua_tostring(L_, -1);
-        log::Log::error("lua", message ? message : "The script failed to run.");
+        log::Log::error("LuaEngine", message ? message : "The script failed to run.");
         lua_pop(L_, 2);
         return 1;
     }
@@ -82,14 +91,14 @@ int LuaEngine::runString(const std::string& source, const std::string& chunkName
 
     if (luaL_loadbuffer(L_, source.data(), source.size(), chunkName.c_str()) != LUA_OK) {
         const char* message = lua_tostring(L_, -1);
-        log::Log::error("lua", message ? message : "The source could not be loaded.");
+        log::Log::error("LuaEngine", message ? message : "The source could not be loaded.");
         lua_pop(L_, 2);
         return 1;
     }
 
     if (lua_pcall(L_, 0, 0, tracebackIndex) != LUA_OK) {
         const char* message = lua_tostring(L_, -1);
-        log::Log::error("lua", message ? message : "The source failed to run.");
+        log::Log::error("LuaEngine", message ? message : "The source failed to run.");
         lua_pop(L_, 2);
         return 1;
     }
@@ -109,10 +118,12 @@ void LuaEngine::installNativeModules() {
 void LuaEngine::configureArgTable() {
     lua_newtable(L_);
 
+    // follow lua's convention: the chunk is arg[0], its arguments arg[1..], the program/options arg[-1..].
     const auto& args = runtime_.args();
+    const int base = static_cast<int>(runtime_.scriptArgIndex());
     for (std::size_t i = 0; i < args.size(); ++i) {
         lua_pushlstring(L_, args[i].data(), args[i].size());
-        lua_rawseti(L_, -2, static_cast<int>(i));
+        lua_rawseti(L_, -2, static_cast<int>(i) - base);
     }
 
     lua_setglobal(L_, "arg");

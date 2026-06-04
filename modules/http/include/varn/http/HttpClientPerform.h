@@ -30,7 +30,8 @@ void performRequestWireEmscriptenAsync(
     const std::string& url,
     const std::map<std::string, std::string>& headers,
     const std::string& body,
-    int timeoutSeconds);
+    int timeoutSeconds,
+    std::size_t maxResponseBytes);
 #else
 std::string performRequestWire(
     const std::string& method,
