@@ -2385,8 +2385,20 @@ int HttpApp::luaAppListen(lua_State* L) {
     Runtime& rt = *state->runtime;
 
     auto handler = [state](const HttpRequest& request, std::shared_ptr<HttpResponse> response) {
-        state->runtime->mainLoop().post([state, request, response = std::move(response)]() mutable {
-            runDispatch(state, request, std::move(response));
+        state->runtime->mainLoop().post([state, request, response]() {
+            // the dispatch runs on the loop thread, outside the transport's per-request try/catch, so a
+            // native exception escaping here would unwind out of the event loop and abort the whole
+            // process. contain it and answer 500, mirroring how the transport handler treats a failure.
+            try {
+                runDispatch(state, request, response);
+            } catch (const std::exception& ex) {
+                log::Log::error("HttpApp", std::string("A request failed in the dispatcher. ") + ex.what());
+                if (response && !response->ended()) {
+                    response->setStatus(500);
+                    response->setHeader("Content-Type", "text/plain; charset=utf-8");
+                    response->end("Internal server error.");
+                }
+            }
         });
     };
 

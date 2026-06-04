@@ -1,0 +1,288 @@
+-- sqlite backend for vdo, binding the sqlite3 c api through ffi.
+local ffi = require("ffi")
+local platform = require("platform")
+local sql = require("vdo.sql")
+
+ffi.cdef [[
+typedef void sqlite3;
+typedef void sqlite3_stmt;
+
+int sqlite3_open_v2(const char *filename, sqlite3 **ppDb, int flags, const char *zVfs);
+int sqlite3_close_v2(sqlite3 *db);
+const char *sqlite3_errmsg(sqlite3 *db);
+
+int sqlite3_prepare_v2(sqlite3 *db, const char *zSql, int nByte, sqlite3_stmt **ppStmt, const char **pzTail);
+int sqlite3_step(sqlite3_stmt *pStmt);
+int sqlite3_reset(sqlite3_stmt *pStmt);
+int sqlite3_finalize(sqlite3_stmt *pStmt);
+
+int sqlite3_bind_int64(sqlite3_stmt *pStmt, int i, long long v);
+int sqlite3_bind_double(sqlite3_stmt *pStmt, int i, double v);
+int sqlite3_bind_text(sqlite3_stmt *pStmt, int i, const char *z, int n, void *xDel);
+int sqlite3_bind_null(sqlite3_stmt *pStmt, int i);
+
+int sqlite3_column_count(sqlite3_stmt *pStmt);
+int sqlite3_column_type(sqlite3_stmt *pStmt, int iCol);
+const char *sqlite3_column_name(sqlite3_stmt *pStmt, int iCol);
+long long sqlite3_column_int64(sqlite3_stmt *pStmt, int iCol);
+double sqlite3_column_double(sqlite3_stmt *pStmt, int iCol);
+const unsigned char *sqlite3_column_text(sqlite3_stmt *pStmt, int iCol);
+const void *sqlite3_column_blob(sqlite3_stmt *pStmt, int iCol);
+int sqlite3_column_bytes(sqlite3_stmt *pStmt, int iCol);
+
+int sqlite3_changes(sqlite3 *db);
+long long sqlite3_last_insert_rowid(sqlite3 *db);
+]]
+
+local SQLITE_OK = 0
+local SQLITE_ROW = 100
+local SQLITE_DONE = 101
+
+local SQLITE_INTEGER = 1
+local SQLITE_FLOAT = 2
+local SQLITE_TEXT = 3
+local SQLITE_BLOB = 4
+
+local SQLITE_OPEN_READWRITE = 0x00000002
+local SQLITE_OPEN_CREATE = 0x00000004
+
+-- forces sqlite to copy bound buffers, so a lua string can be collected right after the bind call.
+local SQLITE_TRANSIENT = ffi.cast("void *", -1)
+
+local lib
+
+-- cffi returns small 64-bit integers as plain lua numbers but wide ones as cdata, so normalize both.
+local function asNumber(value)
+    if type(value) == "number" then
+        return value
+    end
+    return ffi.tonumber(value)
+end
+
+local Connection = {}
+Connection.__index = Connection
+
+local Statement = {}
+Statement.__index = Statement
+
+local function fail(db, context)
+    local message = ffi.string(lib.sqlite3_errmsg(db))
+    error("[VdoSqlite] " .. context .. ": " .. message)
+end
+
+local function bindValue(stmt, db, position, value)
+    local kind = type(value)
+
+    if value == nil then
+        lib.sqlite3_bind_null(stmt, position)
+    elseif kind == "number" then
+        if math.type(value) == "integer" then
+            lib.sqlite3_bind_int64(stmt, position, value)
+        else
+            lib.sqlite3_bind_double(stmt, position, value)
+        end
+    elseif kind == "boolean" then
+        lib.sqlite3_bind_int64(stmt, position, value and 1 or 0)
+    elseif kind == "string" then
+        if lib.sqlite3_bind_text(stmt, position, value, #value, SQLITE_TRANSIENT) ~= SQLITE_OK then
+            fail(db, "bind text")
+        end
+    else
+        error("[VdoSqlite] cannot bind value of type " .. kind)
+    end
+end
+
+local function readColumn(stmt, index)
+    local kind = lib.sqlite3_column_type(stmt, index)
+
+    if kind == SQLITE_INTEGER then
+        return asNumber(lib.sqlite3_column_int64(stmt, index))
+    end
+    if kind == SQLITE_FLOAT then
+        return lib.sqlite3_column_double(stmt, index)
+    end
+    if kind == SQLITE_TEXT then
+        local pointer = lib.sqlite3_column_text(stmt, index)
+        local size = lib.sqlite3_column_bytes(stmt, index)
+        return ffi.string(ffi.cast("const char *", pointer), size)
+    end
+    if kind == SQLITE_BLOB then
+        local pointer = lib.sqlite3_column_blob(stmt, index)
+        local size = lib.sqlite3_column_bytes(stmt, index)
+        return ffi.string(ffi.cast("const char *", pointer), size)
+    end
+
+    return nil
+end
+
+local function buildRow(stmt)
+    local row = {}
+    local count = lib.sqlite3_column_count(stmt)
+    for i = 0, count - 1 do
+        local name = ffi.string(lib.sqlite3_column_name(stmt, i))
+        row[name] = readColumn(stmt, i)
+    end
+    return row
+end
+
+function Statement:step()
+    local rc = lib.sqlite3_step(self.handle)
+    if rc == SQLITE_DONE then
+        self.done = true
+        return nil
+    end
+    if rc ~= SQLITE_ROW then
+        fail(self.db, "step")
+    end
+    return buildRow(self.handle)
+end
+
+function Statement:execute(params)
+    lib.sqlite3_reset(self.handle)
+    self.done = false
+
+    for index = 1, #self.parsed.order do
+        bindValue(self.handle, self.db, index, sql.valueFor(self.parsed, params, index))
+    end
+
+    -- step once so the statement actually runs now, buffering the first row for fetch.
+    self.pending = self:step()
+
+    -- sqlite only tracks rows changed by data modification, so this is the affected count for an
+    -- insert, update or delete. it is not a row total for a select, matching pdo's sqlite behaviour.
+    self.affected = lib.sqlite3_changes(self.db)
+    return self
+end
+
+function Statement:fetch()
+    if self.pending ~= nil then
+        local row = self.pending
+        self.pending = nil
+        return row
+    end
+    if self.done then
+        return nil
+    end
+    return self:step()
+end
+
+function Statement:fetchAll()
+    local rows = {}
+    while true do
+        local row = self:fetch()
+        if not row then
+            return rows
+        end
+        rows[#rows + 1] = row
+    end
+end
+
+function Statement:rowCount()
+    return self.affected or 0
+end
+
+function Statement:columnCount()
+    return lib.sqlite3_column_count(self.handle)
+end
+
+function Statement:close()
+    if not self.handle then
+        return
+    end
+    lib.sqlite3_finalize(self.handle)
+    self.handle = nil
+end
+
+local function prepareStatement(self, statement)
+    local parsed = sql.parse(statement)
+    local text = sql.build(parsed, function()
+        return "?"
+    end)
+
+    local out = ffi.new("sqlite3_stmt *[1]")
+    if lib.sqlite3_prepare_v2(self.handle, text, #text, out, nil) ~= SQLITE_OK then
+        fail(self.handle, "prepare")
+    end
+
+    return setmetatable({ db = self.handle, handle = out[0], parsed = parsed, done = false }, Statement)
+end
+
+function Connection:prepare(statement)
+    return prepareStatement(self, statement)
+end
+
+function Connection:query(statement, params)
+    local stmt = prepareStatement(self, statement)
+    return stmt:execute(params)
+end
+
+function Connection:exec(statement)
+    local stmt = prepareStatement(self, statement)
+
+    local rc = lib.sqlite3_step(stmt.handle)
+    if rc ~= SQLITE_DONE and rc ~= SQLITE_ROW then
+        local message = ffi.string(lib.sqlite3_errmsg(self.handle))
+        stmt:close()
+        error("[VdoSqlite] exec: " .. message)
+    end
+
+    stmt:close()
+    return lib.sqlite3_changes(self.handle)
+end
+
+function Connection:lastInsertId()
+    return asNumber(lib.sqlite3_last_insert_rowid(self.handle))
+end
+
+function Connection:beginTransaction()
+    self:exec("BEGIN")
+    self.inTx = true
+end
+
+function Connection:commit()
+    self:exec("COMMIT")
+    self.inTx = false
+end
+
+function Connection:rollBack()
+    self:exec("ROLLBACK")
+    self.inTx = false
+end
+
+function Connection:inTransaction()
+    return self.inTx == true
+end
+
+function Connection:close()
+    if not self.handle then
+        return
+    end
+    lib.sqlite3_close_v2(self.handle)
+    self.handle = nil
+end
+
+local driver = {}
+
+function driver.connect(params)
+    lib = lib or ffi.load(platform.libraryFilename("sqlite3"))
+
+    local path = params.path
+    if path == nil or path == "" then
+        error("[VdoSqlite] DSN must provide a database path or :memory:")
+    end
+
+    local out = ffi.new("sqlite3 *[1]")
+    local flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
+    if lib.sqlite3_open_v2(path, out, flags, nil) ~= SQLITE_OK then
+        local db = out[0]
+        local message = db ~= nil and ffi.string(lib.sqlite3_errmsg(db)) or "unknown error"
+        if db ~= nil then
+            lib.sqlite3_close_v2(db)
+        end
+        error("[VdoSqlite] open: " .. message)
+    end
+
+    return setmetatable({ handle = out[0] }, Connection)
+end
+
+return driver

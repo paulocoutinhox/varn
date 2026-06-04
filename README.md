@@ -72,6 +72,7 @@ The same scripts run on Linux, macOS, and Windows, on iPhone and Android, and in
 | Topic | File |
 |-------|------|
 | 📖 Feature reference | [docs/lua-api.md](docs/lua-api.md) |
+| 🧱 Components | [docs/components.md](docs/components.md) |
 | 🛠️ Building and running | [docs/build.md](docs/build.md) |
 | ⏳ Async and promises | [docs/async.md](docs/async.md) |
 | 🔒 Safety notes | [docs/security.md](docs/security.md) |
