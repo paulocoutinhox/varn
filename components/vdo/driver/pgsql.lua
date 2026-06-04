@@ -44,6 +44,11 @@ local OID_NUMERIC = 1700
 
 local lib
 
+-- a c NULL pointer is never equal to lua nil under cffi, so test it against the null cdata.
+local function isNull(ptr)
+    return ptr == ffi.nullptr
+end
+
 local Connection = {}
 Connection.__index = Connection
 
@@ -106,7 +111,7 @@ local function decodeCell(oid, text)
 end
 
 local function checkResult(conn, result, context)
-    if result == nil then
+    if isNull(result) then
         error("[VdoPgsql] " .. context .. ": " .. ffi.string(lib.PQerrorMessage(conn)))
     end
 
@@ -144,7 +149,8 @@ function Statement:execute(params)
         self:clearResult()
     end
 
-    -- pin every converted string for the duration of the call so the c pointers stay valid.
+    -- copy each value into an owned, nul-terminated c buffer and keep it alive for the call, so the
+    -- pointers handed to libpq never depend on the lifetime of a temporary string conversion.
     local count = #self.parsed.order
     local values = ffi.new("const char *[?]", count == 0 and 1 or count)
     local pinned = {}
@@ -154,8 +160,11 @@ function Statement:execute(params)
         if text == nil then
             values[index - 1] = nil
         else
-            pinned[index] = text
-            values[index - 1] = text
+            local buffer = ffi.new("char[?]", #text + 1)
+            ffi.copy(buffer, text, #text)
+            pinned[index] = buffer
+            -- cffi does not implicitly decay a char array to const char *, so cast before storing.
+            values[index - 1] = ffi.cast("const char *", buffer)
         end
     end
 
@@ -230,6 +239,9 @@ function Statement:close()
     self.cursor = nil
 end
 
+-- a statement left unclosed frees its result when collected, so result memory cannot leak.
+Statement.__gc = Statement.close
+
 function Connection:prepare(statement)
     local parsed = sql.parse(statement)
 
@@ -301,6 +313,23 @@ function Connection:inTransaction()
     return self.inTx == true
 end
 
+-- runs fn inside a transaction: commits on success, rolls back and re-raises on any error, so a partial
+-- change can never be left behind. fn receives the connection and its return value is passed through.
+function Connection:transaction(fn)
+    self:beginTransaction()
+
+    local ok, result = pcall(fn, self)
+    if not ok then
+        pcall(function()
+            self:rollBack()
+        end)
+        error(result, 0)
+    end
+
+    self:commit()
+    return result
+end
+
 function Connection:close()
     if not self.handle then
         return
@@ -309,13 +338,15 @@ function Connection:close()
     self.handle = nil
 end
 
+Connection.__gc = Connection.close
+
 local driver = {}
 
 function driver.connect(params, username, password)
     lib = lib or ffi.load(platform.libraryFilename("pq"))
 
     local handle = lib.PQconnectdb(buildConnInfo(params, username, password))
-    if handle == nil then
+    if isNull(handle) then
         error("[VdoPgsql] connection allocation failed")
     end
 

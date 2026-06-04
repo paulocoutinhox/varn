@@ -22,4 +22,9 @@ target_include_directories(varn_tests PRIVATE
     "${VARN_ROOT}/modules/zip/src"
 )
 
+if(MSVC)
+    # match the 8 MB main-thread stack the cli uses, so recursive code under test has the same headroom.
+    target_link_options(varn_tests PRIVATE /STACK:8388608)
+endif()
+
 add_test(NAME varn_tests COMMAND varn_tests)

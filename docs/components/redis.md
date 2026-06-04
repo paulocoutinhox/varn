@@ -19,6 +19,7 @@ local redis = require("redis")
 |--------|---------|---------|
 | `host` | `"127.0.0.1"` | server host |
 | `port` | `6379` | server port |
+| `hosts` | — | list of `{ host, port }` endpoints tried in order for failover |
 | `username` | — | ACL user, sent as `AUTH user password` |
 | `password` | — | password, sent as `AUTH password` when no username is set |
 | `db` | — | database index, sent as `SELECT db` |
@@ -35,6 +36,23 @@ end)
 ```
 
 Authentication and database selection happen on connect, so a bad credential fails immediately.
+
+### Failover
+
+Pass `hosts` instead of a single `host`/`port` to list several endpoints. Each is tried in order —
+connect, authenticate, select database — and the first one that comes fully online is used. If none
+respond, the connect raises with every endpoint's error. The same `username`, `password`, and `db`
+apply to whichever endpoint wins.
+
+```lua
+local client = redis.connect({
+    hosts = {
+        { host = "10.0.0.1", port = 6379 },
+        { host = "10.0.0.2", port = 6379 },
+    },
+    password = "secret",
+})
+```
 
 ## Commands
 

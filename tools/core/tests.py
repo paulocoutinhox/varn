@@ -7,6 +7,28 @@ from pathlib import Path
 
 from . import helper
 
+# common windows exception codes a crashing process reports as its exit status, so a failure caused by
+# a crash is told apart from a normal non-zero exit or an assertion.
+_WINDOWS_EXIT_CODES = {
+    0xC0000005: "access violation",
+    0xC00000FD: "stack overflow",
+    0xC0000374: "heap corruption",
+    0xC0000409: "stack buffer overrun",
+    0xC000013A: "interrupted (ctrl-c)",
+}
+
+
+def _describe_exit(code: int) -> str:
+    # subprocess reports a posix signal as a negative code and a windows exception as a large unsigned one.
+    if code < 0:
+        return f"exit {code} (killed by signal {-code})"
+
+    description = _WINDOWS_EXIT_CODES.get(code & 0xFFFFFFFF)
+    if description:
+        return f"exit {code} (0x{code & 0xFFFFFFFF:08X} {description})"
+
+    return f"exit {code}"
+
 
 def _binary(build_dir: str, stem: str) -> Path:
     base = helper.PROJECT_DIR / build_dir / "bin"
@@ -67,9 +89,12 @@ def run(args: Namespace) -> None:
             passed += 1
             continue
 
-        print(f"FAIL  {relative}")
+        print(f"FAIL  {relative}  [{_describe_exit(result.returncode)}]")
         output = (result.stdout + result.stderr).strip().splitlines()
-        for line in output[-12:]:
+        if not output:
+            print("      (no output — the process produced nothing before exiting, typical of a crash)")
+        # keep enough tail to hold a crash summary plus its backtrace.
+        for line in output[-40:]:
             print(f"      {line}")
         failed.append(relative)
 

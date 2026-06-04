@@ -74,6 +74,11 @@ local function asNumber(value)
     return ffi.tonumber(value)
 end
 
+-- a c NULL pointer is never equal to lua nil under cffi, so test it against the null cdata.
+local function isNull(ptr)
+    return ptr == ffi.nullptr
+end
+
 local Connection = {}
 Connection.__index = Connection
 
@@ -139,7 +144,7 @@ end
 -- nil when the statement produced no result set, e.g. an insert or ddl.
 local function captureResult(handle)
     local result = lib.mysql_store_result(handle)
-    if result == nil then
+    if isNull(result) then
         if lib.mysql_field_count(handle) ~= 0 then
             fail(handle, "store result")
         end
@@ -197,7 +202,7 @@ function Statement:fetch()
     end
 
     local row = lib.mysql_fetch_row(self.result)
-    if row == nil then
+    if isNull(row) then
         return nil
     end
 
@@ -205,7 +210,7 @@ function Statement:fetch()
     local out = {}
     for i = 0, self.fieldCount - 1 do
         local field = self.fields[i]
-        if row[i] == nil then
+        if isNull(row[i]) then
             out[field.name] = nil
         else
             out[field.name] = decodeCell(field.type, ffi.string(row[i], asNumber(lengths[i])))
@@ -236,6 +241,9 @@ end
 function Statement:close()
     self:clearResult()
 end
+
+-- a statement left unclosed frees its buffered result set when collected, so result memory cannot leak.
+Statement.__gc = Statement.close
 
 function Connection:prepare(statement)
     return setmetatable({ handle = self.handle, parsed = sql.parse(statement), fieldCount = 0 }, Statement)
@@ -280,6 +288,23 @@ function Connection:inTransaction()
     return self.inTx == true
 end
 
+-- runs fn inside a transaction: commits on success, rolls back and re-raises on any error, so a partial
+-- change can never be left behind. fn receives the connection and its return value is passed through.
+function Connection:transaction(fn)
+    self:beginTransaction()
+
+    local ok, result = pcall(fn, self)
+    if not ok then
+        pcall(function()
+            self:rollBack()
+        end)
+        error(result, 0)
+    end
+
+    self:commit()
+    return result
+end
+
 function Connection:close()
     if not self.handle then
         return
@@ -287,6 +312,8 @@ function Connection:close()
     lib.mysql_close(self.handle)
     self.handle = nil
 end
+
+Connection.__gc = Connection.close
 
 local function loadLibrary()
     -- mysql and mariadb ship the same c api under different library names.
@@ -305,7 +332,7 @@ function driver.connect(params, username, password)
     lib = lib or loadLibrary()
 
     local handle = lib.mysql_init(nil)
-    if handle == nil then
+    if isNull(handle) then
         error("[VdoMysql] client initialization failed")
     end
 
@@ -320,7 +347,7 @@ function driver.connect(params, username, password)
         params.unix_socket,
         0
     )
-    if connected == nil then
+    if isNull(connected) then
         local message = ffi.string(lib.mysql_error(handle))
         lib.mysql_close(handle)
         error("[VdoMysql] connect: " .. message)

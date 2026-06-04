@@ -30,6 +30,9 @@ const unsigned char *sqlite3_column_text(sqlite3_stmt *pStmt, int iCol);
 const void *sqlite3_column_blob(sqlite3_stmt *pStmt, int iCol);
 int sqlite3_column_bytes(sqlite3_stmt *pStmt, int iCol);
 
+int sqlite3_exec(sqlite3 *db, const char *sql, void *callback, void *arg, char **errmsg);
+void sqlite3_free(void *p);
+
 int sqlite3_changes(sqlite3 *db);
 long long sqlite3_last_insert_rowid(sqlite3 *db);
 ]]
@@ -57,6 +60,11 @@ local function asNumber(value)
         return value
     end
     return ffi.tonumber(value)
+end
+
+-- a c NULL pointer is never equal to lua nil under cffi, so test it against the null cdata.
+local function isNull(ptr)
+    return ptr == ffi.nullptr
 end
 
 local Connection = {}
@@ -193,6 +201,10 @@ function Statement:close()
     self.handle = nil
 end
 
+-- a statement left unclosed (for example db:query(sql):fetchAll()) is finalized when collected, so a
+-- forgotten cursor cannot keep holding a lock on its table.
+Statement.__gc = Statement.close
+
 local function prepareStatement(self, statement)
     local parsed = sql.parse(statement)
     local text = sql.build(parsed, function()
@@ -217,16 +229,17 @@ function Connection:query(statement, params)
 end
 
 function Connection:exec(statement)
-    local stmt = prepareStatement(self, statement)
-
-    local rc = lib.sqlite3_step(stmt.handle)
-    if rc ~= SQLITE_DONE and rc ~= SQLITE_ROW then
-        local message = ffi.string(lib.sqlite3_errmsg(self.handle))
-        stmt:close()
+    -- sqlite3_exec runs every statement in the string, so a multi-statement script is not silently
+    -- truncated to its first command like a single prepared step would be.
+    local errmsg = ffi.new("char *[1]")
+    if lib.sqlite3_exec(self.handle, statement, nil, nil, errmsg) ~= SQLITE_OK then
+        local message = not isNull(errmsg[0]) and ffi.string(errmsg[0]) or ffi.string(lib.sqlite3_errmsg(self.handle))
+        if not isNull(errmsg[0]) then
+            lib.sqlite3_free(errmsg[0])
+        end
         error("[VdoSqlite] exec: " .. message)
     end
 
-    stmt:close()
     return lib.sqlite3_changes(self.handle)
 end
 
@@ -253,6 +266,23 @@ function Connection:inTransaction()
     return self.inTx == true
 end
 
+-- runs fn inside a transaction: commits on success, rolls back and re-raises on any error, so a partial
+-- change can never be left behind. fn receives the connection and its return value is passed through.
+function Connection:transaction(fn)
+    self:beginTransaction()
+
+    local ok, result = pcall(fn, self)
+    if not ok then
+        pcall(function()
+            self:rollBack()
+        end)
+        error(result, 0)
+    end
+
+    self:commit()
+    return result
+end
+
 function Connection:close()
     if not self.handle then
         return
@@ -260,6 +290,8 @@ function Connection:close()
     lib.sqlite3_close_v2(self.handle)
     self.handle = nil
 end
+
+Connection.__gc = Connection.close
 
 local driver = {}
 
@@ -275,8 +307,8 @@ function driver.connect(params)
     local flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
     if lib.sqlite3_open_v2(path, out, flags, nil) ~= SQLITE_OK then
         local db = out[0]
-        local message = db ~= nil and ffi.string(lib.sqlite3_errmsg(db)) or "unknown error"
-        if db ~= nil then
+        local message = not isNull(db) and ffi.string(lib.sqlite3_errmsg(db)) or "unknown error"
+        if not isNull(db) then
             lib.sqlite3_close_v2(db)
         end
         error("[VdoSqlite] open: " .. message)

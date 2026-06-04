@@ -47,6 +47,16 @@ function sql.parse(statement)
             local stop = statement:find("\n", i, true) or (length + 1)
             current[#current + 1] = statement:sub(i, stop - 1)
             i = stop
+        elseif c == "/" and statement:sub(i + 1, i + 1) == "*" then
+            -- copy a block comment verbatim so a marker inside it is never treated as a placeholder.
+            local stop = statement:find("*/", i + 2, true)
+            if stop then
+                current[#current + 1] = statement:sub(i, stop + 1)
+                i = stop + 2
+            else
+                current[#current + 1] = statement:sub(i)
+                i = length + 1
+            end
         elseif c == ":" and statement:sub(i + 1, i + 1) == ":" then
             -- preserve a postgres cast operator so it is never mistaken for a named marker.
             current[#current + 1] = "::"

@@ -1,6 +1,5 @@
 -- redis client built on top of the native socket module, speaking RESP2 over a single connection.
 -- every call yields on the event loop, so it must run inside an async coroutine (async.spawn/async.run).
-local async = require("async")
 local socket = require("socket")
 
 local READ_CHUNK = 4096
@@ -221,31 +220,57 @@ end
 
 local redis = {}
 
-function redis.connect(options)
-    options = options or {}
-
-    local host = options.host or "127.0.0.1"
-    local port = options.port or 6379
-
+-- opens one endpoint and brings it fully online (auth and database select). a failure here closes the
+-- socket and propagates, so the caller can move on to the next endpoint.
+local function dial(options, host, port)
     local sock, err = socket.tcp.connect(host, port):await()
     if err then
-        error("[Redis] connect failed: " .. tostring(err))
+        error("[Redis] connect to " .. host .. ":" .. port .. " failed: " .. tostring(err), 0)
     end
 
     local client = setmetatable({ sock = sock, reader = Reader.new(sock) }, Client)
 
-    -- authenticate before anything else so a wrong credential fails fast.
-    if options.username then
-        client:command("AUTH", options.username, options.password or "")
-    elseif options.password then
-        client:command("AUTH", options.password)
-    end
+    local ok, handshakeError = pcall(function()
+        -- authenticate before anything else so a wrong credential fails fast.
+        if options.username then
+            client:command("AUTH", options.username, options.password or "")
+        elseif options.password then
+            client:command("AUTH", options.password)
+        end
 
-    if options.db then
-        client:command("SELECT", options.db)
+        if options.db then
+            client:command("SELECT", options.db)
+        end
+    end)
+
+    if not ok then
+        client:close()
+        error(handshakeError, 0)
     end
 
     return client
+end
+
+-- connects to the first reachable endpoint. pass a single host/port, or a list of { host, port }
+-- tables in `hosts` for failover: each is tried in order until one connects and answers.
+function redis.connect(options)
+    options = options or {}
+
+    local endpoints = options.hosts or { { host = options.host, port = options.port } }
+
+    local failures = {}
+    for _, endpoint in ipairs(endpoints) do
+        local host = endpoint.host or "127.0.0.1"
+        local port = endpoint.port or 6379
+
+        local ok, result = pcall(dial, options, host, port)
+        if ok then
+            return result
+        end
+        failures[#failures + 1] = tostring(result)
+    end
+
+    error("[Redis] could not connect to any endpoint: " .. table.concat(failures, "; "))
 end
 
 return redis

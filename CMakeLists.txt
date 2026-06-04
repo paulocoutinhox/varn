@@ -186,6 +186,20 @@ else()
         # executable, so a cli build there stops at the static core.
         add_executable(varn "${VARN_ROOT}/src/main.cpp")
         target_link_libraries(varn PRIVATE varn_core)
+
+        if(MSVC)
+            # windows defaults the main thread to a 1 MB stack, well under the 8 MB unix gives. recursive
+            # work such as parsing deeply nested json needs the same headroom, so match it here.
+            target_link_options(varn PRIVATE /STACK:8388608)
+
+            # the crash handler resolves a backtrace through dbghelp, and program-database symbols let it
+            # print function names with file and line even in a release build.
+            target_link_libraries(varn PRIVATE dbghelp)
+            target_compile_options(varn_core PRIVATE /Zi)
+            target_compile_options(varn PRIVATE /Zi)
+            target_link_options(varn PRIVATE /DEBUG)
+        endif()
+
         install(TARGETS varn RUNTIME DESTINATION bin)
     endif()
 endif()
