@@ -137,7 +137,17 @@ void EventLoop::setIdleExitPredicate(IdleExitPredicate predicate) {
 
 bool EventLoop::hasPendingJobs() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return !jobs_.empty();
+    if (!jobs_.empty()) {
+        return true;
+    }
+    // a timer whose deadline has arrived is a job that is ready to run, so it counts as pending for
+    // any caller that only ever pumps via drainPostedJobs (which now matures due timers itself).
+    return !timers_.empty() && timers_.begin()->first <= std::chrono::steady_clock::now();
+}
+
+bool EventLoop::hasPendingTimers() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return !timers_.empty();
 }
 
 #if defined(__EMSCRIPTEN__)
@@ -146,6 +156,13 @@ void EventLoop::drainPostedJobs() {
         Job job;
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            // move any timer whose deadline has passed into the ready queue, so a wasm pump that
+            // never calls run() still gets postDelayed jobs to fire eventually.
+            const auto now = std::chrono::steady_clock::now();
+            while (!timers_.empty() && timers_.begin()->first <= now) {
+                jobs_.push(std::move(timers_.begin()->second));
+                timers_.erase(timers_.begin());
+            }
             if (jobs_.empty()) {
                 break;
             }

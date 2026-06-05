@@ -1,5 +1,9 @@
 -- redis client built on top of the native socket module, speaking RESP2 over a single connection.
--- every call yields on the event loop, so it must run inside an async coroutine (async.spawn/async.run).
+-- every operation that touches the socket (redis.connect, client:command, client:pipeline, client:close)
+-- yields on the event loop, so the entire client lifecycle must run inside an async coroutine
+-- (async.spawn/async.run). there is no __gc finalizer: a forgotten client leaks until the runtime exits
+-- because :close() cannot be invoked from outside an async coroutine. always close in the same scope
+-- that opened the client, ideally via pcall to cover the error path.
 local socket = require("socket")
 
 local READ_CHUNK = 4096

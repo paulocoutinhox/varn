@@ -103,7 +103,11 @@ void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt) {
             }
         } while (progressed);
 
-        if (varn::wasm::WasmAsyncHost::fetchInflight().load(std::memory_order_acquire) > 0) {
+        // a pending fetch resumes via a JS callback, and an undue timer matures on the next pump,
+        // so either condition means more work is expected even though no job ran this iteration.
+        const bool fetchPending = varn::wasm::WasmAsyncHost::fetchInflight().load(std::memory_order_acquire) > 0;
+        const bool timerPending = rt.mainLoop().hasPendingTimers();
+        if (fetchPending || timerPending) {
             emscripten_sleep(0);
             continue;
         }

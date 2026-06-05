@@ -33,7 +33,10 @@ public:
 
     void setIdleExitPredicate(IdleExitPredicate predicate);
 
+    // reports the queue or a timer whose deadline has already arrived. an undue timer is reported by
+    // hasPendingTimers, so a caller can decide whether to wait for it (instead of busy-polling).
     bool hasPendingJobs() const;
+    bool hasPendingTimers() const;
 
 #if defined(__EMSCRIPTEN__)
     void drainPostedJobs();

@@ -359,8 +359,15 @@ function driver.connect(params, username, password)
         error("[VdoMysql] connect: " .. message)
     end
 
-    -- a known charset keeps escaping correct and text decoding predictable.
-    lib.mysql_set_character_set(handle, params.charset or "utf8mb4")
+    -- a known charset keeps escaping correct and text decoding predictable. a silent fallback to
+    -- the server default would leave mysql_real_escape_string interpreting bytes under a different
+    -- encoding than the application expects, so a failure here aborts the connect.
+    local charset = params.charset or "utf8mb4"
+    if lib.mysql_set_character_set(handle, charset) ~= 0 then
+        local message = ffi.string(lib.mysql_error(handle))
+        lib.mysql_close(handle)
+        error("[VdoMysql] set character set " .. charset .. ": " .. message)
+    end
 
     return setmetatable({ handle = handle }, Connection)
 end

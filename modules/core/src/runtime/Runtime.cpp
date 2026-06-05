@@ -98,6 +98,8 @@ void Runtime::releaseBackgroundDriver() {
     mainLoop_.wake();
 }
 
+// main-thread only. servers_ is read without a lock because it is written exclusively from the same
+// thread that constructs and runs the runtime, before any worker is spawned.
 void Runtime::stop() {
     bool expected = false;
     if (!stopped_.compare_exchange_strong(expected, true)) {
