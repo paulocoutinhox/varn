@@ -47,14 +47,6 @@ private:
     static int luaUdpSocketSendTo(lua_State* L);
     static int luaUdpSocketRecvFrom(lua_State* L);
     static int luaUdpSocketClose(lua_State* L);
-
-    static int luaTcpConnectWorker(lua_State* L);
-    static int luaTcpListenWorker(lua_State* L);
-    static int luaUdpBindWorker(lua_State* L);
-    static int luaTcpSocketReceiveWorker(lua_State* L);
-    static int luaUdpSocketSendToWorker(lua_State* L);
-    static int luaUdpSocketRecvFromWorker(lua_State* L);
-
     static int luaOpen(lua_State* L);
 };
 

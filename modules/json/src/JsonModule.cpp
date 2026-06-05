@@ -4,14 +4,7 @@
 #include <lua.hpp>
 
 #include <exception>
-#include <stdexcept>
 #include <string>
-
-#if defined(_MSC_VER)
-#define VARN_NOINLINE __declspec(noinline)
-#else
-#define VARN_NOINLINE __attribute__((noinline))
-#endif
 
 namespace varn::json {
 
@@ -38,51 +31,28 @@ int JsonModule::readIndent(lua_State* L, int optsIndex) {
     return indent;
 }
 
-// the worker holds the try/catch in its own frame so the entry function below stays free of c++ eh
-// metadata and live destructors. msvc's /gs canary aborts the process when lua_error longjmps across
-// a try/catch that ran in the same frame, so the worker returns -1 with the message on top of the
-// lua stack and the entry function calls lua_error from a frame containing only pod locals.
-
-VARN_NOINLINE int JsonModule::luaEncodeWorker(lua_State* L) {
+int JsonModule::luaEncode(lua_State* L) {
     const int indent = readIndent(L, 2);
     try {
         const std::string out = JsonSerializer::encode(L, 1, indent);
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
+        return luaL_error(L, "%s", ex.what());
     }
-    return -1;
-}
-
-int JsonModule::luaEncode(lua_State* L) {
-    const int n = luaEncodeWorker(L);
-    if (n < 0) {
-        return lua_error(L);
-    }
-    return n;
-}
-
-VARN_NOINLINE int JsonModule::luaDecodeWorker(lua_State* L) {
-    std::size_t length = 0;
-    const char* text = luaL_checklstring(L, 1, &length);
-    try {
-        if (JsonSerializer::deserialize(L, std::string(text, length))) {
-            return 1;
-        }
-        lua_pushliteral(L, "[JsonModule] The input is not valid JSON.");
-    } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
-    }
-    return -1;
 }
 
 int JsonModule::luaDecode(lua_State* L) {
-    const int n = luaDecodeWorker(L);
-    if (n < 0) {
-        return lua_error(L);
+    std::size_t length = 0;
+    const char* text = luaL_checklstring(L, 1, &length);
+    try {
+        if (!JsonSerializer::deserialize(L, std::string(text, length))) {
+            return luaL_error(L, "[JsonModule] The input is not valid JSON.");
+        }
+        return 1;
+    } catch (const std::exception& ex) {
+        return luaL_error(L, "%s", ex.what());
     }
-    return n;
 }
 
 int JsonModule::luaOpen(lua_State* L) {

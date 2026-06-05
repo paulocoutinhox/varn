@@ -4,14 +4,7 @@
 #include <lua.hpp>
 
 #include <exception>
-#include <stdexcept>
 #include <string>
-
-#if defined(_MSC_VER)
-#define VARN_NOINLINE __declspec(noinline)
-#else
-#define VARN_NOINLINE __attribute__((noinline))
-#endif
 
 namespace varn::xml {
 
@@ -38,11 +31,7 @@ int XmlModule::readIndent(lua_State* L, int optsIndex) {
     return indent;
 }
 
-// the worker owns the try/catch so the entry function below stays free of c++ exception metadata and
-// live destructors. on msvc this avoids the /gs canary trip when lua_error longjmps over the unwind
-// of hoisted destructors.
-
-VARN_NOINLINE int XmlModule::luaEncodeWorker(lua_State* L) {
+int XmlModule::luaEncode(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     const int indent = readIndent(L, 2);
     try {
@@ -50,39 +39,21 @@ VARN_NOINLINE int XmlModule::luaEncodeWorker(lua_State* L) {
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
+        return luaL_error(L, "%s", ex.what());
     }
-    return -1;
-}
-
-int XmlModule::luaEncode(lua_State* L) {
-    const int n = luaEncodeWorker(L);
-    if (n < 0) {
-        return lua_error(L);
-    }
-    return n;
-}
-
-VARN_NOINLINE int XmlModule::luaDecodeWorker(lua_State* L) {
-    std::size_t length = 0;
-    const char* text = luaL_checklstring(L, 1, &length);
-    try {
-        if (XmlSerializer::parse(L, std::string(text, length))) {
-            return 1;
-        }
-        lua_pushliteral(L, "[XmlModule] The input is not valid XML.");
-    } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
-    }
-    return -1;
 }
 
 int XmlModule::luaDecode(lua_State* L) {
-    const int n = luaDecodeWorker(L);
-    if (n < 0) {
-        return lua_error(L);
+    std::size_t length = 0;
+    const char* text = luaL_checklstring(L, 1, &length);
+    try {
+        if (!XmlSerializer::parse(L, std::string(text, length))) {
+            return luaL_error(L, "[XmlModule] The input is not valid XML.");
+        }
+        return 1;
+    } catch (const std::exception& ex) {
+        return luaL_error(L, "%s", ex.what());
     }
-    return n;
 }
 
 int XmlModule::luaOpen(lua_State* L) {

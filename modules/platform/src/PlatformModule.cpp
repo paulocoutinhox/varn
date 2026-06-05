@@ -8,12 +8,6 @@
 #include <exception>
 #include <string>
 
-#if defined(_MSC_VER)
-#define VARN_NOINLINE __declspec(noinline)
-#else
-#define VARN_NOINLINE __attribute__((noinline))
-#endif
-
 namespace varn::platform {
 
 int PlatformModule::luaOs(lua_State* L) {
@@ -40,25 +34,15 @@ int PlatformModule::luaShlibSuffix(lua_State* L) {
     return 1;
 }
 
-VARN_NOINLINE int PlatformModule::luaLibraryFilenameWorker(lua_State* L) {
+int PlatformModule::luaLibraryFilename(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
-
     try {
         const std::string path = PlatformInfo::libraryFilenameForName(name);
         lua_pushlstring(L, path.data(), path.size());
         return 1;
     } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
+        return luaL_error(L, "%s", ex.what());
     }
-    return -1;
-}
-
-int PlatformModule::luaLibraryFilename(lua_State* L) {
-    const int n = luaLibraryFilenameWorker(L);
-    if (n < 0) {
-        return lua_error(L);
-    }
-    return n;
 }
 
 int PlatformModule::luaHostVersion(lua_State* L) {
@@ -82,10 +66,9 @@ int PlatformModule::luaEndianness(lua_State* L) {
     return 1;
 }
 
-VARN_NOINLINE int PlatformModule::luaLibraryPathByNameWorker(lua_State* L) {
+int PlatformModule::luaLibraryPathByName(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
     const char* subdirRaw = (lua_gettop(L) >= 2 && lua_isstring(L, 2)) ? lua_tostring(L, 2) : ".";
-
     try {
         std::string out = subdirRaw;
         const std::string file = PlatformInfo::libraryFilenameForName(name);
@@ -96,17 +79,8 @@ VARN_NOINLINE int PlatformModule::luaLibraryPathByNameWorker(lua_State* L) {
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
+        return luaL_error(L, "%s", ex.what());
     }
-    return -1;
-}
-
-int PlatformModule::luaLibraryPathByName(lua_State* L) {
-    const int n = luaLibraryPathByNameWorker(L);
-    if (n < 0) {
-        return lua_error(L);
-    }
-    return n;
 }
 
 int PlatformModule::luaOpen(lua_State* L) {
