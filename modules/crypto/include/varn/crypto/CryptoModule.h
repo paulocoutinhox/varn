@@ -17,6 +17,11 @@ private:
     static int luaHmac(struct lua_State* L);
     static int luaRandomBytes(struct lua_State* L);
     static int luaEquals(struct lua_State* L);
+
+    static int luaDigestWorker(struct lua_State* L);
+    static int luaHmacWorker(struct lua_State* L);
+    static int luaRandomBytesWorker(struct lua_State* L);
+
     static int luaOpen(struct lua_State* L);
 };
 

@@ -13,6 +13,8 @@ public:
 private:
     static int luaEncode(struct lua_State* L);
     static int luaDecode(struct lua_State* L);
+    static int luaEncodeWorker(struct lua_State* L);
+    static int luaDecodeWorker(struct lua_State* L);
     static int luaOpen(struct lua_State* L);
     static int readIndent(struct lua_State* L, int optsIndex);
 };

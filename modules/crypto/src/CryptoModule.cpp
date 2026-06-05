@@ -7,6 +7,12 @@
 #include "varn/crypto/CryptoPrimitives.h"
 #include "varn/lua/LuaHelpers.h"
 
+#if defined(_MSC_VER)
+#define VARN_NOINLINE __declspec(noinline)
+#else
+#define VARN_NOINLINE __attribute__((noinline))
+#endif
+
 namespace varn::crypto {
 
 bool CryptoModule::parseDigestFormat(lua_State* L, int index, bool& hexOut) {
@@ -28,9 +34,12 @@ bool CryptoModule::parseDigestFormat(lua_State* L, int index, bool& hexOut) {
     return false;
 }
 
-// the lua_error longjmp runs in a frame with no live c++ destructors, otherwise msvc's /gs canary aborts
-// the process. the catch block pushes the error message and lua_error fires after the try has exited.
-int CryptoModule::luaDigest(lua_State* L) {
+// each worker owns the try/catch so the entry function below stays free of c++ exception metadata
+// and live destructors. msvc's /gs canary aborts the process when lua_error longjmps from a frame
+// that ran a c++ try/catch, so the worker returns -1 with the message on top of the lua stack and
+// the entry function calls lua_error from a pod-only frame.
+
+VARN_NOINLINE int CryptoModule::luaDigestWorker(lua_State* L) {
     std::size_t algoLen = 0;
     std::size_t dataLen = 0;
     const char* algoRaw = luaL_checklstring(L, 1, &algoLen);
@@ -51,10 +60,18 @@ int CryptoModule::luaDigest(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
 }
 
-int CryptoModule::luaHmac(lua_State* L) {
+int CryptoModule::luaDigest(lua_State* L) {
+    const int n = luaDigestWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int CryptoModule::luaHmacWorker(lua_State* L) {
     std::size_t algoLen = 0;
     std::size_t keyLen = 0;
     std::size_t dataLen = 0;
@@ -78,10 +95,18 @@ int CryptoModule::luaHmac(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
 }
 
-int CryptoModule::luaRandomBytes(lua_State* L) {
+int CryptoModule::luaHmac(lua_State* L) {
+    const int n = luaHmacWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int CryptoModule::luaRandomBytesWorker(lua_State* L) {
     const lua_Integer count = luaL_checkinteger(L, 1);
 
     try {
@@ -94,7 +119,15 @@ int CryptoModule::luaRandomBytes(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
+}
+
+int CryptoModule::luaRandomBytes(lua_State* L) {
+    const int n = luaRandomBytesWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int CryptoModule::luaEquals(lua_State* L) {

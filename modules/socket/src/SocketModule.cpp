@@ -11,6 +11,12 @@
 #include <string>
 #include <utility>
 
+#if defined(_MSC_VER)
+#define VARN_NOINLINE __declspec(noinline)
+#else
+#define VARN_NOINLINE __attribute__((noinline))
+#endif
+
 namespace varn::socket {
 
 using varn::runtime::Runtime;
@@ -103,16 +109,16 @@ int SocketModule::luaUdpSocketGc(lua_State* L) {
     return 0;
 }
 
-// validation errors raise via luaL_error at the very top of each entry, before any c++ object exists.
-// the actual work runs only on the validated path and never raises a lua error after a c++ object is
-// alive on the stack. on msvc this avoids the /gs canary check that fires when lua_error longjmps
-// across c++ destructors.
+// every entry that constructs c++ objects (std::string, shared_ptr, lambda with captures) routes the
+// body through a noinline worker. the entry then calls lua_error from a pod-only frame so msvc's /gs
+// canary cannot trip during the unwind of hoisted destructors.
 
-int SocketModule::luaTcpConnect(lua_State* L) {
+VARN_NOINLINE int SocketModule::luaTcpConnectWorker(lua_State* L) {
     const char* host = luaL_checkstring(L, 1);
     const lua_Integer portArg = luaL_checkinteger(L, 2);
     if (portArg < 1 || portArg > 65535) {
-        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
+        lua_pushliteral(L, "[SocketModule] Port must be between 1 and 65535.");
+        return -1;
     }
     const int port = static_cast<int>(portArg);
 
@@ -135,15 +141,25 @@ int SocketModule::luaTcpConnect(lua_State* L) {
     return 1;
 }
 
-int SocketModule::luaTcpListen(lua_State* L) {
+int SocketModule::luaTcpConnect(lua_State* L) {
+    const int n = luaTcpConnectWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int SocketModule::luaTcpListenWorker(lua_State* L) {
     const char* host = luaL_checkstring(L, 1);
     const lua_Integer portArg = luaL_checkinteger(L, 2);
     const lua_Integer backlogArg = luaL_optinteger(L, 3, 64);
     if (portArg < 1 || portArg > 65535) {
-        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
+        lua_pushliteral(L, "[SocketModule] Port must be between 1 and 65535.");
+        return -1;
     }
     if (backlogArg < 1 || backlogArg > 4096) {
-        return luaL_error(L, "[SocketModule] Backlog must be between 1 and 4096.");
+        lua_pushliteral(L, "[SocketModule] Backlog must be between 1 and 4096.");
+        return -1;
     }
     const int port = static_cast<int>(portArg);
     const int backlog = static_cast<int>(backlogArg);
@@ -165,6 +181,14 @@ int SocketModule::luaTcpListen(lua_State* L) {
 
     Promise::push(L, promise);
     return 1;
+}
+
+int SocketModule::luaTcpListen(lua_State* L) {
+    const int n = luaTcpListenWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int SocketModule::luaTcpSocketSend(lua_State* L) {
@@ -192,11 +216,12 @@ int SocketModule::luaTcpSocketSend(lua_State* L) {
     return 1;
 }
 
-int SocketModule::luaTcpSocketReceive(lua_State* L) {
+VARN_NOINLINE int SocketModule::luaTcpSocketReceiveWorker(lua_State* L) {
     auto* holder = checkTcpSocket(L, 1);
     const int maxBytes = static_cast<int>(luaL_optinteger(L, 2, 65536));
     if (maxBytes <= 0) {
-        return luaL_error(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
+        lua_pushliteral(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
+        return -1;
     }
 
     auto& rt = luaRuntime(L);
@@ -215,6 +240,14 @@ int SocketModule::luaTcpSocketReceive(lua_State* L) {
 
     Promise::push(L, promise);
     return 1;
+}
+
+int SocketModule::luaTcpSocketReceive(lua_State* L) {
+    const int n = luaTcpSocketReceiveWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int SocketModule::luaTcpSocketClose(lua_State* L) {
@@ -284,11 +317,12 @@ int SocketModule::luaTcpListenerClose(lua_State* L) {
     return 1;
 }
 
-int SocketModule::luaUdpBind(lua_State* L) {
+VARN_NOINLINE int SocketModule::luaUdpBindWorker(lua_State* L) {
     const char* host = luaL_checkstring(L, 1);
     const lua_Integer portArg = luaL_checkinteger(L, 2);
     if (portArg < 1 || portArg > 65535) {
-        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
+        lua_pushliteral(L, "[SocketModule] Port must be between 1 and 65535.");
+        return -1;
     }
     const int port = static_cast<int>(portArg);
 
@@ -311,12 +345,21 @@ int SocketModule::luaUdpBind(lua_State* L) {
     return 1;
 }
 
-int SocketModule::luaUdpSocketSendTo(lua_State* L) {
+int SocketModule::luaUdpBind(lua_State* L) {
+    const int n = luaUdpBindWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int SocketModule::luaUdpSocketSendToWorker(lua_State* L) {
     auto* holder = checkUdpSocket(L, 1);
     const char* host = luaL_checkstring(L, 2);
     const lua_Integer portArg = luaL_checkinteger(L, 3);
     if (portArg < 1 || portArg > 65535) {
-        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
+        lua_pushliteral(L, "[SocketModule] Port must be between 1 and 65535.");
+        return -1;
     }
     const int port = static_cast<int>(portArg);
     size_t len = 0;
@@ -343,11 +386,20 @@ int SocketModule::luaUdpSocketSendTo(lua_State* L) {
     return 1;
 }
 
-int SocketModule::luaUdpSocketRecvFrom(lua_State* L) {
+int SocketModule::luaUdpSocketSendTo(lua_State* L) {
+    const int n = luaUdpSocketSendToWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int SocketModule::luaUdpSocketRecvFromWorker(lua_State* L) {
     auto* holder = checkUdpSocket(L, 1);
     const int maxBytes = static_cast<int>(luaL_optinteger(L, 2, 65536));
     if (maxBytes <= 0) {
-        return luaL_error(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
+        lua_pushliteral(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
+        return -1;
     }
 
     auto& rt = luaRuntime(L);
@@ -375,6 +427,14 @@ int SocketModule::luaUdpSocketRecvFrom(lua_State* L) {
 
     Promise::push(L, promise);
     return 1;
+}
+
+int SocketModule::luaUdpSocketRecvFrom(lua_State* L) {
+    const int n = luaUdpSocketRecvFromWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int SocketModule::luaUdpSocketClose(lua_State* L) {

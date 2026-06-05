@@ -7,6 +7,12 @@
 #include <stdexcept>
 #include <string>
 
+#if defined(_MSC_VER)
+#define VARN_NOINLINE __declspec(noinline)
+#else
+#define VARN_NOINLINE __attribute__((noinline))
+#endif
+
 namespace varn::xml {
 
 // reads the indent width from the options table: an explicit indent, or 2 when pretty is set.
@@ -32,12 +38,13 @@ int XmlModule::readIndent(lua_State* L, int optsIndex) {
     return indent;
 }
 
-// push the error message inside the catch block, then call lua_error from a frame with no live c++
-// destructors. on msvc, a lua_error longjmp over a std::string would trip the /gs stack canary.
-int XmlModule::luaEncode(lua_State* L) {
+// the worker owns the try/catch so the entry function below stays free of c++ exception metadata and
+// live destructors. on msvc this avoids the /gs canary trip when lua_error longjmps over the unwind
+// of hoisted destructors.
+
+VARN_NOINLINE int XmlModule::luaEncodeWorker(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     const int indent = readIndent(L, 2);
-
     try {
         const std::string out = XmlSerializer::encodeNode(L, 1, indent);
         lua_pushlstring(L, out.data(), out.size());
@@ -45,22 +52,37 @@ int XmlModule::luaEncode(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
 }
 
-int XmlModule::luaDecode(lua_State* L) {
+int XmlModule::luaEncode(lua_State* L) {
+    const int n = luaEncodeWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int XmlModule::luaDecodeWorker(lua_State* L) {
     std::size_t length = 0;
     const char* text = luaL_checklstring(L, 1, &length);
-
     try {
         if (XmlSerializer::parse(L, std::string(text, length))) {
             return 1;
         }
-        throw std::runtime_error("[XmlModule] The input is not valid XML.");
+        lua_pushliteral(L, "[XmlModule] The input is not valid XML.");
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
+}
+
+int XmlModule::luaDecode(lua_State* L) {
+    const int n = luaDecodeWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int XmlModule::luaOpen(lua_State* L) {

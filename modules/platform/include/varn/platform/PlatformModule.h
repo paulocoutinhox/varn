@@ -20,6 +20,10 @@ private:
     static int luaPointerSize(lua_State* L);
     static int luaEndianness(lua_State* L);
     static int luaLibraryPathByName(lua_State* L);
+
+    static int luaLibraryFilenameWorker(lua_State* L);
+    static int luaLibraryPathByNameWorker(lua_State* L);
+
     static int luaOpen(lua_State* L);
 };
 
