@@ -72,7 +72,7 @@ EMSCRIPTEN_KEEPALIVE void varn_fetch_js_on_success(uintptr_t ctxHandle, int http
     if (bodyPtr != 0) {
         std::free(reinterpret_cast<void*>(bodyPtr));
     }
-    varn::wasm::httpClientFetchInflight().fetch_sub(1, std::memory_order_acq_rel);
+    varn::wasm::WasmAsyncHost::fetchInflight().fetch_sub(1, std::memory_order_acq_rel);
 }
 
 EMSCRIPTEN_KEEPALIVE void varn_fetch_js_on_error(uintptr_t ctxHandle, uintptr_t msgPtr) {
@@ -90,7 +90,7 @@ EMSCRIPTEN_KEEPALIVE void varn_fetch_js_on_error(uintptr_t ctxHandle, uintptr_t 
         } catch (...) {
         }
     }
-    varn::wasm::httpClientFetchInflight().fetch_sub(1, std::memory_order_acq_rel);
+    varn::wasm::WasmAsyncHost::fetchInflight().fetch_sub(1, std::memory_order_acq_rel);
 }
 
 } // extern "C"
@@ -116,18 +116,18 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
     try {
         parsed = JSON.parse(headersStr);
     } catch (e) {
-        reportError("http.client: invalid headers json (" + String(e) + ")");
+        reportError("[EmscriptenFetchHttpClient] Invalid headers json (" + String(e) + ")");
         return;
     }
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-        reportError("http.client: headers json must be a JSON object");
+        reportError("[EmscriptenFetchHttpClient] Headers json must be a JSON object.");
         return;
     }
     const headersInit = {};
     for (const key of Object.keys(parsed)) {
         const value = parsed[key];
         if (typeof value !== "string") {
-            reportError("http.client: header value must be a string (key: " + key + ")");
+            reportError("[EmscriptenFetchHttpClient] Header value must be a string (key: " + key + ")");
             return;
         }
         headersInit[key] = value;
@@ -177,7 +177,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
         });
 });
 
-void performRequestWireEmscriptenAsync(
+void HttpClientPerform::performAsync(
     const std::shared_ptr<Promise>& promise,
     const std::string& method,
     const std::string& url,
@@ -192,7 +192,7 @@ void performRequestWireEmscriptenAsync(
     }
     ctx->headersJson = hdr.dump();
 
-    varn::wasm::httpClientFetchInflight().fetch_add(1, std::memory_order_relaxed);
+    varn::wasm::WasmAsyncHost::fetchInflight().fetch_add(1, std::memory_order_relaxed);
 
     varn_browser_fetch_start(reinterpret_cast<uintptr_t>(ctx), ctx->url.c_str(), ctx->method.c_str(),
                                ctx->headersJson.c_str(), ctx->body.empty() ? nullptr : ctx->body.data(),

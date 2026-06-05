@@ -1,8 +1,13 @@
 #pragma once
 
-// installs a last-resort handler so a native crash prints a diagnosis to stderr instead of dying
-// silently. only the windows path does anything; every other platform already surfaces a usable
-// signal/backtrace through its own tooling, so there it is a no-op.
+// installs last-resort handlers so a native crash prints a diagnosis to stderr instead of dying
+// silently. std::set_terminate is wired on every platform (it catches an unhandled c++ exception,
+// including one escaping a worker thread). the windows path adds a structured-exception filter
+// with a symbolized backtrace for faults the terminate handler never sees, such as an access violation.
+
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
 
 #if defined(_WIN32)
 
@@ -11,11 +16,31 @@
 #include <dbghelp.h>
 
 #include <cstdint>
-#include <cstdio>
+
+#endif
 
 namespace varn::diagnostics {
 
-inline const char* exceptionName(DWORD code) {
+class CrashHandler {
+public:
+    CrashHandler() = delete;
+
+    static void install();
+
+private:
+#if defined(_WIN32)
+    static const char* exceptionName(DWORD code);
+    static void printBacktrace();
+    static LONG WINAPI crashFilter(EXCEPTION_POINTERS* info);
+#endif
+
+    static void printActiveException();
+    static void terminateHandler();
+};
+
+#if defined(_WIN32)
+
+inline const char* CrashHandler::exceptionName(DWORD code) {
     switch (code) {
         case EXCEPTION_ACCESS_VIOLATION:
             return "access violation";
@@ -34,21 +59,23 @@ inline const char* exceptionName(DWORD code) {
         case 0xC0000374:
             return "heap corruption";
         case 0xC0000409:
-            return "stack buffer overrun";
+            return "stack buffer overrun or fast-fail";
         default:
             return "unknown exception";
     }
 }
 
-inline void printBacktrace() {
+inline void CrashHandler::printBacktrace() {
     HANDLE process = GetCurrentProcess();
     SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
     if (!SymInitialize(process, nullptr, TRUE)) {
         return;
     }
 
-    void* frames[62];
-    const USHORT count = CaptureStackBackTrace(0, 62, frames, nullptr);
+    // capture only the innermost frames: the fault site is near the top, and a short trace fits inside
+    // the tail the test runner echoes on failure.
+    void* frames[30];
+    const USHORT count = CaptureStackBackTrace(0, 30, frames, nullptr);
 
     char storage[sizeof(SYMBOL_INFO) + 256] = {0};
     SYMBOL_INFO* symbol = reinterpret_cast<SYMBOL_INFO*>(storage);
@@ -80,24 +107,24 @@ inline void printBacktrace() {
     SymCleanup(process);
 }
 
-inline LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
+inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info) {
     const EXCEPTION_RECORD* record = info->ExceptionRecord;
     const DWORD code = record->ExceptionCode;
 
     // emit and flush the essentials first, so they survive even if the stack walk below faults.
-    fprintf(stderr, "\n[crash] unhandled exception 0x%08lX (%s) at %p\n", static_cast<unsigned long>(code),
+    fprintf(stderr, "\n[CrashHandler] unhandled exception 0x%08lX (%s) at %p\n", static_cast<unsigned long>(code),
             exceptionName(code), record->ExceptionAddress);
 
     if (code == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2) {
         const ULONG_PTR operation = record->ExceptionInformation[0];
         const char* verb = operation == 0 ? "reading" : (operation == 1 ? "writing" : "executing");
-        fprintf(stderr, "[crash] while %s address 0x%llx\n", verb,
+        fprintf(stderr, "[CrashHandler] while %s address 0x%llx\n", verb,
                 static_cast<unsigned long long>(record->ExceptionInformation[1]));
     }
     fflush(stderr);
 
     // a stack overflow runs the handler on a nearly empty stack, so a symbolized walk would fault
-    // again; the summary above is enough to identify it.
+    // again. the summary above is enough to identify it.
     if (code != EXCEPTION_STACK_OVERFLOW) {
         printBacktrace();
         fflush(stderr);
@@ -106,21 +133,44 @@ inline LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-inline void installCrashHandler() {
-    // keep a stack reserve so the handler can still run and report on a stack-overflow exception.
+#endif // _WIN32
+
+inline void CrashHandler::printActiveException() {
+    if (std::exception_ptr current = std::current_exception()) {
+        try {
+            std::rethrow_exception(current);
+        } catch (const std::exception& ex) {
+            fprintf(stderr, "[CrashHandler] unhandled C++ exception: %s\n", ex.what());
+        } catch (...) {
+            fprintf(stderr, "[CrashHandler] unhandled non-standard C++ exception\n");
+        }
+    } else {
+        fprintf(stderr, "[CrashHandler] terminate with no active exception (often a longjmp across C++ frames)\n");
+    }
+}
+
+inline void CrashHandler::terminateHandler() {
+    fprintf(stderr, "\n[CrashHandler] std::terminate called\n");
+    printActiveException();
+    fflush(stderr);
+
+#if defined(_WIN32)
+    printBacktrace();
+    fflush(stderr);
+#endif
+
+    std::abort();
+}
+
+inline void CrashHandler::install() {
+    std::set_terminate(&CrashHandler::terminateHandler);
+
+#if defined(_WIN32)
+    // keep a stack reserve so the filter can still run and report on a stack-overflow exception.
     ULONG reserve = 65536;
     SetThreadStackGuarantee(&reserve);
-    SetUnhandledExceptionFilter(&crashFilter);
+    SetUnhandledExceptionFilter(&CrashHandler::crashFilter);
+#endif
 }
 
 } // namespace varn::diagnostics
-
-#else
-
-namespace varn::diagnostics {
-
-inline void installCrashHandler() {}
-
-} // namespace varn::diagnostics
-
-#endif

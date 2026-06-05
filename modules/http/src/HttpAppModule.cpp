@@ -41,6 +41,7 @@
 #include <memory>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -338,8 +339,7 @@ Target HttpApp::resolveTarget(lua_State* L) {
         return Target{userdata->state, userdata->groupId};
     }
 
-    luaL_error(L, "[HttpApp] Expected an app or a route group.");
-    return Target{};
+    throw std::runtime_error("[HttpApp] Expected an app or a route group.");
 }
 
 void HttpApp::pushRoute(lua_State* L, std::shared_ptr<AppState> state, int routeId) {
@@ -405,23 +405,28 @@ int HttpApp::luaContextStatus(lua_State* L) {
 }
 
 int HttpApp::luaContextHeader(lua_State* L) {
-    auto* context = checkContext(L);
-    const std::string name = LuaHelpers::checkString(L, 2);
-    const std::string value = LuaHelpers::checkString(L, 3);
+    try {
+        auto* context = checkContext(L);
+        const std::string name = LuaHelpers::checkString(L, 2);
+        const std::string value = LuaHelpers::checkString(L, 3);
 
-    // an rfc 9110 field name is a token, so reject controls, whitespace and the colon separator.
-    if (name.empty()) {
-        return luaL_error(L, "[HttpApp] A header name is required.");
-    }
-    for (unsigned char c : name) {
-        if (c <= 0x20 || c == 0x7f || c == ':') {
-            return luaL_error(L, "[HttpApp] The header name '%s' is not a valid token.", name.c_str());
+        // an rfc 9110 field name is a token, so reject controls, whitespace and the colon separator.
+        if (name.empty()) {
+            throw std::runtime_error("[HttpApp] A header name is required.");
         }
-    }
+        for (unsigned char c : name) {
+            if (c <= 0x20 || c == 0x7f || c == ':') {
+                throw std::runtime_error("[HttpApp] The header name '" + name + "' is not a valid token.");
+            }
+        }
 
-    context->response->setHeader(name, value);
-    lua_pushvalue(L, 1);
-    return 1;
+        context->response->setHeader(name, value);
+        lua_pushvalue(L, 1);
+        return 1;
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
+    }
+    return lua_error(L);
 }
 
 int HttpApp::luaContextType(lua_State* L) {
@@ -490,136 +495,146 @@ bool HttpApp::invalidCookieAttribute(const std::string& value) {
 }
 
 int HttpApp::luaContextCookie(lua_State* L) {
-    auto* context = checkContext(L);
-    const std::string name = LuaHelpers::checkString(L, 2);
-    const std::string value = LuaHelpers::checkString(L, 3);
+    try {
+        auto* context = checkContext(L);
+        const std::string name = LuaHelpers::checkString(L, 2);
+        const std::string value = LuaHelpers::checkString(L, 3);
 
-    if (name.empty() || invalidCookieToken(name) || invalidCookieToken(value)) {
-        return luaL_error(L, "[HttpApp] The cookie name or value contains invalid characters.");
+        if (name.empty() || invalidCookieToken(name) || invalidCookieToken(value)) {
+            throw std::runtime_error("[HttpApp] The cookie name or value contains invalid characters.");
+        }
+
+        std::string cookie = name + "=" + value;
+
+        if (lua_istable(L, 4)) {
+            lua_getfield(L, 4, "path");
+            if (lua_isstring(L, -1)) {
+                const std::string path = lua_tostring(L, -1);
+                if (invalidCookieAttribute(path)) {
+                    lua_pop(L, 1);
+                    throw std::runtime_error("[HttpApp] The cookie path contains invalid characters.");
+                }
+                cookie += "; Path=" + path;
+            }
+            lua_pop(L, 1);
+
+            lua_getfield(L, 4, "domain");
+            if (lua_isstring(L, -1)) {
+                const std::string domain = lua_tostring(L, -1);
+                if (invalidCookieAttribute(domain)) {
+                    lua_pop(L, 1);
+                    throw std::runtime_error("[HttpApp] The cookie domain contains invalid characters.");
+                }
+                cookie += "; Domain=" + domain;
+            }
+            lua_pop(L, 1);
+
+            lua_getfield(L, 4, "maxAge");
+            if (lua_isinteger(L, -1)) cookie += "; Max-Age=" + std::to_string(lua_tointeger(L, -1));
+            lua_pop(L, 1);
+
+            lua_getfield(L, 4, "expires");
+            if (lua_isstring(L, -1)) {
+                const std::string expires = lua_tostring(L, -1);
+                if (invalidCookieAttribute(expires)) {
+                    lua_pop(L, 1);
+                    throw std::runtime_error("[HttpApp] The cookie expires value contains invalid characters.");
+                }
+                cookie += "; Expires=" + expires;
+            }
+            lua_pop(L, 1);
+
+            lua_getfield(L, 4, "secure");
+            const bool secure = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
+
+            // a sameSite attribute is only valid as Strict, Lax or None.
+            std::string sameSite;
+            lua_getfield(L, 4, "sameSite");
+            if (lua_isstring(L, -1)) {
+                const std::string raw = lua_tostring(L, -1);
+                if (HttpText::iequals(raw, "Strict")) {
+                    sameSite = "Strict";
+                } else if (HttpText::iequals(raw, "Lax")) {
+                    sameSite = "Lax";
+                } else if (HttpText::iequals(raw, "None")) {
+                    sameSite = "None";
+                } else {
+                    lua_pop(L, 1);
+                    throw std::runtime_error("[HttpApp] The cookie sameSite value must be Strict, Lax or None.");
+                }
+            }
+            lua_pop(L, 1);
+
+            // browsers reject a SameSite=None cookie that is not also marked Secure.
+            if (sameSite == "None" && !secure) {
+                throw std::runtime_error("[HttpApp] A SameSite=None cookie must also be Secure.");
+            }
+
+            if (!sameSite.empty()) {
+                cookie += "; SameSite=" + sameSite;
+            }
+            if (secure) {
+                cookie += "; Secure";
+            }
+
+            lua_getfield(L, 4, "httpOnly");
+            if (lua_toboolean(L, -1)) cookie += "; HttpOnly";
+            lua_pop(L, 1);
+        }
+
+        context->response->addHeader("Set-Cookie", cookie);
+        lua_pushvalue(L, 1);
+        return 1;
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
     }
-
-    std::string cookie = name + "=" + value;
-
-    if (lua_istable(L, 4)) {
-        lua_getfield(L, 4, "path");
-        if (lua_isstring(L, -1)) {
-            const std::string path = lua_tostring(L, -1);
-            if (invalidCookieAttribute(path)) {
-                lua_pop(L, 1);
-                return luaL_error(L, "[HttpApp] The cookie path contains invalid characters.");
-            }
-            cookie += "; Path=" + path;
-        }
-        lua_pop(L, 1);
-
-        lua_getfield(L, 4, "domain");
-        if (lua_isstring(L, -1)) {
-            const std::string domain = lua_tostring(L, -1);
-            if (invalidCookieAttribute(domain)) {
-                lua_pop(L, 1);
-                return luaL_error(L, "[HttpApp] The cookie domain contains invalid characters.");
-            }
-            cookie += "; Domain=" + domain;
-        }
-        lua_pop(L, 1);
-
-        lua_getfield(L, 4, "maxAge");
-        if (lua_isinteger(L, -1)) cookie += "; Max-Age=" + std::to_string(lua_tointeger(L, -1));
-        lua_pop(L, 1);
-
-        lua_getfield(L, 4, "expires");
-        if (lua_isstring(L, -1)) {
-            const std::string expires = lua_tostring(L, -1);
-            if (invalidCookieAttribute(expires)) {
-                lua_pop(L, 1);
-                return luaL_error(L, "[HttpApp] The cookie expires value contains invalid characters.");
-            }
-            cookie += "; Expires=" + expires;
-        }
-        lua_pop(L, 1);
-
-        lua_getfield(L, 4, "secure");
-        const bool secure = lua_toboolean(L, -1) != 0;
-        lua_pop(L, 1);
-
-        // a sameSite attribute is only valid as Strict, Lax or None.
-        std::string sameSite;
-        lua_getfield(L, 4, "sameSite");
-        if (lua_isstring(L, -1)) {
-            const std::string raw = lua_tostring(L, -1);
-            if (HttpText::iequals(raw, "Strict")) {
-                sameSite = "Strict";
-            } else if (HttpText::iequals(raw, "Lax")) {
-                sameSite = "Lax";
-            } else if (HttpText::iequals(raw, "None")) {
-                sameSite = "None";
-            } else {
-                lua_pop(L, 1);
-                return luaL_error(L, "[HttpApp] The cookie sameSite value must be Strict, Lax or None.");
-            }
-        }
-        lua_pop(L, 1);
-
-        // browsers reject a SameSite=None cookie that is not also marked Secure.
-        if (sameSite == "None" && !secure) {
-            return luaL_error(L, "[HttpApp] A SameSite=None cookie must also be Secure.");
-        }
-
-        if (!sameSite.empty()) {
-            cookie += "; SameSite=" + sameSite;
-        }
-        if (secure) {
-            cookie += "; Secure";
-        }
-
-        lua_getfield(L, 4, "httpOnly");
-        if (lua_toboolean(L, -1)) cookie += "; HttpOnly";
-        lua_pop(L, 1);
-    }
-
-    context->response->addHeader("Set-Cookie", cookie);
-    lua_pushvalue(L, 1);
-    return 1;
+    return lua_error(L);
 }
 
 int HttpApp::luaContextBody(lua_State* L) {
-    auto* context = checkContext(L);
+    try {
+        auto* context = checkContext(L);
 
-    lua_getiuservalue(L, 1, 1);
-    lua_getfield(L, -1, "body");
-    std::size_t length = 0;
-    const char* raw = lua_tolstring(L, -1, &length);
-    const std::string body = raw ? std::string(raw, length) : std::string();
-    lua_pop(L, 2);
+        lua_getiuservalue(L, 1, 1);
+        lua_getfield(L, -1, "body");
+        std::size_t length = 0;
+        const char* raw = lua_tolstring(L, -1, &length);
+        const std::string body = raw ? std::string(raw, length) : std::string();
+        lua_pop(L, 2);
 
-    const std::string format = LuaHelpers::optionalString(L, 2, "");
-    const std::string type = HttpText::toLower(context->contentType);
+        const std::string format = LuaHelpers::optionalString(L, 2, "");
+        const std::string type = HttpText::toLower(context->contentType);
 
 #if VARN_JSON_DRIVER_NLOHMANN
-    if (format == "json" || (format.empty() && type.find("application/json") != std::string::npos)) {
-        if (!json::JsonSerializer::deserialize(L, body)) {
-            return luaL_error(L, "[HttpApp] The request body is not valid JSON.");
+        if (format == "json" || (format.empty() && type.find("application/json") != std::string::npos)) {
+            if (!json::JsonSerializer::deserialize(L, body)) {
+                throw std::runtime_error("[HttpApp] The request body is not valid JSON.");
+            }
+            return 1;
         }
-        return 1;
-    }
 #endif
 
-    if (format == "form" || (format.empty() && type.find("application/x-www-form-urlencoded") != std::string::npos)) {
-        HttpUrlForm::pushFormUrlEncoded(L, body);
-        return 1;
-    }
-
-    if (format == "multipart" || (format.empty() && type.find("multipart/form-data") != std::string::npos)) {
-        const std::string boundary = HttpMultipart::extractBoundary(context->contentType);
-        if (boundary.empty()) {
-            return luaL_error(L, "[HttpApp] The multipart body has no boundary.");
+        if (format == "form" || (format.empty() && type.find("application/x-www-form-urlencoded") != std::string::npos)) {
+            HttpUrlForm::pushFormUrlEncoded(L, body);
+            return 1;
         }
-        HttpMultipart::pushMultipart(L, body, boundary);
-        return 1;
-    }
 
-    lua_pushlstring(L, body.data(), body.size());
-    return 1;
+        if (format == "multipart" || (format.empty() && type.find("multipart/form-data") != std::string::npos)) {
+            const std::string boundary = HttpMultipart::extractBoundary(context->contentType);
+            if (boundary.empty()) {
+                throw std::runtime_error("[HttpApp] The multipart body has no boundary.");
+            }
+            HttpMultipart::pushMultipart(L, body, boundary);
+            return 1;
+        }
+
+        lua_pushlstring(L, body.data(), body.size());
+        return 1;
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
+    }
+    return lua_error(L);
 }
 
 int HttpApp::luaContextSession(lua_State* L) {
@@ -1246,61 +1261,63 @@ int HttpApp::corsMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
 
-    // resolve the allowed origin: a fixed value, or an allowlist that echoes a matching request origin.
-    std::string allowOrigin = "*";
-    bool originResolved = true;
-    bool varyOrigin = false;
+    {
+        // resolve the allowed origin: a fixed value, or an allowlist that echoes a matching request origin.
+        std::string allowOrigin = "*";
+        bool originResolved = true;
+        bool varyOrigin = false;
 
-    lua_getfield(L, opts, "origin");
-    if (lua_type(L, -1) == LUA_TSTRING) {
-        allowOrigin = lua_tostring(L, -1);
-    } else if (lua_istable(L, -1)) {
-        const std::string requestOrigin = requestHeaderCI(L, "Origin");
-        const int list = lua_gettop(L);
-        const int count = static_cast<int>(lua_rawlen(L, list));
-        originResolved = false;
-        for (int i = 1; i <= count && !originResolved; ++i) {
-            lua_rawgeti(L, list, i);
-            if (lua_type(L, -1) == LUA_TSTRING && !requestOrigin.empty() && requestOrigin == lua_tostring(L, -1)) {
-                allowOrigin = requestOrigin;
-                originResolved = true;
+        lua_getfield(L, opts, "origin");
+        if (lua_type(L, -1) == LUA_TSTRING) {
+            allowOrigin = lua_tostring(L, -1);
+        } else if (lua_istable(L, -1)) {
+            const std::string requestOrigin = requestHeaderCI(L, "Origin");
+            const int list = lua_gettop(L);
+            const int count = static_cast<int>(lua_rawlen(L, list));
+            originResolved = false;
+            for (int i = 1; i <= count && !originResolved; ++i) {
+                lua_rawgeti(L, list, i);
+                if (lua_type(L, -1) == LUA_TSTRING && !requestOrigin.empty() && requestOrigin == lua_tostring(L, -1)) {
+                    allowOrigin = requestOrigin;
+                    originResolved = true;
+                }
+                lua_pop(L, 1);
             }
-            lua_pop(L, 1);
+            varyOrigin = true;
         }
-        varyOrigin = true;
-    }
-    lua_pop(L, 1);
+        lua_pop(L, 1);
 
-    // an unmatched allowlist origin leaves the header unset so the browser blocks the response.
-    if (originResolved) {
-        context->response->setHeader("Access-Control-Allow-Origin", allowOrigin);
-    }
-    if (varyOrigin || allowOrigin != "*") {
-        context->response->setHeader("Vary", "Origin");
-    }
+        // an unmatched allowlist origin leaves the header unset so the browser blocks the response.
+        if (originResolved) {
+            context->response->setHeader("Access-Control-Allow-Origin", allowOrigin);
+        }
+        if (varyOrigin || allowOrigin != "*") {
+            context->response->setHeader("Vary", "Origin");
+        }
 
-    context->response->setHeader("Access-Control-Allow-Methods", optString(L, opts, "methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD"));
-    context->response->setHeader("Access-Control-Allow-Headers", optString(L, opts, "headers", "Content-Type, Authorization"));
+        context->response->setHeader("Access-Control-Allow-Methods", optString(L, opts, "methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD"));
+        context->response->setHeader("Access-Control-Allow-Headers", optString(L, opts, "headers", "Content-Type, Authorization"));
 
-    if (optBool(L, opts, "credentials", false)) {
-        context->response->setHeader("Access-Control-Allow-Credentials", "true");
-    }
+        if (optBool(L, opts, "credentials", false)) {
+            context->response->setHeader("Access-Control-Allow-Credentials", "true");
+        }
 
-    const long long maxAge = optInt(L, opts, "maxAge", 0);
-    if (maxAge > 0) {
-        context->response->setHeader("Access-Control-Max-Age", std::to_string(maxAge));
-    }
+        const long long maxAge = optInt(L, opts, "maxAge", 0);
+        if (maxAge > 0) {
+            context->response->setHeader("Access-Control-Max-Age", std::to_string(maxAge));
+        }
 
-    const std::string expose = optString(L, opts, "exposeHeaders", "");
-    if (!expose.empty()) {
-        context->response->setHeader("Access-Control-Expose-Headers", expose);
-    }
+        const std::string expose = optString(L, opts, "exposeHeaders", "");
+        if (!expose.empty()) {
+            context->response->setHeader("Access-Control-Expose-Headers", expose);
+        }
 
-    // a genuine preflight carries Access-Control-Request-Method, so only those short-circuit routing.
-    if (requestField(L, "method") == "OPTIONS" && !requestHeaderCI(L, "Access-Control-Request-Method").empty()) {
-        context->response->setStatus(204);
-        context->response->end("");
-        return 0;
+        // a genuine preflight carries Access-Control-Request-Method, so only those short-circuit routing.
+        if (requestField(L, "method") == "OPTIONS" && !requestHeaderCI(L, "Access-Control-Request-Method").empty()) {
+            context->response->setStatus(204);
+            context->response->end("");
+            return 0;
+        }
     }
 
     continueChain(L);
@@ -1311,20 +1328,22 @@ int HttpApp::securityHeadersMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
 
-    context->response->setHeader("X-Content-Type-Options", "nosniff");
-    context->response->setHeader("X-Frame-Options", optString(L, opts, "frameOptions", "DENY"));
-    context->response->setHeader("Referrer-Policy", optString(L, opts, "referrerPolicy", "no-referrer"));
-    context->response->setHeader("X-XSS-Protection", "0");
+    {
+        context->response->setHeader("X-Content-Type-Options", "nosniff");
+        context->response->setHeader("X-Frame-Options", optString(L, opts, "frameOptions", "DENY"));
+        context->response->setHeader("Referrer-Policy", optString(L, opts, "referrerPolicy", "no-referrer"));
+        context->response->setHeader("X-XSS-Protection", "0");
 
-    const std::string csp = optString(L, opts, "contentSecurityPolicy", "");
-    if (!csp.empty()) {
-        context->response->setHeader("Content-Security-Policy", csp);
-    }
+        const std::string csp = optString(L, opts, "contentSecurityPolicy", "");
+        if (!csp.empty()) {
+            context->response->setHeader("Content-Security-Policy", csp);
+        }
 
-    // hsts is only meaningful over tls, so never advertise it on a plaintext listener.
-    const long long hsts = optInt(L, opts, "hsts", 0);
-    if (hsts > 0 && context->app->tls) {
-        context->response->setHeader("Strict-Transport-Security", "max-age=" + std::to_string(hsts) + "; includeSubDomains");
+        // hsts is only meaningful over tls, so never advertise it on a plaintext listener.
+        const long long hsts = optInt(L, opts, "hsts", 0);
+        if (hsts > 0 && context->app->tls) {
+            context->response->setHeader("Strict-Transport-Security", "max-age=" + std::to_string(hsts) + "; includeSubDomains");
+        }
     }
 
     continueChain(L);
@@ -1335,38 +1354,40 @@ int HttpApp::apiKeyMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
 
-    const std::string headerName = optString(L, opts, "header", "X-API-Key");
-    const std::string provided = requestHeaderCI(L, headerName);
+    {
+        const std::string headerName = optString(L, opts, "header", "X-API-Key");
+        const std::string provided = requestHeaderCI(L, headerName);
 
-    bool authorized = false;
-    if (!provided.empty() && lua_istable(L, opts)) {
-        lua_getfield(L, opts, "key");
-        if (lua_isstring(L, -1) && HttpToken::constantTimeEqual(provided, lua_tostring(L, -1))) {
-            authorized = true;
-        }
-        lua_pop(L, 1);
-
-        if (!authorized) {
-            lua_getfield(L, opts, "keys");
-            if (lua_istable(L, -1)) {
-                const int count = static_cast<int>(lua_rawlen(L, -1));
-                for (int i = 1; i <= count && !authorized; ++i) {
-                    lua_rawgeti(L, -1, i);
-                    if (lua_isstring(L, -1) && HttpToken::constantTimeEqual(provided, lua_tostring(L, -1))) {
-                        authorized = true;
-                    }
-                    lua_pop(L, 1);
-                }
+        bool authorized = false;
+        if (!provided.empty() && lua_istable(L, opts)) {
+            lua_getfield(L, opts, "key");
+            if (lua_isstring(L, -1) && HttpToken::constantTimeEqual(provided, lua_tostring(L, -1))) {
+                authorized = true;
             }
             lua_pop(L, 1);
-        }
-    }
 
-    if (!authorized) {
-        context->response->setStatus(401);
-        context->response->setHeader("Content-Type", "application/json; charset=utf-8");
-        context->response->end("{\"error\":\"invalid api key\"}");
-        return 0;
+            if (!authorized) {
+                lua_getfield(L, opts, "keys");
+                if (lua_istable(L, -1)) {
+                    const int count = static_cast<int>(lua_rawlen(L, -1));
+                    for (int i = 1; i <= count && !authorized; ++i) {
+                        lua_rawgeti(L, -1, i);
+                        if (lua_isstring(L, -1) && HttpToken::constantTimeEqual(provided, lua_tostring(L, -1))) {
+                            authorized = true;
+                        }
+                        lua_pop(L, 1);
+                    }
+                }
+                lua_pop(L, 1);
+            }
+        }
+
+        if (!authorized) {
+            context->response->setStatus(401);
+            context->response->setHeader("Content-Type", "application/json; charset=utf-8");
+            context->response->end("{\"error\":\"invalid api key\"}");
+            return 0;
+        }
     }
 
     continueChain(L);
@@ -1378,85 +1399,87 @@ int HttpApp::rateLimitMiddleware(lua_State* L) {
     const int opts = lua_upvalueindex(1);
     const int state = lua_upvalueindex(2);
 
-    const long long windowMs = optInt(L, opts, "windowMs", 60000);
-    const long long max = optInt(L, opts, "max", 100);
-    const bool trustProxy = optBool(L, opts, "trustProxy", false);
-    const long long now = nowMs();
-    const std::string ip = clientIp(L, trustProxy);
+    {
+        const long long windowMs = optInt(L, opts, "windowMs", 60000);
+        const long long max = optInt(L, opts, "max", 100);
+        const bool trustProxy = optBool(L, opts, "trustProxy", false);
+        const long long now = nowMs();
+        const std::string ip = clientIp(L, trustProxy);
 
-    // keep per-ip buckets in a dedicated subtable so a client address can never collide with bookkeeping keys.
-    lua_getfield(L, state, "buckets");
-    if (!lua_istable(L, -1)) {
-        lua_pop(L, 1);
-        lua_newtable(L);
-        lua_pushvalue(L, -1);
-        lua_setfield(L, state, "buckets");
-    }
-    const int buckets = lua_gettop(L);
-
-    // drop expired buckets at most once per window so the per-request cost stays near constant.
-    lua_getfield(L, state, "sweptAt");
-    const long long sweptAt = lua_tointeger(L, -1);
-    lua_pop(L, 1);
-    if (now - sweptAt >= windowMs) {
-        lua_pushnil(L);
-        while (lua_next(L, buckets) != 0) {
-            long long bucketReset = 0;
-            if (lua_istable(L, -1)) {
-                lua_getfield(L, -1, "r");
-                bucketReset = lua_tointeger(L, -1);
-                lua_pop(L, 1);
-            }
+        // keep per-ip buckets in a dedicated subtable so a client address can never collide with bookkeeping keys.
+        lua_getfield(L, state, "buckets");
+        if (!lua_istable(L, -1)) {
             lua_pop(L, 1);
-            if (now >= bucketReset) {
-                lua_pushvalue(L, -1);
-                lua_pushnil(L);
-                lua_settable(L, buckets);
+            lua_newtable(L);
+            lua_pushvalue(L, -1);
+            lua_setfield(L, state, "buckets");
+        }
+        const int buckets = lua_gettop(L);
+
+        // drop expired buckets at most once per window so the per-request cost stays near constant.
+        lua_getfield(L, state, "sweptAt");
+        const long long sweptAt = lua_tointeger(L, -1);
+        lua_pop(L, 1);
+        if (now - sweptAt >= windowMs) {
+            lua_pushnil(L);
+            while (lua_next(L, buckets) != 0) {
+                long long bucketReset = 0;
+                if (lua_istable(L, -1)) {
+                    lua_getfield(L, -1, "r");
+                    bucketReset = lua_tointeger(L, -1);
+                    lua_pop(L, 1);
+                }
+                lua_pop(L, 1);
+                if (now >= bucketReset) {
+                    lua_pushvalue(L, -1);
+                    lua_pushnil(L);
+                    lua_settable(L, buckets);
+                }
             }
+
+            lua_pushinteger(L, now);
+            lua_setfield(L, state, "sweptAt");
         }
 
-        lua_pushinteger(L, now);
-        lua_setfield(L, state, "sweptAt");
-    }
-
-    long long count = 0;
-    long long reset = 0;
-    lua_getfield(L, buckets, ip.c_str());
-    if (lua_istable(L, -1)) {
-        lua_getfield(L, -1, "n");
-        count = lua_tointeger(L, -1);
+        long long count = 0;
+        long long reset = 0;
+        lua_getfield(L, buckets, ip.c_str());
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "n");
+            count = lua_tointeger(L, -1);
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "r");
+            reset = lua_tointeger(L, -1);
+            lua_pop(L, 1);
+        }
         lua_pop(L, 1);
-        lua_getfield(L, -1, "r");
-        reset = lua_tointeger(L, -1);
+
+        if (now >= reset) {
+            count = 0;
+            reset = now + windowMs;
+        }
+        count += 1;
+
+        lua_newtable(L);
+        lua_pushinteger(L, count);
+        lua_setfield(L, -2, "n");
+        lua_pushinteger(L, reset);
+        lua_setfield(L, -2, "r");
+        lua_setfield(L, buckets, ip.c_str());
+
         lua_pop(L, 1);
-    }
-    lua_pop(L, 1);
 
-    if (now >= reset) {
-        count = 0;
-        reset = now + windowMs;
-    }
-    count += 1;
+        context->response->setHeader("X-RateLimit-Limit", std::to_string(max));
+        context->response->setHeader("X-RateLimit-Remaining", std::to_string(count > max ? 0 : max - count));
 
-    lua_newtable(L);
-    lua_pushinteger(L, count);
-    lua_setfield(L, -2, "n");
-    lua_pushinteger(L, reset);
-    lua_setfield(L, -2, "r");
-    lua_setfield(L, buckets, ip.c_str());
-
-    lua_pop(L, 1);
-
-    context->response->setHeader("X-RateLimit-Limit", std::to_string(max));
-    context->response->setHeader("X-RateLimit-Remaining", std::to_string(count > max ? 0 : max - count));
-
-    if (count > max) {
-        const long long retry = (reset - now) / 1000 + 1;
-        context->response->setStatus(429);
-        context->response->setHeader("Retry-After", std::to_string(retry));
-        context->response->setHeader("Content-Type", "application/json; charset=utf-8");
-        context->response->end("{\"error\":\"too many requests\"}");
-        return 0;
+        if (count > max) {
+            const long long retry = (reset - now) / 1000 + 1;
+            context->response->setStatus(429);
+            context->response->setHeader("Retry-After", std::to_string(retry));
+            context->response->setHeader("Content-Type", "application/json; charset=utf-8");
+            context->response->end("{\"error\":\"too many requests\"}");
+            return 0;
+        }
     }
 
     continueChain(L);
@@ -1464,27 +1487,32 @@ int HttpApp::rateLimitMiddleware(lua_State* L) {
 }
 
 int HttpApp::luaCors(lua_State* L) {
-    if (lua_istable(L, 1)) {
-        // reject the invalid wildcard-with-credentials combination at setup time, never silently.
-        lua_getfield(L, 1, "credentials");
-        const bool credentials = lua_toboolean(L, -1) != 0;
-        lua_pop(L, 1);
+    try {
+        if (lua_istable(L, 1)) {
+            // reject the invalid wildcard-with-credentials combination at setup time, never silently.
+            lua_getfield(L, 1, "credentials");
+            const bool credentials = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
 
-        lua_getfield(L, 1, "origin");
-        const bool wildcardOrigin =
-            lua_isnil(L, -1) || (lua_type(L, -1) == LUA_TSTRING && std::string(lua_tostring(L, -1)) == "*");
-        lua_pop(L, 1);
+            lua_getfield(L, 1, "origin");
+            const bool wildcardOrigin =
+                lua_isnil(L, -1) || (lua_type(L, -1) == LUA_TSTRING && std::string(lua_tostring(L, -1)) == "*");
+            lua_pop(L, 1);
 
-        if (credentials && wildcardOrigin) {
-            return luaL_error(L, "[HttpApp] cors credentials cannot be combined with origin '*'.");
+            if (credentials && wildcardOrigin) {
+                throw std::runtime_error("[HttpApp] cors credentials cannot be combined with origin '*'.");
+            }
+
+            lua_pushvalue(L, 1);
+        } else {
+            lua_newtable(L);
         }
-
-        lua_pushvalue(L, 1);
-    } else {
-        lua_newtable(L);
+        lua_pushcclosure(L, &corsMiddleware, 1);
+        return 1;
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
     }
-    lua_pushcclosure(L, &corsMiddleware, 1);
-    return 1;
+    return lua_error(L);
 }
 
 int HttpApp::luaSecurityHeaders(lua_State* L) {
@@ -1517,56 +1545,57 @@ int HttpApp::luaRateLimit(lua_State* L) {
 
 int HttpApp::luaJwtSign(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
-    const std::string secret = LuaHelpers::checkString(L, 2);
 
-    if (secret.empty()) {
-        return luaL_error(L, "[HttpApp] A jwt secret is required.");
-    }
-
-    const long long now = static_cast<long long>(std::time(nullptr));
-    const long long expiresIn = optInt(L, 3, "expiresIn", 0);
-    const long long notBefore = optInt(L, 3, "notBefore", 0);
-
-    // copy the caller's claims so signing never mutates the input table.
-    lua_newtable(L);
-    const int claims = lua_gettop(L);
-    lua_pushnil(L);
-    while (lua_next(L, 1) != 0) {
-        lua_pushvalue(L, -2);
-        lua_pushvalue(L, -2);
-        lua_settable(L, claims);
-        lua_pop(L, 1);
-    }
-
-    // iat is added when the caller did not set it, while exp and nbf reflect the requested window.
-    lua_getfield(L, claims, "iat");
-    const bool hasIat = !lua_isnil(L, -1);
-    lua_pop(L, 1);
-    if (!hasIat) {
-        lua_pushinteger(L, static_cast<lua_Integer>(now));
-        lua_setfield(L, claims, "iat");
-    }
-    if (expiresIn > 0) {
-        lua_pushinteger(L, static_cast<lua_Integer>(now + expiresIn));
-        lua_setfield(L, claims, "exp");
-    }
-    if (notBefore > 0) {
-        lua_pushinteger(L, static_cast<lua_Integer>(now + notBefore));
-        lua_setfield(L, claims, "nbf");
-    }
-
-    std::string payload;
-    std::string signature;
     try {
-        payload = json::JsonSerializer::serialize(L, claims);
+        const std::string secret = LuaHelpers::checkString(L, 2);
+
+        if (secret.empty()) {
+            throw std::runtime_error("[HttpApp] A jwt secret is required.");
+        }
+
+        const long long now = static_cast<long long>(std::time(nullptr));
+        const long long expiresIn = optInt(L, 3, "expiresIn", 0);
+        const long long notBefore = optInt(L, 3, "notBefore", 0);
+
+        // copy the caller's claims so signing never mutates the input table.
+        lua_newtable(L);
+        const int claims = lua_gettop(L);
+        lua_pushnil(L);
+        while (lua_next(L, 1) != 0) {
+            lua_pushvalue(L, -2);
+            lua_pushvalue(L, -2);
+            lua_settable(L, claims);
+            lua_pop(L, 1);
+        }
+
+        // iat is added when the caller did not set it, while exp and nbf reflect the requested window.
+        lua_getfield(L, claims, "iat");
+        const bool hasIat = !lua_isnil(L, -1);
+        lua_pop(L, 1);
+        if (!hasIat) {
+            lua_pushinteger(L, static_cast<lua_Integer>(now));
+            lua_setfield(L, claims, "iat");
+        }
+        if (expiresIn > 0) {
+            lua_pushinteger(L, static_cast<lua_Integer>(now + expiresIn));
+            lua_setfield(L, claims, "exp");
+        }
+        if (notBefore > 0) {
+            lua_pushinteger(L, static_cast<lua_Integer>(now + notBefore));
+            lua_setfield(L, claims, "nbf");
+        }
+
+        const std::string payload = json::JsonSerializer::serialize(L, claims);
         const std::string signingInput = HttpToken::base64UrlEncode("{\"alg\":\"HS256\",\"typ\":\"JWT\"}") + "." + HttpToken::base64UrlEncode(payload);
-        signature = HttpToken::base64UrlEncode(varn::crypto::CryptoPrimitives::hmac("SHA256", secret, signingInput, false));
+        const std::string signature = HttpToken::base64UrlEncode(varn::crypto::CryptoPrimitives::hmac("SHA256", secret, signingInput, false));
         const std::string token = signingInput + "." + signature;
+
         lua_pushlstring(L, token.data(), token.size());
+        return 1;
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
-    return 1;
+    return lua_error(L);
 }
 
 int HttpApp::luaJwtVerify(lua_State* L) {
@@ -1586,28 +1615,31 @@ int HttpApp::luaJwtVerify(lua_State* L) {
 int HttpApp::jwtAuthMiddleware(lua_State* L) {
     auto* context = checkContext(L);
     const int opts = lua_upvalueindex(1);
-    const std::string secret = optString(L, opts, "secret", "");
-    const JwtVerifyOptions options = HttpToken::readJwtVerifyOptions(L, opts);
 
-    const std::string authorization = requestHeaderCI(L, "Authorization");
-    std::string token;
-    if (authorization.rfind("Bearer ", 0) == 0) {
-        token = authorization.substr(7);
+    {
+        const std::string secret = optString(L, opts, "secret", "");
+        const JwtVerifyOptions options = HttpToken::readJwtVerifyOptions(L, opts);
+
+        const std::string authorization = requestHeaderCI(L, "Authorization");
+        std::string token;
+        if (authorization.rfind("Bearer ", 0) == 0) {
+            token = authorization.substr(7);
+        }
+
+        std::string error;
+        if (token.empty() || !HttpToken::verifyJwt(L, token, secret, options, error)) {
+            context->response->setStatus(401);
+            context->response->setHeader("Content-Type", "application/json; charset=utf-8");
+            context->response->end("{\"error\":\"unauthorized\"}");
+            return 0;
+        }
+
+        // expose the verified claims to handlers as ctx.state.user before destroying local strings.
+        lua_getiuservalue(L, 1, 3);
+        lua_pushvalue(L, -2);
+        lua_setfield(L, -2, "user");
+        lua_pop(L, 2);
     }
-
-    std::string error;
-    if (token.empty() || !HttpToken::verifyJwt(L, token, secret, options, error)) {
-        context->response->setStatus(401);
-        context->response->setHeader("Content-Type", "application/json; charset=utf-8");
-        context->response->end("{\"error\":\"unauthorized\"}");
-        return 0;
-    }
-
-    // expose the verified claims to handlers as ctx.state.user.
-    lua_getiuservalue(L, 1, 3);
-    lua_pushvalue(L, -2);
-    lua_setfield(L, -2, "user");
-    lua_pop(L, 2);
 
     continueChain(L);
     return 0;
@@ -1616,16 +1648,18 @@ int HttpApp::jwtAuthMiddleware(lua_State* L) {
 int HttpApp::requireAuthMiddleware(lua_State* L) {
     auto* context = checkContext(L);
 
-    lua_getiuservalue(L, 1, 3);
-    lua_getfield(L, -1, "user");
-    const bool authenticated = !lua_isnil(L, -1);
-    lua_pop(L, 2);
+    {
+        lua_getiuservalue(L, 1, 3);
+        lua_getfield(L, -1, "user");
+        const bool authenticated = !lua_isnil(L, -1);
+        lua_pop(L, 2);
 
-    if (!authenticated) {
-        context->response->setStatus(401);
-        context->response->setHeader("Content-Type", "application/json; charset=utf-8");
-        context->response->end("{\"error\":\"unauthorized\"}");
-        return 0;
+        if (!authenticated) {
+            context->response->setStatus(401);
+            context->response->setHeader("Content-Type", "application/json; charset=utf-8");
+            context->response->end("{\"error\":\"unauthorized\"}");
+            return 0;
+        }
     }
 
     continueChain(L);
@@ -1634,46 +1668,49 @@ int HttpApp::requireAuthMiddleware(lua_State* L) {
 
 int HttpApp::requireRoleMiddleware(lua_State* L) {
     auto* context = checkContext(L);
-    const std::string wanted = lua_tostring(L, lua_upvalueindex(1));
 
-    lua_getiuservalue(L, 1, 3);
-    lua_getfield(L, -1, "user");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 2);
-        context->response->setStatus(401);
-        context->response->setHeader("Content-Type", "application/json; charset=utf-8");
-        context->response->end("{\"error\":\"unauthorized\"}");
-        return 0;
-    }
+    {
+        const std::string wanted = lua_tostring(L, lua_upvalueindex(1));
 
-    bool allowed = false;
-    lua_getfield(L, -1, "role");
-    if (lua_isstring(L, -1) && wanted == lua_tostring(L, -1)) {
-        allowed = true;
-    }
-    lua_pop(L, 1);
+        lua_getiuservalue(L, 1, 3);
+        lua_getfield(L, -1, "user");
+        if (lua_isnil(L, -1)) {
+            lua_pop(L, 2);
+            context->response->setStatus(401);
+            context->response->setHeader("Content-Type", "application/json; charset=utf-8");
+            context->response->end("{\"error\":\"unauthorized\"}");
+            return 0;
+        }
 
-    if (!allowed) {
-        lua_getfield(L, -1, "roles");
-        if (lua_istable(L, -1)) {
-            const int count = static_cast<int>(lua_rawlen(L, -1));
-            for (int i = 1; i <= count && !allowed; ++i) {
-                lua_rawgeti(L, -1, i);
-                if (lua_isstring(L, -1) && wanted == lua_tostring(L, -1)) {
-                    allowed = true;
-                }
-                lua_pop(L, 1);
-            }
+        bool allowed = false;
+        lua_getfield(L, -1, "role");
+        if (lua_isstring(L, -1) && wanted == lua_tostring(L, -1)) {
+            allowed = true;
         }
         lua_pop(L, 1);
-    }
-    lua_pop(L, 2);
 
-    if (!allowed) {
-        context->response->setStatus(403);
-        context->response->setHeader("Content-Type", "application/json; charset=utf-8");
-        context->response->end("{\"error\":\"forbidden\"}");
-        return 0;
+        if (!allowed) {
+            lua_getfield(L, -1, "roles");
+            if (lua_istable(L, -1)) {
+                const int count = static_cast<int>(lua_rawlen(L, -1));
+                for (int i = 1; i <= count && !allowed; ++i) {
+                    lua_rawgeti(L, -1, i);
+                    if (lua_isstring(L, -1) && wanted == lua_tostring(L, -1)) {
+                        allowed = true;
+                    }
+                    lua_pop(L, 1);
+                }
+            }
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 2);
+
+        if (!allowed) {
+            context->response->setStatus(403);
+            context->response->setHeader("Content-Type", "application/json; charset=utf-8");
+            context->response->end("{\"error\":\"forbidden\"}");
+            return 0;
+        }
     }
 
     continueChain(L);
@@ -1681,85 +1718,90 @@ int HttpApp::requireRoleMiddleware(lua_State* L) {
 }
 
 int HttpApp::csrfMiddleware(lua_State* L) {
-    auto* context = checkContext(L);
-    const int opts = lua_upvalueindex(1);
-    const std::string cookieName = optString(L, opts, "cookie", "csrf_token");
-    const std::string headerName = optString(L, opts, "header", "X-CSRF-Token");
-    const std::string method = requestField(L, "method");
-    AppState* app = context->app.get();
-
-    // a per-app secret signs every token so an injected or forged cookie cannot pass verification.
-    if (app->csrfSecret.empty()) {
-        try {
-            app->csrfSecret = varn::crypto::CryptoPrimitives::randomBytes(32);
-        } catch (const std::exception& ex) {
-            return luaL_error(L, "%s", ex.what());
-        }
-    }
-
-    // bind the token to the session, which also establishes the session cookie when absent.
-    luaContextSession(L);
-    lua_pop(L, 1);
-    const std::string sessionId = context->sessionId;
-
-    std::string cookieToken;
-    lua_getiuservalue(L, 1, 1);
-    lua_getfield(L, -1, "cookies");
-    lua_getfield(L, -1, cookieName.c_str());
-    if (lua_isstring(L, -1)) {
-        cookieToken = lua_tostring(L, -1);
-    }
-    lua_pop(L, 3);
-
-    const bool safeMethod = method == "GET" || method == "HEAD" || method == "OPTIONS";
-    if (safeMethod) {
-        bool valid = false;
-        try {
-            valid = !cookieToken.empty() && HttpToken::validCsrfToken(app->csrfSecret, sessionId, cookieToken);
-        } catch (const std::exception&) {
-            valid = false;
-        }
-
-        // issue a fresh token only when the client lacks a valid one, keeping it readable for the header echo.
-        if (!valid) {
-            try {
-                cookieToken = HttpToken::makeCsrfToken(app->csrfSecret, sessionId);
-            } catch (const std::exception& ex) {
-                return luaL_error(L, "%s", ex.what());
-            }
-            std::string csrfCookie = cookieName + "=" + cookieToken + "; Path=/; SameSite=Lax";
-            if (context->app->tls) {
-                csrfCookie += "; Secure";
-            }
-            context->response->addHeader("Set-Cookie", csrfCookie);
-        }
-
-        lua_getiuservalue(L, 1, 3);
-        lua_pushlstring(L, cookieToken.data(), cookieToken.size());
-        lua_setfield(L, -2, "csrfToken");
-        lua_pop(L, 1);
-        continueChain(L);
-        return 0;
-    }
-
-    const std::string submitted = requestHeaderCI(L, headerName);
-    bool authorized = false;
     try {
-        authorized = !cookieToken.empty() && !submitted.empty() && HttpToken::constantTimeEqual(cookieToken, submitted) &&
-                     HttpToken::validCsrfToken(app->csrfSecret, sessionId, cookieToken);
-    } catch (const std::exception&) {
-        authorized = false;
-    }
+        auto* context = checkContext(L);
+        const int opts = lua_upvalueindex(1);
+        AppState* app = context->app.get();
+        bool shouldContinue = false;
 
-    if (!authorized) {
-        context->response->setStatus(403);
-        context->response->setHeader("Content-Type", "application/json; charset=utf-8");
-        context->response->end("{\"error\":\"invalid csrf token\"}");
+        {
+            const std::string cookieName = optString(L, opts, "cookie", "csrf_token");
+            const std::string headerName = optString(L, opts, "header", "X-CSRF-Token");
+            const std::string method = requestField(L, "method");
+
+            // a per-app secret signs every token so an injected or forged cookie cannot pass verification.
+            if (app->csrfSecret.empty()) {
+                app->csrfSecret = varn::crypto::CryptoPrimitives::randomBytes(32);
+            }
+
+            // bind the token to the session, which also establishes the session cookie when absent.
+            luaContextSession(L);
+            lua_pop(L, 1);
+            const std::string sessionId = context->sessionId;
+
+            std::string cookieToken;
+            lua_getiuservalue(L, 1, 1);
+            lua_getfield(L, -1, "cookies");
+            lua_getfield(L, -1, cookieName.c_str());
+            if (lua_isstring(L, -1)) {
+                cookieToken = lua_tostring(L, -1);
+            }
+            lua_pop(L, 3);
+
+            const bool safeMethod = method == "GET" || method == "HEAD" || method == "OPTIONS";
+            if (safeMethod) {
+                bool valid = false;
+                try {
+                    valid = !cookieToken.empty() && HttpToken::validCsrfToken(app->csrfSecret, sessionId, cookieToken);
+                } catch (const std::exception&) {
+                    valid = false;
+                }
+
+                // issue a fresh token only when the client lacks a valid one, keeping it readable for the header echo.
+                if (!valid) {
+                    cookieToken = HttpToken::makeCsrfToken(app->csrfSecret, sessionId);
+
+                    std::string csrfCookie = cookieName + "=" + cookieToken + "; Path=/; SameSite=Lax";
+                    if (context->app->tls) {
+                        csrfCookie += "; Secure";
+                    }
+                    context->response->addHeader("Set-Cookie", csrfCookie);
+                }
+
+                // publish the token to ctx.state before destroying local strings.
+                lua_getiuservalue(L, 1, 3);
+                lua_pushlstring(L, cookieToken.data(), cookieToken.size());
+                lua_setfield(L, -2, "csrfToken");
+                lua_pop(L, 1);
+                shouldContinue = true;
+            } else {
+                const std::string submitted = requestHeaderCI(L, headerName);
+                bool authorized = false;
+                try {
+                    authorized = !cookieToken.empty() && !submitted.empty() && HttpToken::constantTimeEqual(cookieToken, submitted) &&
+                                 HttpToken::validCsrfToken(app->csrfSecret, sessionId, cookieToken);
+                } catch (const std::exception&) {
+                    authorized = false;
+                }
+
+                if (!authorized) {
+                    context->response->setStatus(403);
+                    context->response->setHeader("Content-Type", "application/json; charset=utf-8");
+                    context->response->end("{\"error\":\"invalid csrf token\"}");
+                    return 0;
+                }
+                shouldContinue = true;
+            }
+        }
+
+        if (shouldContinue) {
+            continueChain(L);
+        }
         return 0;
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
     }
-
-    continueChain(L);
-    return 0;
+    return lua_error(L);
 }
 
 int HttpApp::luaJwtAuth(lua_State* L) {
@@ -2080,7 +2122,7 @@ int HttpApp::registerRoute(lua_State* L, const std::string& method, int pathInde
     const int firstHandler = pathIndex + 1;
     const int top = lua_gettop(L);
     if (top < firstHandler) {
-        return luaL_error(L, "[HttpApp] A route handler is required.");
+        throw std::runtime_error("[HttpApp] A route handler is required.");
     }
     for (int i = firstHandler; i <= top; ++i) {
         luaL_checktype(L, i, LUA_TFUNCTION);
@@ -2105,71 +2147,100 @@ int HttpApp::registerRoute(lua_State* L, const std::string& method, int pathInde
 }
 
 int HttpApp::luaVerb(lua_State* L) {
-    const std::string method = lua_tostring(L, lua_upvalueindex(1));
-    return registerRoute(L, method, 2);
+    try {
+        const std::string method = lua_tostring(L, lua_upvalueindex(1));
+        return registerRoute(L, method, 2);
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
+    }
+    return lua_error(L);
 }
 
 int HttpApp::luaRouteMethod(lua_State* L) {
-    const std::string method = LuaHelpers::checkString(L, 2);
-    return registerRoute(L, method, 3);
+    try {
+        const std::string method = LuaHelpers::checkString(L, 2);
+        return registerRoute(L, method, 3);
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
+    }
+    return lua_error(L);
 }
 
 int HttpApp::luaUse(lua_State* L) {
-    Target target = resolveTarget(L);
-    luaL_checktype(L, 2, LUA_TFUNCTION);
+    try {
+        Target target = resolveTarget(L);
+        luaL_checktype(L, 2, LUA_TFUNCTION);
 
-    lua_pushvalue(L, 2);
-    target.state->groups[target.groupId].middleware.push_back(luaL_ref(L, LUA_REGISTRYINDEX));
+        lua_pushvalue(L, 2);
+        target.state->groups[target.groupId].middleware.push_back(luaL_ref(L, LUA_REGISTRYINDEX));
 
-    lua_pushvalue(L, 1);
-    return 1;
+        lua_pushvalue(L, 1);
+        return 1;
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
+    }
+    return lua_error(L);
 }
 
 int HttpApp::luaGroup(lua_State* L) {
-    Target target = resolveTarget(L);
-    const std::string prefix = LuaHelpers::checkString(L, 2);
+    try {
+        Target target = resolveTarget(L);
+        const std::string prefix = LuaHelpers::checkString(L, 2);
 
-    Group group;
-    group.parentId = target.groupId;
-    group.fullPrefix = target.state->groups[target.groupId].fullPrefix + "/" + prefix;
-    target.state->groups.push_back(std::move(group));
-    const int groupId = static_cast<int>(target.state->groups.size()) - 1;
+        Group group;
+        group.parentId = target.groupId;
+        group.fullPrefix = target.state->groups[target.groupId].fullPrefix + "/" + prefix;
+        target.state->groups.push_back(std::move(group));
+        const int groupId = static_cast<int>(target.state->groups.size()) - 1;
 
-    void* memory = lua_newuserdatauv(L, sizeof(GroupUserdata), 0);
-    new (memory) GroupUserdata{target.state, groupId};
+        void* memory = lua_newuserdatauv(L, sizeof(GroupUserdata), 0);
+        new (memory) GroupUserdata{target.state, groupId};
 
-    luaL_getmetatable(L, kGroupMeta);
-    lua_setmetatable(L, -2);
-    return 1;
+        luaL_getmetatable(L, kGroupMeta);
+        lua_setmetatable(L, -2);
+        return 1;
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
+    }
+    return lua_error(L);
 }
 
 int HttpApp::luaRouteName(lua_State* L) {
-    auto* route = checkRoute(L);
-    const std::string name = LuaHelpers::checkString(L, 2);
-
     try {
+        auto* route = checkRoute(L);
+        const std::string name = LuaHelpers::checkString(L, 2);
         route->state->router.setName(route->routeId, name);
+        lua_pushvalue(L, 1);
+        return 1;
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
-
-    lua_pushvalue(L, 1);
-    return 1;
+    return lua_error(L);
 }
 
 int HttpApp::luaRouteWhere(lua_State* L) {
-    auto* route = checkRoute(L);
-    const std::string param = LuaHelpers::checkString(L, 2);
-    const std::string constraint = LuaHelpers::checkString(L, 3);
-
     try {
-        route->state->router.setConstraint(route->routeId, param, constraint);
-    } catch (const std::exception&) {
-        return luaL_error(L, "[HttpApp] The constraint for '%s' is not a valid pattern.", param.c_str());
-    }
+        auto* route = checkRoute(L);
+        const std::string param = LuaHelpers::checkString(L, 2);
+        const std::string constraint = LuaHelpers::checkString(L, 3);
 
-    lua_pushvalue(L, 1);
-    return 1;
+        bool ok = false;
+        try {
+            route->state->router.setConstraint(route->routeId, param, constraint);
+            ok = true;
+        } catch (const std::exception&) {
+            ok = false;
+        }
+
+        if (!ok) {
+            throw std::runtime_error("[HttpApp] The constraint for '" + param + "' is not a valid pattern.");
+        }
+        lua_pushvalue(L, 1);
+        return 1;
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
+    }
+    return lua_error(L);
 }
 
 int HttpApp::luaOnError(lua_State* L) {
@@ -2197,30 +2268,35 @@ int HttpApp::luaOnNotFound(lua_State* L) {
 }
 
 int HttpApp::luaUrl(lua_State* L) {
-    auto* app = checkApp(L);
-    const std::string name = LuaHelpers::checkString(L, 2);
+    try {
+        auto* app = checkApp(L);
+        const std::string name = LuaHelpers::checkString(L, 2);
 
-    std::unordered_map<std::string, std::string> params;
-    if (lua_istable(L, 3)) {
-        lua_pushnil(L);
-        while (lua_next(L, 3) != 0) {
-            if (lua_type(L, -2) == LUA_TSTRING) {
-                const std::string key = lua_tostring(L, -2);
-                const char* value = luaL_tolstring(L, -1, nullptr);
-                params[key] = value ? value : "";
+        std::unordered_map<std::string, std::string> params;
+        if (lua_istable(L, 3)) {
+            lua_pushnil(L);
+            while (lua_next(L, 3) != 0) {
+                if (lua_type(L, -2) == LUA_TSTRING) {
+                    const std::string key = lua_tostring(L, -2);
+                    const char* value = luaL_tolstring(L, -1, nullptr);
+                    params[key] = value ? value : "";
+                    lua_pop(L, 1);
+                }
                 lua_pop(L, 1);
             }
-            lua_pop(L, 1);
         }
-    }
 
-    const auto url = app->state->router.buildUrl(name, params);
-    if (!url) {
-        return luaL_error(L, "[HttpApp] Cannot build a url for the route '%s'.", name.c_str());
-    }
+        const auto url = app->state->router.buildUrl(name, params);
+        if (!url) {
+            throw std::runtime_error("[HttpApp] Cannot build a url for the route '" + name + "'.");
+        }
 
-    lua_pushlstring(L, url->data(), url->size());
-    return 1;
+        lua_pushlstring(L, url->data(), url->size());
+        return 1;
+    } catch (const std::exception& ex) {
+        lua_pushstring(L, ex.what());
+    }
+    return lua_error(L);
 }
 
 int HttpApp::luaPlugin(lua_State* L) {

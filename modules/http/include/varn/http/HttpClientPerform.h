@@ -23,22 +23,27 @@ struct ClientRequestOptions {
 #define VARN_HTTP_CLIENT_EMSCRIPTEN_FETCH_ASYNC 0
 #endif
 
+class HttpClientPerform {
+public:
+    HttpClientPerform() = delete;
+
 #if VARN_HTTP_CLIENT_EMSCRIPTEN_FETCH_ASYNC
-void performRequestWireEmscriptenAsync(
-    const std::shared_ptr<varn::async::Promise>& promise,
-    const std::string& method,
-    const std::string& url,
-    const std::map<std::string, std::string>& headers,
-    const std::string& body,
-    int timeoutSeconds,
-    std::size_t maxResponseBytes);
+    static void performAsync(
+        const std::shared_ptr<varn::async::Promise>& promise,
+        const std::string& method,
+        const std::string& url,
+        const std::map<std::string, std::string>& headers,
+        const std::string& body,
+        int timeoutSeconds,
+        std::size_t maxResponseBytes);
 #else
-std::string performRequestWire(
-    const std::string& method,
-    const std::string& url,
-    const std::map<std::string, std::string>& headers,
-    const std::string& body,
-    const ClientRequestOptions& options);
+    static std::string perform(
+        const std::string& method,
+        const std::string& url,
+        const std::map<std::string, std::string>& headers,
+        const std::string& body,
+        const ClientRequestOptions& options);
 #endif
+};
 
 } // namespace varn::http::client

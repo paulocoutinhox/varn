@@ -63,6 +63,17 @@ Every module is independent and used through `require`, so you pull in only what
 
 Full feature reference: [docs/lua-api.md](docs/lua-api.md).
 
+## 🧱 Components
+
+Pure-Lua components built on top of the modules. Drop one in and `require` it.
+
+| Component | What you get |
+|----------------|--------------|
+| 🗄️ `vdo` | PDO-style database access with drivers for SQLite, MySQL, and PostgreSQL |
+| 🔴 `redis` | Redis client with full command coverage and pipelining |
+
+Every component ships with runnable examples under `components/<component>/examples/`. Full component reference: [docs/components.md](docs/components.md).
+
 ## 🌍 Runs everywhere
 
 The same scripts run on Linux, macOS, and Windows, on iPhone and Android, and in the browser. You can run them as a standalone app you launch, or embed them inside an app you already have.

@@ -15,12 +15,79 @@
 
 namespace varn::wasm {
 
+struct RunResult {
+    bool ok = false;
+    std::string output;
+    std::string error;
+};
+
+class WasmHost {
+public:
+    WasmHost() = delete;
+
+    static RunResult runChunk(const std::string& source);
+
+private:
+    struct PrintSinkScope {
+        explicit PrintSinkScope(std::string* sink) { printSink_ = sink; }
+        PrintSinkScope(const PrintSinkScope&) = delete;
+        PrintSinkScope& operator=(const PrintSinkScope&) = delete;
+        ~PrintSinkScope() { printSink_ = nullptr; }
+    };
+
+    static int luaPrintCapture(lua_State* L);
+
 #if defined(__EMSCRIPTEN__)
-int g_hook_tick = 0;
+    static void lineHook(lua_State* L, lua_Debug* ar);
+    static void attachLineHook(lua_State* L, void* userdata);
+    static void pumpDeferredWork(varn::runtime::Runtime& rt);
+#endif
 
-namespace {
+    static std::unique_ptr<varn::runtime::Runtime>& runtime();
 
-void pumpRuntimeDeferredWork(varn::runtime::Runtime& rt) {
+    inline static std::string* printSink_ = nullptr;
+#if defined(__EMSCRIPTEN__)
+    inline static int hookTick_ = 0;
+#endif
+};
+
+int WasmHost::luaPrintCapture(lua_State* L) {
+    if (!printSink_) {
+        return 0;
+    }
+
+    const int n = lua_gettop(L);
+    std::string line;
+
+    for (int i = 1; i <= n; ++i) {
+        if (i > 1) {
+            line += '\t';
+        }
+        size_t len = 0;
+        const char* chunk = luaL_tolstring(L, i, &len);
+        line.append(chunk, len);
+        lua_pop(L, 1);
+    }
+
+    line += '\n';
+    printSink_->append(line);
+    return 0;
+}
+
+#if defined(__EMSCRIPTEN__)
+void WasmHost::lineHook(lua_State* /*L*/, lua_Debug* /*ar*/) {
+    ++hookTick_;
+    if ((hookTick_ % 32) == 0) {
+        emscripten_sleep(0);
+    }
+}
+
+void WasmHost::attachLineHook(lua_State* L, void*) {
+    hookTick_ = 0;
+    lua_sethook(L, &WasmHost::lineHook, LUA_MASKCOUNT, 500);
+}
+
+void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt) {
     const double deadlineMs = emscripten_get_now() + 120000.0;
     while (emscripten_get_now() < deadlineMs) {
         bool progressed;
@@ -36,86 +103,28 @@ void pumpRuntimeDeferredWork(varn::runtime::Runtime& rt) {
             }
         } while (progressed);
 
-        if (varn::wasm::httpClientFetchInflight().load(std::memory_order_acquire) > 0) {
+        if (varn::wasm::WasmAsyncHost::fetchInflight().load(std::memory_order_acquire) > 0) {
             emscripten_sleep(0);
             continue;
         }
         break;
     }
 }
-
-} // namespace
 #endif
 
-namespace detail {
-
-std::string* g_print_sink = nullptr;
-
-struct PrintSinkScope {
-    explicit PrintSinkScope(std::string* sink) { g_print_sink = sink; }
-    PrintSinkScope(const PrintSinkScope&) = delete;
-    PrintSinkScope& operator=(const PrintSinkScope&) = delete;
-    ~PrintSinkScope() { g_print_sink = nullptr; }
-};
-
-int lua_print_capture(lua_State* L) {
-    if (!g_print_sink) {
-        return 0;
-    }
-
-    int n = lua_gettop(L);
-    std::string line;
-
-    for (int i = 1; i <= n; ++i) {
-        if (i > 1) {
-            line += '\t';
-        }
-        size_t len = 0;
-        const char* chunk = luaL_tolstring(L, i, &len);
-        line.append(chunk, len);
-        lua_pop(L, 1);
-    }
-
-    line += '\n';
-    g_print_sink->append(line);
-    return 0;
-}
-
-#if defined(__EMSCRIPTEN__)
-void line_hook(lua_State*, lua_Debug*) {
-    ++g_hook_tick;
-    if ((g_hook_tick % 32) == 0) {
-        emscripten_sleep(0);
-    }
-}
-
-void wasmAttachLineHook(lua_State* L, void*) {
-    g_hook_tick = 0;
-    lua_sethook(L, line_hook, LUA_MASKCOUNT, 500);
-}
-#endif
-
-std::unique_ptr<varn::runtime::Runtime>& wasmRuntime() {
+std::unique_ptr<varn::runtime::Runtime>& WasmHost::runtime() {
     static std::unique_ptr<varn::runtime::Runtime> instance;
     return instance;
 }
 
-} // namespace detail
-
-struct RunResult {
-    bool ok = false;
-    std::string output;
-    std::string error;
-};
-
-RunResult run_chunk_impl(const std::string& source) {
+RunResult WasmHost::runChunk(const std::string& source) {
     RunResult result;
 
-    auto& rtPtr = detail::wasmRuntime();
+    auto& rtPtr = runtime();
     if (!rtPtr) {
         rtPtr = std::make_unique<varn::runtime::Runtime>(std::vector<std::string>{});
         lua_State* Lsetup = rtPtr->luaState();
-        lua_pushcfunction(Lsetup, detail::lua_print_capture);
+        lua_pushcfunction(Lsetup, &WasmHost::luaPrintCapture);
         lua_setglobal(Lsetup, "print");
     }
 
@@ -127,12 +136,12 @@ RunResult run_chunk_impl(const std::string& source) {
     bool ok = false;
 
     {
-        detail::PrintSinkScope sink_scope(&collected);
+        PrintSinkScope sink_scope(&collected);
 #if defined(__EMSCRIPTEN__)
-        ok = rt.runStringWithoutEventLoop(source, "=wasm", &err, detail::wasmAttachLineHook, nullptr);
+        ok = rt.runStringWithoutEventLoop(source, "=wasm", &err, &WasmHost::attachLineHook, nullptr);
         lua_sethook(L, nullptr, 0, 0);
 
-        pumpRuntimeDeferredWork(rt);
+        pumpDeferredWork(rt);
 #else
         ok = rt.runStringWithoutEventLoop(source, "=wasm", &err);
 #endif
@@ -155,6 +164,6 @@ EMSCRIPTEN_BINDINGS(varn_wasm) {
         .field("output", &varn::wasm::RunResult::output)
         .field("error", &varn::wasm::RunResult::error);
 
-    emscripten::function("varnRunChunk", &varn::wasm::run_chunk_impl);
+    emscripten::function("varnRunChunk", &varn::wasm::WasmHost::runChunk);
 }
 #endif

@@ -26,6 +26,9 @@ int FsModule::luaReadFile(lua_State* L) {
             promise->resolve(FsStorage::readAll(path));
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
+        } catch (...) {
+            // a worker thread must never let an exception escape: that would terminate the process.
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
         }
     });
 
@@ -45,6 +48,9 @@ int FsModule::luaWriteFile(lua_State* L) {
             promise->resolve("ok");
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
+        } catch (...) {
+            // a worker thread must never let an exception escape: that would terminate the process.
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
         }
     });
 

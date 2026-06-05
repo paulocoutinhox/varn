@@ -34,7 +34,12 @@ void EventLoop::postDelayed(long long delayMs, Job job) {
 }
 
 void EventLoop::run() {
-    running_ = true;
+    // set the flag under the lock so a worker that called stop() between finishAfterUserChunk's flag
+    // check and this point cannot be clobbered by an out-of-order store.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        running_ = true;
+    }
 
     while (running_) {
         Job job;
@@ -103,10 +108,20 @@ void EventLoop::stop() {
 }
 
 void EventLoop::clearPendingJobs() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    std::queue<Job> drained;
-    jobs_.swap(drained);
-    timers_.clear();
+    // each queued job and timer entered the work ledger at post time. drop them without invoking,
+    // then release the matching ledger entries outside the lock so leave's notify path stays unlocked.
+    std::queue<Job> drainedJobs;
+    std::multimap<std::chrono::steady_clock::time_point, Job> drainedTimers;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        jobs_.swap(drainedJobs);
+        timers_.swap(drainedTimers);
+    }
+
+    const std::size_t dropped = drainedJobs.size() + drainedTimers.size();
+    for (std::size_t i = 0; i < dropped; ++i) {
+        ledger_->leave();
+    }
 }
 
 void EventLoop::wake() {

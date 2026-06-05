@@ -10,7 +10,7 @@
 
 namespace varn::http::client {
 
-std::string performRequestWire(
+std::string HttpClientPerform::perform(
     const std::string& method,
     const std::string& url,
     const std::map<std::string, std::string>& headers,

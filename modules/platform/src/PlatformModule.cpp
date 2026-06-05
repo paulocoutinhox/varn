@@ -35,13 +35,15 @@ int PlatformModule::luaShlibSuffix(lua_State* L) {
 
 int PlatformModule::luaLibraryFilename(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
+
     try {
         const std::string path = PlatformInfo::libraryFilenameForName(name);
         lua_pushlstring(L, path.data(), path.size());
         return 1;
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
+    return lua_error(L);
 }
 
 int PlatformModule::luaHostVersion(lua_State* L) {
@@ -67,13 +69,11 @@ int PlatformModule::luaEndianness(lua_State* L) {
 
 int PlatformModule::luaLibraryPathByName(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
-    std::string subdir = ".";
-    if (lua_gettop(L) >= 2 && lua_isstring(L, 2)) {
-        subdir = lua_tostring(L, 2);
-    }
+    const char* subdirRaw = (lua_gettop(L) >= 2 && lua_isstring(L, 2)) ? lua_tostring(L, 2) : ".";
+
     try {
+        std::string out = subdirRaw;
         const std::string file = PlatformInfo::libraryFilenameForName(name);
-        std::string out = subdir;
         if (!out.empty() && out.back() != '/' && out.back() != '\\') {
             out += '/';
         }
@@ -81,8 +81,9 @@ int PlatformModule::luaLibraryPathByName(lua_State* L) {
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
+    return lua_error(L);
 }
 
 int PlatformModule::luaOpen(lua_State* L) {

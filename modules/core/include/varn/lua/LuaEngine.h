@@ -26,6 +26,8 @@ public:
     lua_State* state();
 
 private:
+    static int handlePanic(lua_State* L);
+
     void installNativeModules();
     void configureArgTable();
 

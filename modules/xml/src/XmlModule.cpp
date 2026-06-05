@@ -4,6 +4,7 @@
 #include <lua.hpp>
 
 #include <exception>
+#include <stdexcept>
 #include <string>
 
 namespace varn::xml {
@@ -31,6 +32,8 @@ int XmlModule::readIndent(lua_State* L, int optsIndex) {
     return indent;
 }
 
+// push the error message inside the catch block, then call lua_error from a frame with no live c++
+// destructors. on msvc, a lua_error longjmp over a std::string would trip the /gs stack canary.
 int XmlModule::luaEncode(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     const int indent = readIndent(L, 2);
@@ -40,8 +43,9 @@ int XmlModule::luaEncode(lua_State* L) {
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
+    return lua_error(L);
 }
 
 int XmlModule::luaDecode(lua_State* L) {
@@ -49,13 +53,14 @@ int XmlModule::luaDecode(lua_State* L) {
     const char* text = luaL_checklstring(L, 1, &length);
 
     try {
-        if (!XmlSerializer::parse(L, std::string(text, length))) {
-            return luaL_error(L, "[XmlModule] The input is not valid XML.");
+        if (XmlSerializer::parse(L, std::string(text, length))) {
+            return 1;
         }
-        return 1;
+        throw std::runtime_error("[XmlModule] The input is not valid XML.");
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
+    return lua_error(L);
 }
 
 int XmlModule::luaOpen(lua_State* L) {

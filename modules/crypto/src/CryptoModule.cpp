@@ -1,4 +1,6 @@
 #include <lua.hpp>
+#include <stdexcept>
+#include <string>
 #include <string_view>
 
 #include "varn/crypto/CryptoModule.h"
@@ -26,51 +28,73 @@ bool CryptoModule::parseDigestFormat(lua_State* L, int index, bool& hexOut) {
     return false;
 }
 
+// the lua_error longjmp runs in a frame with no live c++ destructors, otherwise msvc's /gs canary aborts
+// the process. the catch block pushes the error message and lua_error fires after the try has exited.
 int CryptoModule::luaDigest(lua_State* L) {
+    std::size_t algoLen = 0;
+    std::size_t dataLen = 0;
+    const char* algoRaw = luaL_checklstring(L, 1, &algoLen);
+    const char* dataRaw = luaL_checklstring(L, 2, &dataLen);
+
     try {
-        const std::string algorithm = varn::lua::LuaHelpers::checkString(L, 1);
-        const std::string data = varn::lua::LuaHelpers::checkString(L, 2);
+        const std::string algorithm(algoRaw, algoLen);
+        const std::string data(dataRaw, dataLen);
+
         bool hexOut = true;
         if (!parseDigestFormat(L, 3, hexOut)) {
-            return luaL_error(L, "[CryptoModule] Output format must be hex or raw.");
+            throw std::runtime_error("[CryptoModule] Output format must be hex or raw.");
         }
+
         const std::string out = CryptoPrimitives::digest(algorithm, data, hexOut);
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
+    return lua_error(L);
 }
 
 int CryptoModule::luaHmac(lua_State* L) {
+    std::size_t algoLen = 0;
+    std::size_t keyLen = 0;
+    std::size_t dataLen = 0;
+    const char* algoRaw = luaL_checklstring(L, 1, &algoLen);
+    const char* keyRaw = luaL_checklstring(L, 2, &keyLen);
+    const char* dataRaw = luaL_checklstring(L, 3, &dataLen);
+
     try {
-        const std::string digestAlgo = varn::lua::LuaHelpers::checkString(L, 1);
-        const std::string key = varn::lua::LuaHelpers::checkString(L, 2);
-        const std::string data = varn::lua::LuaHelpers::checkString(L, 3);
+        const std::string digestAlgo(algoRaw, algoLen);
+        const std::string key(keyRaw, keyLen);
+        const std::string data(dataRaw, dataLen);
+
         bool hexOut = true;
         if (!parseDigestFormat(L, 4, hexOut)) {
-            return luaL_error(L, "[CryptoModule] Output format must be hex or raw.");
+            throw std::runtime_error("[CryptoModule] Output format must be hex or raw.");
         }
+
         const std::string out = CryptoPrimitives::hmac(digestAlgo, key, data, hexOut);
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
+    return lua_error(L);
 }
 
 int CryptoModule::luaRandomBytes(lua_State* L) {
+    const lua_Integer count = luaL_checkinteger(L, 1);
+
     try {
-        lua_Integer count = luaL_checkinteger(L, 1);
         if (count < 0) {
-            return luaL_error(L, "[CryptoModule] Random byte count must not be negative.");
+            throw std::runtime_error("[CryptoModule] Random byte count must not be negative.");
         }
-        std::string bytes = CryptoPrimitives::randomBytes(static_cast<std::size_t>(count));
+        const std::string bytes = CryptoPrimitives::randomBytes(static_cast<std::size_t>(count));
         lua_pushlstring(L, bytes.data(), bytes.size());
         return 1;
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
+    return lua_error(L);
 }
 
 int CryptoModule::luaEquals(lua_State* L) {

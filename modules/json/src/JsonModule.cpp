@@ -4,6 +4,7 @@
 #include <lua.hpp>
 
 #include <exception>
+#include <stdexcept>
 #include <string>
 
 namespace varn::json {
@@ -32,16 +33,18 @@ int JsonModule::readIndent(lua_State* L, int optsIndex) {
 }
 
 int JsonModule::luaEncode(lua_State* L) {
-    // the value at index 1 is encoded, with an optional options table at index 2 for pretty-printing.
+    // push the error message inside the catch block, then call lua_error from a frame with no
+    // live c++ destructors. on msvc, a lua_error longjmp over std::string would trip the /gs
+    // stack canary and abort the process.
     const int indent = readIndent(L, 2);
-
     try {
         const std::string out = JsonSerializer::encode(L, 1, indent);
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
+    return lua_error(L);
 }
 
 int JsonModule::luaDecode(lua_State* L) {
@@ -49,13 +52,14 @@ int JsonModule::luaDecode(lua_State* L) {
     const char* text = luaL_checklstring(L, 1, &length);
 
     try {
-        if (!JsonSerializer::deserialize(L, std::string(text, length))) {
-            return luaL_error(L, "[JsonModule] The input is not valid JSON.");
+        if (JsonSerializer::deserialize(L, std::string(text, length))) {
+            return 1;
         }
-        return 1;
+        throw std::runtime_error("[JsonModule] The input is not valid JSON.");
     } catch (const std::exception& ex) {
-        return luaL_error(L, "%s", ex.what());
+        lua_pushstring(L, ex.what());
     }
+    return lua_error(L);
 }
 
 int JsonModule::luaOpen(lua_State* L) {

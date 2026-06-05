@@ -200,6 +200,9 @@ int ZipModule::luaExtract(lua_State* L) {
             promise->resolve("ok");
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
+        } catch (...) {
+            // a worker thread must never let an exception escape: that would terminate the process.
+            promise->reject("[ZipModule] The operation failed with a non-standard error.");
         }
     });
     Promise::push(L, promise);
@@ -245,6 +248,9 @@ int ZipModule::luaCreate(lua_State* L) {
             promise->resolve("ok");
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
+        } catch (...) {
+            // a worker thread must never let an exception escape: that would terminate the process.
+            promise->reject("[ZipModule] The operation failed with a non-standard error.");
         }
     });
     Promise::push(L, promise);
@@ -273,6 +279,9 @@ int ZipModule::luaList(lua_State* L) {
             });
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
+        } catch (...) {
+            // a worker thread must never let an exception escape: that would terminate the process.
+            promise->reject("[ZipModule] The operation failed with a non-standard error.");
         }
     });
     Promise::push(L, promise);
