@@ -112,13 +112,13 @@ inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info) {
     const DWORD code = record->ExceptionCode;
 
     // emit and flush the essentials first, so they survive even if the stack walk below faults.
-    fprintf(stderr, "\n[CrashHandler] unhandled exception 0x%08lX (%s) at %p\n", static_cast<unsigned long>(code),
+    fprintf(stderr, "\n[CrashHandler] Unhandled exception 0x%08lX (%s) at %p.\n", static_cast<unsigned long>(code),
             exceptionName(code), record->ExceptionAddress);
 
     if (code == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2) {
         const ULONG_PTR operation = record->ExceptionInformation[0];
         const char* verb = operation == 0 ? "reading" : (operation == 1 ? "writing" : "executing");
-        fprintf(stderr, "[CrashHandler] while %s address 0x%llx\n", verb,
+        fprintf(stderr, "[CrashHandler] While %s address 0x%llx.\n", verb,
                 static_cast<unsigned long long>(record->ExceptionInformation[1]));
     }
     fflush(stderr);
@@ -140,17 +140,17 @@ inline void CrashHandler::printActiveException() {
         try {
             std::rethrow_exception(current);
         } catch (const std::exception& ex) {
-            fprintf(stderr, "[CrashHandler] unhandled C++ exception: %s\n", ex.what());
+            fprintf(stderr, "[CrashHandler] Unhandled C++ exception: %s.\n", ex.what());
         } catch (...) {
-            fprintf(stderr, "[CrashHandler] unhandled non-standard C++ exception\n");
+            fprintf(stderr, "[CrashHandler] Unhandled non-standard C++ exception.\n");
         }
     } else {
-        fprintf(stderr, "[CrashHandler] terminate with no active exception (often a longjmp across C++ frames)\n");
+        fprintf(stderr, "[CrashHandler] Terminate with no active exception (often a longjmp across C++ frames).\n");
     }
 }
 
 inline void CrashHandler::terminateHandler() {
-    fprintf(stderr, "\n[CrashHandler] std::terminate called\n");
+    fprintf(stderr, "\n[CrashHandler] Triggered by std::terminate.\n");
     printActiveException();
     fflush(stderr);
 

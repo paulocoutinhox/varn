@@ -1497,7 +1497,7 @@ int HttpApp::luaCors(lua_State* L) {
             lua_pop(L, 1);
 
             if (credentials && wildcardOrigin) {
-                throw std::runtime_error("[HttpApp] cors credentials cannot be combined with origin '*'.");
+                throw std::runtime_error("[HttpApp] CORS credentials cannot be combined with origin '*'.");
             }
 
             lua_pushvalue(L, 1);

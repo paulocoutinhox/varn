@@ -145,12 +145,25 @@ local function encodeCommand(...)
 end
 
 function methods:command(...)
+    if self.dead then
+        error("[Redis] connection is poisoned after an earlier I/O failure and cannot be reused")
+    end
+
     local _, err = self.sock:send(encodeCommand(...)):await()
     if err then
+        -- a send failure can leave a partial frame on the wire, so the connection is unsafe to reuse.
+        self.dead = true
         error("[Redis] send failed: " .. tostring(err))
     end
 
-    local reply = self.reader:reply()
+    -- any throw from the parser means the byte stream is unsynchronized, so mark the connection dead
+    -- before re-raising. a clean server error reply leaves the stream synchronized and is not poisoning.
+    local parseOk, reply = pcall(self.reader.reply, self.reader)
+    if not parseOk then
+        self.dead = true
+        error(reply, 0)
+    end
+
     if isServerError(reply) then
         error("[Redis] " .. reply.message)
     end
@@ -179,6 +192,10 @@ function pipelineMethods:command(...)
 end
 
 function methods:pipeline(builder)
+    if self.dead then
+        error("[Redis] connection is poisoned after an earlier I/O failure and cannot be reused")
+    end
+
     local batch = setmetatable({ frames = {}, count = 0 }, Pipeline)
     builder(batch)
 
@@ -188,14 +205,20 @@ function methods:pipeline(builder)
 
     local _, err = self.sock:send(table.concat(batch.frames)):await()
     if err then
+        self.dead = true
         error("[Redis] pipeline send failed: " .. tostring(err))
     end
 
-    -- read every reply before raising so a single server error cannot desync the stream.
+    -- read every reply before raising so a single server error cannot desync the stream. a parser
+    -- throw, on the other hand, means the bytes after the failed reply are unrecoverable.
     local replies = {}
     local firstError
     for i = 1, batch.count do
-        local reply = self.reader:reply()
+        local parseOk, reply = pcall(self.reader.reply, self.reader)
+        if not parseOk then
+            self.dead = true
+            error(reply, 0)
+        end
         if isServerError(reply) then
             replies[i] = nil
             firstError = firstError or reply.message

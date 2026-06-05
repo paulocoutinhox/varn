@@ -273,9 +273,15 @@ function Connection:transaction(fn)
 
     local ok, result = pcall(fn, self)
     if not ok then
-        pcall(function()
+        local rollbackOk, rollbackErr = pcall(function()
             self:rollBack()
         end)
+        -- the original error takes priority. a rollback failure is appended so the caller knows the
+        -- connection may still hold an open transaction on the server.
+        self.inTx = false
+        if not rollbackOk then
+            error(tostring(result) .. " | rollback also failed: " .. tostring(rollbackErr), 0)
+        end
         error(result, 0)
     end
 
