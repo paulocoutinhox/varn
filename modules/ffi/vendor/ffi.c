@@ -1739,7 +1739,7 @@ static void ctype_to_ptr(lua_State *L, struct ctype *ct)
     ct->ptr = ptr;
 }
 
-extern char *lex_err;
+extern const char *lex_err;
 
 static inline int cparse_check_tok(lua_State *L, int tok)
 {

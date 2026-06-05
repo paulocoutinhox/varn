@@ -3,12 +3,13 @@
 %option noyy_scan_string
 %option noyyget_in noyyset_in noyyget_out noyyset_out
 %option noyyget_debug noyyset_debug
+%option never-interactive
 
 %x COMMENT
 
 %{
 #include "token.h"
-char *lex_err;
+const char *lex_err;
 %}
 
 %%

@@ -604,7 +604,7 @@ char *yytext;
 
 #line 10 "lex.l"
 #include "token.h"
-char *lex_err;
+const char *lex_err;
 #line 606 "lex.c"
 #line 607 "lex.c"
 
@@ -1679,7 +1679,7 @@ static void yy_load_buffer_state  (void)
         b->yy_bs_column = 0;
     }
 
-        b->yy_is_interactive = file ? (isatty( fileno(file) ) > 0) : 0;
+        b->yy_is_interactive = 0;
     
 	errno = oerrno;
 }
