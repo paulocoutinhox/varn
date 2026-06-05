@@ -189,9 +189,16 @@ if(VARN_NEEDS_ZIP)
             "ENABLE_LZMA OFF"
             "ENABLE_ZSTD OFF"
     )
-    # varn forces C99 globally, and on glibc <strings.h> only declares strcasecmp under a feature
-    # macro, so zip_name_locate.c can fail without _DEFAULT_SOURCE (for example on Linux CI).
-    if(TARGET zip AND NOT WIN32)
-        target_compile_definitions(zip PRIVATE $<$<COMPILE_LANGUAGE:C>:_DEFAULT_SOURCE>)
+    # on glibc strict C99 hides strcasecmp behind a feature macro, so define _DEFAULT_SOURCE to
+    # keep zip_name_locate.c compiling.
+    if(TARGET zip)
+        set_target_properties(zip PROPERTIES
+            C_STANDARD 99
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        if(NOT WIN32)
+            target_compile_definitions(zip PRIVATE $<$<COMPILE_LANGUAGE:C>:_DEFAULT_SOURCE>)
+        endif()
     endif()
 endif()
