@@ -202,7 +202,7 @@ list(PREPEND _ossl_options no-apps)
 
 set(OPENSSL_CONFIGURE_OPTIONS ${_ossl_options} CACHE INTERNAL "" FORCE)
 
-set(_ossl_cpm_options "OPENSSL_TARGET_VERSION 3.6.1")
+set(_ossl_cpm_options "OPENSSL_TARGET_VERSION 3.6.2")
 if(_ossl_target)
     list(APPEND _ossl_cpm_options "OPENSSL_TARGET_PLATFORM ${_ossl_target}")
 endif()
