@@ -19,11 +19,17 @@ if(NOT TARGET varn_vendor_lua)
     )
     list(TRANSFORM _varn_lua_sources PREPEND "${lua_SOURCE_DIR}/")
 
+    # build lua as c++ so a raised lua error propagates as an exception that unwinds the embedding
+    # c++ frames, instead of a longjmp. on msvc a longjmp across the /ehsc frames at the c++/lua
+    # boundary corrupts the unwind state and crashes the process; an exception unwinds them and
+    # stops at lua's own protected-call handler.
+    set_source_files_properties(${_varn_lua_sources} PROPERTIES LANGUAGE CXX)
+
     add_library(varn_vendor_lua STATIC ${_varn_lua_sources})
     target_include_directories(varn_vendor_lua PUBLIC "${lua_SOURCE_DIR}")
     set_target_properties(varn_vendor_lua PROPERTIES
-        C_STANDARD 99
-        C_STANDARD_REQUIRED ON
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
         POSITION_INDEPENDENT_CODE ON
     )
 

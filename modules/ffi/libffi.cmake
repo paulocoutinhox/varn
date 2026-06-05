@@ -33,14 +33,22 @@ if(NOT TARGET varn_ffi_vendor)
         @ONLY
     )
 
-    add_library(varn_ffi_vendor STATIC
+    set(_varn_ffi_vendor_sources
         "${CMAKE_CURRENT_LIST_DIR}/vendor/ffi.c"
         "${CMAKE_CURRENT_LIST_DIR}/vendor/lex.c"
         "${CMAKE_CURRENT_LIST_DIR}/platform/varn_ffi_dl.c"
     )
+
+    # compile the ffi vendor as c++ so its references to the lua api mangle the same way
+    # varn_vendor_lua exports them (lua itself is built as c++ to fix the msvc longjmp/seh
+    # corruption). this also bypasses the C23 = {} initializer that the msvc c compiler rejects,
+    # because c++20 accepts the empty-aggregate initializer.
+    set_source_files_properties(${_varn_ffi_vendor_sources} PROPERTIES LANGUAGE CXX)
+
+    add_library(varn_ffi_vendor STATIC ${_varn_ffi_vendor_sources})
     set_target_properties(varn_ffi_vendor PROPERTIES
-        C_STANDARD 99
-        C_STANDARD_REQUIRED ON
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
         POSITION_INDEPENDENT_CODE ON
     )
     if(MSVC)

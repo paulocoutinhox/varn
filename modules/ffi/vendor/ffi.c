@@ -437,7 +437,7 @@ static void cdata_ptr_set(struct cdata *cd, void *ptr)
 
 static struct ctype *ctype_new(lua_State *L, bool keep)
 {
-    struct ctype *ct = lua_newuserdata(L, sizeof(struct ctype));
+    struct ctype *ct = (struct ctype *)lua_newuserdata(L, sizeof(struct ctype));
 
     ct->type = CTYPE_VOID;
     ct->ft = &ffi_type_void;
@@ -510,7 +510,7 @@ static struct ctype *ctype_lookup(lua_State *L, struct ctype *match, bool keep)
     lua_pushnil(L);
 
     while (lua_next(L, -2) != 0) {
-        ct = lua_touserdata(L, -1);
+        ct = (struct ctype *)lua_touserdata(L, -1);
         if (ctype_equal(match, ct)) {
             if (keep) {
                 lua_replace(L, -3);
@@ -540,7 +540,7 @@ static struct carray *carray_lookup(lua_State *L, size_t size, struct ctype *ct)
     lua_pushnil(L);
 
     while (lua_next(L, -2) != 0) {
-        a = lua_touserdata(L, -1);
+        a = (struct carray *)lua_touserdata(L, -1);
         if (a->size == size && ctype_equal(a->ct, ct)) {
             lua_pop(L, 3);
             return a;
@@ -548,7 +548,7 @@ static struct carray *carray_lookup(lua_State *L, size_t size, struct ctype *ct)
         lua_pop(L, 1);
     }
 
-    a = lua_newuserdata(L, sizeof(struct carray));
+    a = (struct carray *)lua_newuserdata(L, sizeof(struct carray));
     if (!a)
         luaL_error(L, "no mem");
 
@@ -632,7 +632,7 @@ static void ctype_tostring(lua_State *L, struct ctype *ct, luaL_Buffer *b, bool 
 
 static struct cdata *cdata_new(lua_State *L, struct ctype *ct, void *ptr)
 {
-    struct cdata *cd = lua_newuserdata(L, sizeof(struct cdata) + (ptr ? 0 : ctype_sizeof(ct)));
+    struct cdata *cd = (struct cdata *)lua_newuserdata(L, sizeof(struct cdata) + (ptr ? 0 : ctype_sizeof(ct)));
 
     cd->gc_ref = LUA_REFNIL;
     cd->ptr = ptr;
@@ -670,7 +670,7 @@ static int __cdata_tostring(lua_State *L, struct cdata *cd)
 
 static int cdata_tostring(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     struct ctype *ct = cd->ct;
 
     if (ct->type == CTYPE_RECORD && ct->rc->mflags & METATYPE_FLAG_TOSTRING) {
@@ -855,7 +855,7 @@ static bool cdata_from_lua_cdata_ptr(lua_State *L, struct ctype *ct, void *ptr,
 
 static bool cdata_from_lua_cdata(lua_State *L, struct ctype *ct, void *ptr, int idx, bool cast)
 {
-    struct cdata *cd = lua_touserdata(L, idx);
+    struct cdata *cd = (struct cdata *)lua_touserdata(L, idx);
 
     switch (cdata_type(cd)) {
     case CTYPE_ARRAY:
@@ -927,7 +927,7 @@ static bool cdata_from_lua_cb_ret(lua_State *L, struct ctype *ct, void *ptr, int
         }
         break;
     case LUA_TUSERDATA:
-        cd = luaL_testudata(L, idx, CDATA_MT);
+        cd = (struct cdata *)luaL_testudata(L, idx, CDATA_MT);
         if (!cd)
             break;
 
@@ -999,7 +999,7 @@ static void ccallback_raise_argument_errors(lua_State *L, int first_idx, int nar
     int i;
 
     for (i = 0; i < narg; i++) {
-        struct cdata *cd = luaL_testudata(L, first_idx + i, CDATA_MT);
+        struct cdata *cd = (struct cdata *)luaL_testudata(L, first_idx + i, CDATA_MT);
 
         if (!cd || !cd->cb || cd->cb->err_ref == LUA_REFNIL)
             continue;
@@ -1013,7 +1013,7 @@ static void ccallback_raise_argument_errors(lua_State *L, int first_idx, int nar
 
 static void ccallback_invoke(ffi_cif *cif, void *ret, void **args, void *userdata)
 {
-    struct ccallback *cb = userdata;
+    struct ccallback *cb = (struct ccallback *)userdata;
     struct cfunc *func = cb->func;
     struct ctype *rtype = func->rtype;
     lua_State *L = cb->L;
@@ -1072,7 +1072,7 @@ static struct ccallback *ccallback_new(lua_State *L, struct cfunc *func, int idx
     if (func->va)
         luaL_error(L, "cannot create callback for variadic function type");
 
-    cb = calloc(1, sizeof(struct ccallback));
+    cb = (struct ccallback *)calloc(1, sizeof(struct ccallback));
     if (!cb)
         luaL_error(L, "no mem");
 
@@ -1092,7 +1092,7 @@ static struct ccallback *ccallback_new(lua_State *L, struct cfunc *func, int idx
     if (status)
         goto err;
 
-    cb->closure = ffi_closure_alloc(sizeof(ffi_closure), &cb->code);
+    cb->closure = (ffi_closure *)ffi_closure_alloc(sizeof(ffi_closure), &cb->code);
     if (!cb->closure)
         goto err;
 
@@ -1225,7 +1225,7 @@ static int cdata_from_lua(lua_State *L, struct ctype *ct, void *ptr, int idx, bo
     }
 
     if (luaL_testudata(L, idx, CDATA_MT)) {
-        struct cdata *cd = lua_touserdata(L, idx);
+        struct cdata *cd = (struct cdata *)lua_touserdata(L, idx);
         __ctype_tostring(L, cd->ct);
         __ctype_tostring(L, ct);
         lua_pushfstring(L, "cannot convert '%s' to '%s'", lua_tostring(L, -2), lua_tostring(L, -1));
@@ -1362,7 +1362,7 @@ static int cdata_index_crecord(lua_State *L, struct cdata *cd, struct ctype *ct,
 
 static int cdata_index_common(lua_State *L, bool to)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     struct ctype *ct = cd->ct;
 
     if (!to && ct->is_const)
@@ -1395,7 +1395,7 @@ static int cdata_newindex(lua_State *L)
 
 static int cdata_eq(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     int type = cdata_type(cd);
     struct cdata *a;
     bool eq = false;
@@ -1411,7 +1411,7 @@ static int cdata_eq(lua_State *L)
             break;
         }
 
-        a = luaL_testudata(L, 2, CDATA_MT);
+        a = (struct cdata *)luaL_testudata(L, 2, CDATA_MT);
         if (a && cdata_type(a) == CTYPE_PTR)
             eq = cdata_ptr_ptr(cd) == cdata_ptr_ptr(a);
 
@@ -1442,7 +1442,7 @@ static ffi_type *lua_to_vararg(lua_State *L, int idx)
     case LUA_TLIGHTUSERDATA:
         return &ffi_type_pointer;
     case LUA_TUSERDATA:
-        cd = luaL_testudata(L, idx, CDATA_MT);
+        cd = (struct cdata *)luaL_testudata(L, idx, CDATA_MT);
         if (!cd || cdata_type(cd) == CTYPE_RECORD || cdata_type(cd) == CTYPE_ARRAY)
             return &ffi_type_pointer;
         return ctype_ft(cd->ct);
@@ -1453,7 +1453,7 @@ static ffi_type *lua_to_vararg(lua_State *L, int idx)
 
 static int cdata_call(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     ffi_type *args[MAX_FUNC_ARGS] = {};
     void *values[MAX_FUNC_ARGS] = {};
     struct ctype *ct = cd->ct;
@@ -1514,7 +1514,7 @@ static int cdata_call(lua_State *L)
                 *(void **)values[i] = (void *)lua_topointer(L, i + 2);
                 break;
             case LUA_TUSERDATA:
-                cd = luaL_testudata(L, i + 2, CDATA_MT);
+                cd = (struct cdata *)luaL_testudata(L, i + 2, CDATA_MT);
                 if (!cd)
                     *(void **)values[i] = lua_touserdata(L, i + 2);
                 else if (cdata_type(cd) == CTYPE_RECORD || cdata_type(cd) == CTYPE_ARRAY)
@@ -1570,7 +1570,7 @@ static int cdata_call(lua_State *L)
 
 static int cdata_len(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
 
     if (cd->ct->type != CTYPE_ARRAY) {
         __ctype_tostring(L, cd->ct);
@@ -1584,7 +1584,7 @@ static int cdata_len(lua_State *L)
 
 static int cdata_gc(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     int gc_ref = cd->gc_ref;
 
     if (gc_ref != LUA_REFNIL) {
@@ -1619,7 +1619,7 @@ static const luaL_Reg cdata_methods[] = {
 
 static int lua_ctype_tostring(lua_State *L)
 {
-    struct ctype *ct = luaL_checkudata(L, 1, CTYPE_MT);
+    struct ctype *ct = (struct ctype *)luaL_checkudata(L, 1, CTYPE_MT);
 
     lua_pushliteral(L, "ctype<");
     __ctype_tostring(L, ct);
@@ -1631,7 +1631,7 @@ static int lua_ctype_tostring(lua_State *L)
 
 static int ctype_gc(lua_State *L)
 {
-    struct ctype *ct = luaL_checkudata(L, 1, CTYPE_MT);
+    struct ctype *ct = (struct ctype *)luaL_checkudata(L, 1, CTYPE_MT);
     int type = ct->type;
 
     if (type == CTYPE_RECORD && ct->rc->anonymous) {
@@ -1656,7 +1656,7 @@ static const luaL_Reg ctype_methods[] = {
 
 static int clib_index(lua_State *L)
 {
-    struct clib *lib = luaL_checkudata(L, 1, CLIB_MT);
+    struct clib *lib = (struct clib *)luaL_checkudata(L, 1, CLIB_MT);
     const char *name = luaL_checkstring(L, 2);
     struct ctype match = { .type = CTYPE_FUNC };
     struct ctype *ct;
@@ -1694,7 +1694,7 @@ done:
 
 static int clib_tostring(lua_State *L)
 {
-    struct clib *lib = luaL_checkudata(L, 1, CLIB_MT);
+    struct clib *lib = (struct clib *)luaL_checkudata(L, 1, CLIB_MT);
     if (lib->h == RTLD_DEFAULT)
         lua_pushliteral(L, "library: default");
     else
@@ -1704,7 +1704,7 @@ static int clib_tostring(lua_State *L)
 
 static int clib_gc(lua_State *L)
 {
-    struct clib *lib = luaL_checkudata(L, 1, CLIB_MT);
+    struct clib *lib = (struct clib *)luaL_checkudata(L, 1, CLIB_MT);
     void *h = lib->h;
 
     if (h != RTLD_DEFAULT)
@@ -1891,7 +1891,7 @@ static int cparse_record_field(lua_State *L, struct crecord_field **fields)
         if (cparse_check_tok(L, tok) == TOK_STRUCT || cparse_check_tok(L, tok) == TOK_UNION) {
             tok = cparse_record(L, &bt, cparse_check_tok(L, tok) == TOK_UNION);
             if (tok == ';') {
-                field = calloc(1, sizeof(struct crecord_field) + 1);
+                field = (struct crecord_field *)calloc(1, sizeof(struct crecord_field) + 1);
                 if (!field)
                     return luaL_error(L, "no mem");
                 ct = bt;
@@ -1917,7 +1917,7 @@ again:
             if (!strcmp(fields[i]->name, name))
                 return luaL_error(L, "%d:duplicate member'%s'", yyget_lineno(), name);
 
-        field = calloc(1, sizeof(struct crecord_field) + yyget_leng() + 1);
+        field = (struct crecord_field *)calloc(1, sizeof(struct crecord_field) + yyget_leng() + 1);
         if (!field)
             return luaL_error(L, "no mem");
 
@@ -2028,7 +2028,7 @@ static int cparse_record(lua_State *L, struct ctype *ct, bool is_union)
             }
         }
 
-        ct->rc = calloc(1, sizeof(struct crecord)
+        ct->rc = (struct crecord *)calloc(1, sizeof(struct crecord)
                         + sizeof(struct crecord_field *) * nfield
                         + sizeof(ffi_type *) * nelement);
         if (!ct->rc)
@@ -2289,7 +2289,7 @@ static void cparse_build_func_type(lua_State *L, struct ctype *rtype,
     struct cfunc *func;
     int i;
 
-    func = calloc(1, sizeof(struct cfunc) + sizeof(struct ctype *) * narg);
+    func = (struct cfunc *)calloc(1, sizeof(struct cfunc) + sizeof(struct ctype *) * narg);
     if (!func)
         luaL_error(L, "no mem");
 
@@ -2575,7 +2575,7 @@ static int load_lib(lua_State *L, const char *path, bool global)
         h = RTLD_DEFAULT;
     }
 
-    lib = lua_newuserdata(L, sizeof(struct clib));
+    lib = (struct clib *)lua_newuserdata(L, sizeof(struct clib));
     lib->h = h;
 
     lua_newtable(L);
@@ -2657,11 +2657,11 @@ static struct ctype *lua_check_ct(lua_State *L, bool *va, bool keep)
     if (va)
         *va = false;
 
-    ct = luaL_testudata(L, 1, CTYPE_MT);
+    ct = (struct ctype *)luaL_testudata(L, 1, CTYPE_MT);
     if (ct)
         return ct;
 
-    cd = luaL_testudata(L, 1, CDATA_MT);
+    cd = (struct cdata *)luaL_testudata(L, 1, CDATA_MT);
     if (cd) {
         if (keep) {
             lua_rawgetp(L, LUA_REGISTRYINDEX, &ctype_registry);
@@ -2719,7 +2719,7 @@ static int lua_ffi_cast(lua_State *L)
 
 static int lua_ffi_metatype(lua_State *L)
 {
-    struct ctype *ct = luaL_checkudata(L, 1, CTYPE_MT);
+    struct ctype *ct = (struct ctype *)luaL_checkudata(L, 1, CTYPE_MT);
     struct crecord *rc = ct->rc;
     uint8_t mflags = 0;
 
@@ -2761,7 +2761,7 @@ static int lua_ffi_typeof(lua_State *L)
 
 static int lua_ffi_addressof(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     struct ctype match = {
         .type = CTYPE_PTR,
         .ptr = cd->ct
@@ -2773,7 +2773,7 @@ static int lua_ffi_addressof(lua_State *L)
 
 static int lua_ffi_gc(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
 
     if (lua_isnil(L, 2)) {
         if (cd->gc_ref != LUA_REFNIL) {
@@ -2821,14 +2821,14 @@ static int lua_ffi_offsetof(lua_State *L)
 static int lua_ffi_istype(lua_State *L)
 {
     struct ctype *ct = lua_check_ct(L, NULL, false);
-    struct cdata *cd = luaL_checkudata(L, 2, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 2, CDATA_MT);
     lua_pushboolean(L, ct == cd->ct);
     return 1;
 }
 
 static int lua_ffi_tonumber(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     struct ctype *ct = cd->ct;
 
     if (ct->type < CTYPE_VOID)
@@ -2839,10 +2839,10 @@ static int lua_ffi_tonumber(lua_State *L)
 
 static int lua_ffi_string(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     struct carray *array = NULL;
     struct ctype *ct = cd->ct;
-    const char *ptr = ct->type == CTYPE_PTR ? cdata_ptr_ptr(cd) : cdata_ptr(cd);
+    const char *ptr = (const char *)(ct->type == CTYPE_PTR ? cdata_ptr_ptr(cd) : cdata_ptr(cd));
     size_t len;
 
     if (lua_gettop(L) > 1) {
@@ -2875,7 +2875,7 @@ static int lua_ffi_string(lua_State *L)
         goto converr;
 
     if (array && array->size) {
-        char *p = memchr(ptr, '\0', array->ft.size);
+        char *p = (char *)memchr(ptr, '\0', array->ft.size);
         len = p ? p - ptr : array->ft.size;
         lua_pushlstring(L, ptr, len);
     } else {
@@ -2893,7 +2893,7 @@ converr:
 
 static int lua_ffi_copy(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     void *dst = cdata_ptr(cd);
     const void *src;
     size_t len;
@@ -2908,7 +2908,7 @@ static int lua_ffi_copy(lua_State *L)
         if (lua_type(L, 2) == LUA_TSTRING)
             src = lua_tostring(L, 2);
         else
-            src = cdata_ptr(luaL_checkudata(L, 2, CDATA_MT));
+            src = cdata_ptr((struct cdata *)luaL_checkudata(L, 2, CDATA_MT));
 
         memcpy(dst, src, len);
     }
@@ -2920,7 +2920,7 @@ static int lua_ffi_copy(lua_State *L)
 
 static int lua_ffi_fill(lua_State *L)
 {
-    struct cdata *cd = luaL_checkudata(L, 1, CDATA_MT);
+    struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
     int len = luaL_checkinteger(L, 2);
     int c = luaL_optinteger(L, 3, 0);
 
@@ -2986,7 +2986,7 @@ static void create_nullptr(lua_State *L)
     cdata_ptr_set(cdata_new(L, ct, NULL), NULL);
 }
 
-int luaopen_ffi(lua_State *L)
+extern "C" int luaopen_ffi(lua_State *L)
 {
     lua_newtable(L);
     lua_rawsetp(L, LUA_REGISTRYINDEX, &crecord_registry);
