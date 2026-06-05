@@ -26,6 +26,12 @@
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
 
+#if defined(_MSC_VER)
+#define VARN_NOINLINE __declspec(noinline)
+#else
+#define VARN_NOINLINE __attribute__((noinline))
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -316,6 +322,23 @@ public:
     static void installVerbs(lua_State* L);
     static void createMetatables(lua_State* L);
     static int luaCreateApp(lua_State* L);
+
+private:
+    // worker partners hold the c++ try/catch in their own frame so the matching entry function
+    // can call lua_error from a clean frame with only pod locals, avoiding msvc /gs aborts.
+    static int luaContextHeaderWorker(lua_State* L);
+    static int luaContextCookieWorker(lua_State* L);
+    static int luaContextBodyWorker(lua_State* L);
+    static int luaCorsWorker(lua_State* L);
+    static int luaJwtSignWorker(lua_State* L);
+    static int luaVerbWorker(lua_State* L);
+    static int luaRouteMethodWorker(lua_State* L);
+    static int luaUseWorker(lua_State* L);
+    static int luaGroupWorker(lua_State* L);
+    static int luaRouteNameWorker(lua_State* L);
+    static int luaRouteWhereWorker(lua_State* L);
+    static int luaUrlWorker(lua_State* L);
+    static int csrfMiddlewareWorker(lua_State* L);
 };
 
 AppUserdata* HttpApp::checkApp(lua_State* L) {
@@ -404,7 +427,7 @@ int HttpApp::luaContextStatus(lua_State* L) {
     return 1;
 }
 
-int HttpApp::luaContextHeader(lua_State* L) {
+VARN_NOINLINE int HttpApp::luaContextHeaderWorker(lua_State* L) {
     try {
         auto* context = checkContext(L);
         const std::string name = LuaHelpers::checkString(L, 2);
@@ -426,7 +449,15 @@ int HttpApp::luaContextHeader(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
+}
+
+int HttpApp::luaContextHeader(lua_State* L) {
+    const int n = luaContextHeaderWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int HttpApp::luaContextType(lua_State* L) {
@@ -494,7 +525,7 @@ bool HttpApp::invalidCookieAttribute(const std::string& value) {
     return false;
 }
 
-int HttpApp::luaContextCookie(lua_State* L) {
+VARN_NOINLINE int HttpApp::luaContextCookieWorker(lua_State* L) {
     try {
         auto* context = checkContext(L);
         const std::string name = LuaHelpers::checkString(L, 2);
@@ -589,10 +620,18 @@ int HttpApp::luaContextCookie(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
 }
 
-int HttpApp::luaContextBody(lua_State* L) {
+int HttpApp::luaContextCookie(lua_State* L) {
+    const int n = luaContextCookieWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int HttpApp::luaContextBodyWorker(lua_State* L) {
     try {
         auto* context = checkContext(L);
 
@@ -634,7 +673,15 @@ int HttpApp::luaContextBody(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
+}
+
+int HttpApp::luaContextBody(lua_State* L) {
+    const int n = luaContextBodyWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int HttpApp::luaContextSession(lua_State* L) {
@@ -1486,7 +1533,7 @@ int HttpApp::rateLimitMiddleware(lua_State* L) {
     return 0;
 }
 
-int HttpApp::luaCors(lua_State* L) {
+VARN_NOINLINE int HttpApp::luaCorsWorker(lua_State* L) {
     try {
         if (lua_istable(L, 1)) {
             // reject the invalid wildcard-with-credentials combination at setup time, never silently.
@@ -1512,7 +1559,15 @@ int HttpApp::luaCors(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
+}
+
+int HttpApp::luaCors(lua_State* L) {
+    const int n = luaCorsWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int HttpApp::luaSecurityHeaders(lua_State* L) {
@@ -1543,7 +1598,7 @@ int HttpApp::luaRateLimit(lua_State* L) {
     return 1;
 }
 
-int HttpApp::luaJwtSign(lua_State* L) {
+VARN_NOINLINE int HttpApp::luaJwtSignWorker(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
 
     try {
@@ -1595,7 +1650,15 @@ int HttpApp::luaJwtSign(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
+}
+
+int HttpApp::luaJwtSign(lua_State* L) {
+    const int n = luaJwtSignWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int HttpApp::luaJwtVerify(lua_State* L) {
@@ -1717,7 +1780,7 @@ int HttpApp::requireRoleMiddleware(lua_State* L) {
     return 0;
 }
 
-int HttpApp::csrfMiddleware(lua_State* L) {
+VARN_NOINLINE int HttpApp::csrfMiddlewareWorker(lua_State* L) {
     try {
         auto* context = checkContext(L);
         const int opts = lua_upvalueindex(1);
@@ -1801,7 +1864,15 @@ int HttpApp::csrfMiddleware(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
+}
+
+int HttpApp::csrfMiddleware(lua_State* L) {
+    const int n = csrfMiddlewareWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int HttpApp::luaJwtAuth(lua_State* L) {
@@ -2146,27 +2217,43 @@ int HttpApp::registerRoute(lua_State* L, const std::string& method, int pathInde
     return 1;
 }
 
-int HttpApp::luaVerb(lua_State* L) {
+VARN_NOINLINE int HttpApp::luaVerbWorker(lua_State* L) {
     try {
         const std::string method = lua_tostring(L, lua_upvalueindex(1));
         return registerRoute(L, method, 2);
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
 }
 
-int HttpApp::luaRouteMethod(lua_State* L) {
+int HttpApp::luaVerb(lua_State* L) {
+    const int n = luaVerbWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int HttpApp::luaRouteMethodWorker(lua_State* L) {
     try {
         const std::string method = LuaHelpers::checkString(L, 2);
         return registerRoute(L, method, 3);
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
 }
 
-int HttpApp::luaUse(lua_State* L) {
+int HttpApp::luaRouteMethod(lua_State* L) {
+    const int n = luaRouteMethodWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int HttpApp::luaUseWorker(lua_State* L) {
     try {
         Target target = resolveTarget(L);
         luaL_checktype(L, 2, LUA_TFUNCTION);
@@ -2179,10 +2266,18 @@ int HttpApp::luaUse(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
 }
 
-int HttpApp::luaGroup(lua_State* L) {
+int HttpApp::luaUse(lua_State* L) {
+    const int n = luaUseWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int HttpApp::luaGroupWorker(lua_State* L) {
     try {
         Target target = resolveTarget(L);
         const std::string prefix = LuaHelpers::checkString(L, 2);
@@ -2202,10 +2297,18 @@ int HttpApp::luaGroup(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
 }
 
-int HttpApp::luaRouteName(lua_State* L) {
+int HttpApp::luaGroup(lua_State* L) {
+    const int n = luaGroupWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int HttpApp::luaRouteNameWorker(lua_State* L) {
     try {
         auto* route = checkRoute(L);
         const std::string name = LuaHelpers::checkString(L, 2);
@@ -2215,10 +2318,18 @@ int HttpApp::luaRouteName(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
 }
 
-int HttpApp::luaRouteWhere(lua_State* L) {
+int HttpApp::luaRouteName(lua_State* L) {
+    const int n = luaRouteNameWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
+}
+
+VARN_NOINLINE int HttpApp::luaRouteWhereWorker(lua_State* L) {
     try {
         auto* route = checkRoute(L);
         const std::string param = LuaHelpers::checkString(L, 2);
@@ -2240,7 +2351,15 @@ int HttpApp::luaRouteWhere(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
+}
+
+int HttpApp::luaRouteWhere(lua_State* L) {
+    const int n = luaRouteWhereWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int HttpApp::luaOnError(lua_State* L) {
@@ -2267,7 +2386,7 @@ int HttpApp::luaOnNotFound(lua_State* L) {
     return 1;
 }
 
-int HttpApp::luaUrl(lua_State* L) {
+VARN_NOINLINE int HttpApp::luaUrlWorker(lua_State* L) {
     try {
         auto* app = checkApp(L);
         const std::string name = LuaHelpers::checkString(L, 2);
@@ -2296,7 +2415,15 @@ int HttpApp::luaUrl(lua_State* L) {
     } catch (const std::exception& ex) {
         lua_pushstring(L, ex.what());
     }
-    return lua_error(L);
+    return -1;
+}
+
+int HttpApp::luaUrl(lua_State* L) {
+    const int n = luaUrlWorker(L);
+    if (n < 0) {
+        return lua_error(L);
+    }
+    return n;
 }
 
 int HttpApp::luaPlugin(lua_State* L) {

@@ -103,75 +103,68 @@ int SocketModule::luaUdpSocketGc(lua_State* L) {
     return 0;
 }
 
+// validation errors raise via luaL_error at the very top of each entry, before any c++ object exists.
+// the actual work runs only on the validated path and never raises a lua error after a c++ object is
+// alive on the stack. on msvc this avoids the /gs canary check that fires when lua_error longjmps
+// across c++ destructors.
+
 int SocketModule::luaTcpConnect(lua_State* L) {
     const char* host = luaL_checkstring(L, 1);
     const lua_Integer portArg = luaL_checkinteger(L, 2);
-
-    try {
-        if (portArg < 1 || portArg > 65535) {
-            throw std::runtime_error("[SocketModule] Port must be between 1 and 65535.");
-        }
-        const int port = static_cast<int>(portArg);
-
-        auto& rt = luaRuntime(L);
-        std::string hostStr = host;
-        auto promise = std::make_shared<Promise>(rt);
-
-        rt.taskPool().post([promise, hostStr, port] {
-            try {
-                auto conn = SocketTransport::connectBlocking(hostStr, port);
-                promise->resolveCustom([conn](lua_State* lua) { pushTcpSocket(lua, conn); });
-            } catch (const std::exception& ex) {
-                promise->reject(ex.what());
-            } catch (...) {
-                promise->reject("[SocketModule] The operation failed with a non-standard error.");
-            }
-        });
-
-        Promise::push(L, promise);
-        return 1;
-    } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
+    if (portArg < 1 || portArg > 65535) {
+        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
-    return lua_error(L);
+    const int port = static_cast<int>(portArg);
+
+    auto& rt = luaRuntime(L);
+    std::string hostStr = host;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, hostStr, port] {
+        try {
+            auto conn = SocketTransport::connectBlocking(hostStr, port);
+            promise->resolveCustom([conn](lua_State* lua) { pushTcpSocket(lua, conn); });
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        } catch (...) {
+            promise->reject("[SocketModule] The operation failed with a non-standard error.");
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
 }
 
 int SocketModule::luaTcpListen(lua_State* L) {
     const char* host = luaL_checkstring(L, 1);
     const lua_Integer portArg = luaL_checkinteger(L, 2);
     const lua_Integer backlogArg = luaL_optinteger(L, 3, 64);
-
-    try {
-        if (portArg < 1 || portArg > 65535) {
-            throw std::runtime_error("[SocketModule] Port must be between 1 and 65535.");
-        }
-        if (backlogArg < 1 || backlogArg > 4096) {
-            throw std::runtime_error("[SocketModule] Backlog must be between 1 and 4096.");
-        }
-        const int port = static_cast<int>(portArg);
-        const int backlog = static_cast<int>(backlogArg);
-
-        auto& rt = luaRuntime(L);
-        std::string hostStr = host;
-        auto promise = std::make_shared<Promise>(rt);
-
-        rt.taskPool().post([promise, hostStr, port, backlog] {
-            try {
-                auto listener = SocketTransport::listenBlocking(hostStr, port, backlog);
-                promise->resolveCustom([listener](lua_State* lua) { pushTcpListener(lua, listener); });
-            } catch (const std::exception& ex) {
-                promise->reject(ex.what());
-            } catch (...) {
-                promise->reject("[SocketModule] The operation failed with a non-standard error.");
-            }
-        });
-
-        Promise::push(L, promise);
-        return 1;
-    } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
+    if (portArg < 1 || portArg > 65535) {
+        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
-    return lua_error(L);
+    if (backlogArg < 1 || backlogArg > 4096) {
+        return luaL_error(L, "[SocketModule] Backlog must be between 1 and 4096.");
+    }
+    const int port = static_cast<int>(portArg);
+    const int backlog = static_cast<int>(backlogArg);
+
+    auto& rt = luaRuntime(L);
+    std::string hostStr = host;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, hostStr, port, backlog] {
+        try {
+            auto listener = SocketTransport::listenBlocking(hostStr, port, backlog);
+            promise->resolveCustom([listener](lua_State* lua) { pushTcpListener(lua, listener); });
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        } catch (...) {
+            promise->reject("[SocketModule] The operation failed with a non-standard error.");
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
 }
 
 int SocketModule::luaTcpSocketSend(lua_State* L) {
@@ -191,7 +184,6 @@ int SocketModule::luaTcpSocketSend(lua_State* L) {
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape: that would terminate the process.
             promise->reject("[SocketModule] The operation failed with a non-standard error.");
         }
     });
@@ -203,32 +195,26 @@ int SocketModule::luaTcpSocketSend(lua_State* L) {
 int SocketModule::luaTcpSocketReceive(lua_State* L) {
     auto* holder = checkTcpSocket(L, 1);
     const int maxBytes = static_cast<int>(luaL_optinteger(L, 2, 65536));
-
-    try {
-        if (maxBytes <= 0) {
-            throw std::runtime_error("[SocketModule] The maximum number of bytes to receive must be positive.");
-        }
-
-        auto& rt = luaRuntime(L);
-        auto conn = *holder;
-        auto promise = std::make_shared<Promise>(rt);
-
-        rt.taskPool().post([promise, conn, maxBytes] {
-            try {
-                promise->resolve(conn->receiveBlocking(maxBytes));
-            } catch (const std::exception& ex) {
-                promise->reject(ex.what());
-            } catch (...) {
-                promise->reject("[SocketModule] The operation failed with a non-standard error.");
-            }
-        });
-
-        Promise::push(L, promise);
-        return 1;
-    } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
+    if (maxBytes <= 0) {
+        return luaL_error(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
     }
-    return lua_error(L);
+
+    auto& rt = luaRuntime(L);
+    auto conn = *holder;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, conn, maxBytes] {
+        try {
+            promise->resolve(conn->receiveBlocking(maxBytes));
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        } catch (...) {
+            promise->reject("[SocketModule] The operation failed with a non-standard error.");
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
 }
 
 int SocketModule::luaTcpSocketClose(lua_State* L) {
@@ -244,7 +230,6 @@ int SocketModule::luaTcpSocketClose(lua_State* L) {
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape: that would terminate the process.
             promise->reject("[SocketModule] The operation failed with a non-standard error.");
         }
     });
@@ -270,7 +255,6 @@ int SocketModule::luaTcpListenerAccept(lua_State* L) {
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape: that would terminate the process.
             promise->reject("[SocketModule] The operation failed with a non-standard error.");
         }
     });
@@ -292,7 +276,6 @@ int SocketModule::luaTcpListenerClose(lua_State* L) {
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape: that would terminate the process.
             promise->reject("[SocketModule] The operation failed with a non-standard error.");
         }
     });
@@ -304,112 +287,94 @@ int SocketModule::luaTcpListenerClose(lua_State* L) {
 int SocketModule::luaUdpBind(lua_State* L) {
     const char* host = luaL_checkstring(L, 1);
     const lua_Integer portArg = luaL_checkinteger(L, 2);
-
-    try {
-        if (portArg < 1 || portArg > 65535) {
-            throw std::runtime_error("[SocketModule] Port must be between 1 and 65535.");
-        }
-        const int port = static_cast<int>(portArg);
-
-        auto& rt = luaRuntime(L);
-        std::string hostStr = host;
-        auto promise = std::make_shared<Promise>(rt);
-
-        rt.taskPool().post([promise, hostStr, port] {
-            try {
-                auto socket = SocketTransport::bindUdpBlocking(hostStr, port);
-                promise->resolveCustom([socket](lua_State* lua) { pushUdpSocket(lua, socket); });
-            } catch (const std::exception& ex) {
-                promise->reject(ex.what());
-            } catch (...) {
-                promise->reject("[SocketModule] The operation failed with a non-standard error.");
-            }
-        });
-
-        Promise::push(L, promise);
-        return 1;
-    } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
+    if (portArg < 1 || portArg > 65535) {
+        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
-    return lua_error(L);
+    const int port = static_cast<int>(portArg);
+
+    auto& rt = luaRuntime(L);
+    std::string hostStr = host;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, hostStr, port] {
+        try {
+            auto socket = SocketTransport::bindUdpBlocking(hostStr, port);
+            promise->resolveCustom([socket](lua_State* lua) { pushUdpSocket(lua, socket); });
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        } catch (...) {
+            promise->reject("[SocketModule] The operation failed with a non-standard error.");
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
 }
 
 int SocketModule::luaUdpSocketSendTo(lua_State* L) {
     auto* holder = checkUdpSocket(L, 1);
     const char* host = luaL_checkstring(L, 2);
     const lua_Integer portArg = luaL_checkinteger(L, 3);
+    if (portArg < 1 || portArg > 65535) {
+        return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
+    }
+    const int port = static_cast<int>(portArg);
     size_t len = 0;
     const char* data = luaL_checklstring(L, 4, &len);
+    std::string payload(data, len);
 
-    try {
-        if (portArg < 1 || portArg > 65535) {
-            throw std::runtime_error("[SocketModule] Port must be between 1 and 65535.");
+    auto& rt = luaRuntime(L);
+    auto socket = *holder;
+    std::string hostStr = host;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, socket, hostStr, port, payload = std::move(payload)] {
+        try {
+            socket->sendToBlocking(hostStr, port, payload);
+            promise->resolve("ok");
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        } catch (...) {
+            promise->reject("[SocketModule] The operation failed with a non-standard error.");
         }
-        const int port = static_cast<int>(portArg);
-        std::string payload(data, len);
+    });
 
-        auto& rt = luaRuntime(L);
-        auto socket = *holder;
-        std::string hostStr = host;
-        auto promise = std::make_shared<Promise>(rt);
-
-        rt.taskPool().post([promise, socket, hostStr, port, payload = std::move(payload)] {
-            try {
-                socket->sendToBlocking(hostStr, port, payload);
-                promise->resolve("ok");
-            } catch (const std::exception& ex) {
-                promise->reject(ex.what());
-            } catch (...) {
-                promise->reject("[SocketModule] The operation failed with a non-standard error.");
-            }
-        });
-
-        Promise::push(L, promise);
-        return 1;
-    } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
-    }
-    return lua_error(L);
+    Promise::push(L, promise);
+    return 1;
 }
 
 int SocketModule::luaUdpSocketRecvFrom(lua_State* L) {
     auto* holder = checkUdpSocket(L, 1);
     const int maxBytes = static_cast<int>(luaL_optinteger(L, 2, 65536));
-
-    try {
-        if (maxBytes <= 0) {
-            throw std::runtime_error("[SocketModule] The maximum number of bytes to receive must be positive.");
-        }
-
-        auto& rt = luaRuntime(L);
-        auto socket = *holder;
-        auto promise = std::make_shared<Promise>(rt);
-
-        rt.taskPool().post([promise, socket, maxBytes] {
-            try {
-                auto datagram = socket->receiveFromBlocking(maxBytes);
-                promise->resolveCustom([datagram](lua_State* lua) {
-                    lua_createtable(lua, 0, 3);
-                    lua_pushlstring(lua, datagram.data.data(), datagram.data.size());
-                    lua_setfield(lua, -2, "data");
-                    lua_pushlstring(lua, datagram.host.data(), datagram.host.size());
-                    lua_setfield(lua, -2, "host");
-                    lua_pushinteger(lua, datagram.port);
-                    lua_setfield(lua, -2, "port");
-                });
-            } catch (const std::exception& ex) {
-                promise->reject(ex.what());
-            } catch (...) {
-                promise->reject("[SocketModule] The operation failed with a non-standard error.");
-            }
-        });
-
-        Promise::push(L, promise);
-        return 1;
-    } catch (const std::exception& ex) {
-        lua_pushstring(L, ex.what());
+    if (maxBytes <= 0) {
+        return luaL_error(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
     }
-    return lua_error(L);
+
+    auto& rt = luaRuntime(L);
+    auto socket = *holder;
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, socket, maxBytes] {
+        try {
+            auto datagram = socket->receiveFromBlocking(maxBytes);
+            promise->resolveCustom([datagram](lua_State* lua) {
+                lua_createtable(lua, 0, 3);
+                lua_pushlstring(lua, datagram.data.data(), datagram.data.size());
+                lua_setfield(lua, -2, "data");
+                lua_pushlstring(lua, datagram.host.data(), datagram.host.size());
+                lua_setfield(lua, -2, "host");
+                lua_pushinteger(lua, datagram.port);
+                lua_setfield(lua, -2, "port");
+            });
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        } catch (...) {
+            promise->reject("[SocketModule] The operation failed with a non-standard error.");
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
 }
 
 int SocketModule::luaUdpSocketClose(lua_State* L) {
@@ -425,7 +390,6 @@ int SocketModule::luaUdpSocketClose(lua_State* L) {
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape: that would terminate the process.
             promise->reject("[SocketModule] The operation failed with a non-standard error.");
         }
     });
