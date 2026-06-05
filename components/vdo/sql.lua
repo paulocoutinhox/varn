@@ -86,7 +86,7 @@ end
 function sql.valueFor(parsed, params, index)
     local key = parsed.order[index]
     if params == nil then
-        error("[VdoSql] missing parameters for placeholder " .. tostring(key))
+        error("[VdoSql] Missing parameters for placeholder " .. tostring(key) .. ".")
     end
     return params[key]
 end

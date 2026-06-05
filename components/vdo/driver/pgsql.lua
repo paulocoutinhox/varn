@@ -94,7 +94,7 @@ local function toParamText(value)
         return value
     end
 
-    error("[VdoPgsql] cannot bind value of type " .. kind)
+    error("[VdoPgsql] Cannot bind value of type " .. kind .. ".")
 end
 
 local function decodeCell(oid, text)
@@ -171,7 +171,7 @@ function Statement:execute(params)
     local result = checkResult(
         self.conn,
         lib.PQexecPrepared(self.conn, self.name, count, values, nil, nil, 0),
-        "execute"
+        "Execute"
     )
 
     local wrapped = wrapResult(result)
@@ -254,7 +254,7 @@ function Connection:prepare(statement)
     self.counter = self.counter + 1
     local name = "vdo_" .. self.counter
 
-    local prepared = checkResult(self.handle, lib.PQprepare(self.handle, name, text, #parsed.order, nil), "prepare")
+    local prepared = checkResult(self.handle, lib.PQprepare(self.handle, name, text, #parsed.order, nil), "Prepare")
     lib.PQclear(prepared)
 
     return setmetatable({ conn = self.handle, name = name, parsed = parsed, cursor = 0 }, Statement)
@@ -266,13 +266,13 @@ function Connection:query(statement, params)
         return stmt:execute(params)
     end
 
-    local result = checkResult(self.handle, lib.PQexec(self.handle, statement), "query")
+    local result = checkResult(self.handle, lib.PQexec(self.handle, statement), "Query")
     local wrapped = wrapResult(result)
     return setmetatable(wrapped, Statement)
 end
 
 function Connection:exec(statement)
-    local result = checkResult(self.handle, lib.PQexec(self.handle, statement), "exec")
+    local result = checkResult(self.handle, lib.PQexec(self.handle, statement), "Exec")
 
     local affected = tonumber(ffi.string(lib.PQcmdTuples(result))) or 0
     lib.PQclear(result)
@@ -284,7 +284,7 @@ function Connection:lastInsertId(sequence)
     -- identifier (letters, digits, underscore, dot) before handing it to the server.
     if sequence ~= nil then
         if type(sequence) ~= "string" or not sequence:match("^[%w_.]+$") then
-            error("[VdoPgsql] lastInsertId sequence must be a plain identifier")
+            error("[VdoPgsql] The lastInsertId sequence must be a plain identifier.")
         end
     end
     local statement = sequence and ("SELECT currval('" .. sequence .. "')") or "SELECT lastval()"
@@ -360,13 +360,13 @@ function driver.connect(params, username, password)
 
     local handle = lib.PQconnectdb(buildConnInfo(params, username, password))
     if isNull(handle) then
-        error("[VdoPgsql] connection allocation failed")
+        error("[VdoPgsql] Connection allocation failed.")
     end
 
     if lib.PQstatus(handle) ~= CONNECTION_OK then
         local message = ffi.string(lib.PQerrorMessage(handle))
         lib.PQfinish(handle)
-        error("[VdoPgsql] connect: " .. message)
+        error("[VdoPgsql] Connect: " .. message)
     end
 
     return setmetatable({ handle = handle, counter = 0 }, Connection)

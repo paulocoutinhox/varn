@@ -5,6 +5,11 @@
 
 namespace varn::runtime {
 
+// tracks in-flight async work so a runtime can decide when it is safe to shut down. enter and
+// leave are called from arbitrary threads (worker pool, event loop, jni callbacks, fetch resumes),
+// so the notify callback runs on whichever thread last touched the ledger. the callback MUST NOT
+// take EventLoop::mutex_ or any other lock that enter/leave callers might already hold, since
+// that would invert the lock order and could deadlock.
 class WorkLedger {
 public:
     void setNotify(std::function<void()> fn) { notify_ = std::move(fn); }

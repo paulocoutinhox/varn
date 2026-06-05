@@ -22,7 +22,7 @@ function vdo.connect(source, username, password, options)
 
     local loader = loaders[params.driver]
     if not loader then
-        error("[Vdo] no driver registered for: " .. tostring(params.driver))
+        error("[Vdo] No driver registered for: " .. tostring(params.driver))
     end
 
     return loader().connect(params, username, password, options or {})

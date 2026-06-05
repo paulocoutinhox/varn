@@ -6,7 +6,7 @@ local function parseKeyValues(body)
     for pair in body:gmatch("[^;]+") do
         local key, value = pair:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
         if not key then
-            error("[VdoDsn] malformed DSN segment: " .. pair)
+            error("[VdoDsn] Malformed DSN segment: " .. pair)
         end
         params[key] = value
     end
@@ -15,12 +15,12 @@ end
 
 function dsn.parse(source)
     if type(source) ~= "string" then
-        error("[VdoDsn] DSN must be a string")
+        error("[VdoDsn] DSN must be a string.")
     end
 
     local scheme, body = source:match("^(%a[%w]*):(.*)$")
     if not scheme then
-        error("[VdoDsn] missing scheme in DSN: " .. source)
+        error("[VdoDsn] Missing scheme in DSN: " .. source)
     end
     scheme = scheme:lower()
 
@@ -41,7 +41,7 @@ function dsn.parse(source)
         return params
     end
 
-    error("[VdoDsn] unsupported driver scheme: " .. scheme)
+    error("[VdoDsn] Unsupported driver scheme: " .. scheme)
 end
 
 return dsn

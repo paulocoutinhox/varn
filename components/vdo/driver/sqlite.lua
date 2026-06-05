@@ -93,10 +93,10 @@ local function bindValue(stmt, db, position, value)
         lib.sqlite3_bind_int64(stmt, position, value and 1 or 0)
     elseif kind == "string" then
         if lib.sqlite3_bind_text(stmt, position, value, #value, SQLITE_TRANSIENT) ~= SQLITE_OK then
-            fail(db, "bind text")
+            fail(db, "Bind text")
         end
     else
-        error("[VdoSqlite] cannot bind value of type " .. kind)
+        error("[VdoSqlite] Cannot bind value of type " .. kind .. ".")
     end
 end
 
@@ -140,7 +140,7 @@ function Statement:step()
         return nil
     end
     if rc ~= SQLITE_ROW then
-        fail(self.db, "step")
+        fail(self.db, "Step")
     end
     return buildRow(self.handle)
 end
@@ -213,7 +213,7 @@ local function prepareStatement(self, statement)
 
     local out = ffi.new("sqlite3_stmt *[1]")
     if lib.sqlite3_prepare_v2(self.handle, text, #text, out, nil) ~= SQLITE_OK then
-        fail(self.handle, "prepare")
+        fail(self.handle, "Prepare")
     end
 
     return setmetatable({ db = self.handle, handle = out[0], parsed = parsed, done = false }, Statement)
@@ -237,7 +237,7 @@ function Connection:exec(statement)
         if not isNull(errmsg[0]) then
             lib.sqlite3_free(errmsg[0])
         end
-        error("[VdoSqlite] exec: " .. message)
+        error("[VdoSqlite] Exec: " .. message)
     end
 
     return lib.sqlite3_changes(self.handle)
@@ -306,7 +306,7 @@ function driver.connect(params)
 
     local path = params.path
     if path == nil or path == "" then
-        error("[VdoSqlite] DSN must provide a database path or :memory:")
+        error("[VdoSqlite] DSN must provide a database path or :memory:.")
     end
 
     local out = ffi.new("sqlite3 *[1]")
@@ -317,7 +317,7 @@ function driver.connect(params)
         if not isNull(db) then
             lib.sqlite3_close_v2(db)
         end
-        error("[VdoSqlite] open: " .. message)
+        error("[VdoSqlite] Open: " .. message)
     end
 
     return setmetatable({ handle = out[0] }, Connection)

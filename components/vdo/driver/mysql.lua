@@ -104,7 +104,7 @@ local function literal(handle, value)
             return tostring(value)
         end
         if value ~= value or value == math.huge or value == -math.huge then
-            error("[VdoMysql] cannot bind a non-finite number")
+            error("[VdoMysql] Cannot bind a non-finite number.")
         end
         return string.format("%.17g", value)
     end
@@ -114,7 +114,7 @@ local function literal(handle, value)
         return "'" .. ffi.string(buffer, asNumber(written)) .. "'"
     end
 
-    error("[VdoMysql] cannot bind value of type " .. kind)
+    error("[VdoMysql] Cannot bind value of type " .. kind .. ".")
 end
 
 local function decodeCell(fieldType, text)
@@ -136,7 +136,7 @@ end
 
 local function runQuery(handle, text)
     if lib.mysql_real_query(handle, text, #text) ~= 0 then
-        fail(handle, "query")
+        fail(handle, "Query")
     end
 end
 
@@ -146,7 +146,7 @@ local function captureResult(handle)
     local result = lib.mysql_store_result(handle)
     if isNull(result) then
         if lib.mysql_field_count(handle) ~= 0 then
-            fail(handle, "store result")
+            fail(handle, "Store result")
         end
         return nil
     end
@@ -329,7 +329,7 @@ local function loadLibrary()
             return loaded
         end
     end
-    error("[VdoMysql] could not load a client library (tried mysqlclient, mariadb)")
+    error("[VdoMysql] Could not load a client library (tried mysqlclient, mariadb).")
 end
 
 local driver = {}
@@ -339,7 +339,7 @@ function driver.connect(params, username, password)
 
     local handle = lib.mysql_init(nil)
     if isNull(handle) then
-        error("[VdoMysql] client initialization failed")
+        error("[VdoMysql] Client initialization failed.")
     end
 
     local port = tonumber(params.port) or 3306
@@ -356,7 +356,7 @@ function driver.connect(params, username, password)
     if isNull(connected) then
         local message = ffi.string(lib.mysql_error(handle))
         lib.mysql_close(handle)
-        error("[VdoMysql] connect: " .. message)
+        error("[VdoMysql] Connect: " .. message)
     end
 
     -- a known charset keeps escaping correct and text decoding predictable. a silent fallback to
@@ -366,7 +366,7 @@ function driver.connect(params, username, password)
     if lib.mysql_set_character_set(handle, charset) ~= 0 then
         local message = ffi.string(lib.mysql_error(handle))
         lib.mysql_close(handle)
-        error("[VdoMysql] set character set " .. charset .. ": " .. message)
+        error("[VdoMysql] Set character set " .. charset .. ": " .. message)
     end
 
     return setmetatable({ handle = handle }, Connection)

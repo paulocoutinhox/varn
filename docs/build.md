@@ -43,7 +43,7 @@ The `DUMMY` backend keeps the module loadable but makes its calls return a clear
 | `VARN_LOG_DRIVER` | `SPDLOG`, `STDOUT`, `DUMMY` | log backend |
 | `VARN_FS_DRIVER` | `STD`, `DUMMY` | filesystem storage |
 | `VARN_FFI_DRIVER` | `LIBFFI`, `DUMMY` | native function calls |
-| `VARN_ENABLE_TLS` | `ON`, `OFF` | TLS for http and sockets (needs `VARN_CRYPTO_DRIVER=OPENSSL`) |
+| `VARN_ENABLE_TLS` | `ON`, `OFF` | TLS for http and sockets (pulls in OpenSSL on its own, independent of `VARN_CRYPTO_DRIVER`) |
 
 ## 🌍 Browser demo
 

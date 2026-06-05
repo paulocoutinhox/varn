@@ -26,6 +26,11 @@ public:
     WasmHost() = delete;
 
     static RunResult runChunk(const std::string& source);
+    // drops the cached runtime so the next runChunk starts from a fresh lua_State. without this,
+    // globals, registered listeners, and any pending coroutines from earlier chunks survive across
+    // calls, which is the intended REPL behavior but offers no recovery if a chunk leaves the
+    // runtime in a bad state.
+    static void resetRuntime();
 
 private:
     struct PrintSinkScope {
@@ -121,6 +126,14 @@ std::unique_ptr<varn::runtime::Runtime>& WasmHost::runtime() {
     return instance;
 }
 
+void WasmHost::resetRuntime() {
+    auto& rtPtr = runtime();
+    if (rtPtr) {
+        rtPtr->stop();
+        rtPtr.reset();
+    }
+}
+
 RunResult WasmHost::runChunk(const std::string& source) {
     RunResult result;
 
@@ -169,5 +182,6 @@ EMSCRIPTEN_BINDINGS(varn_wasm) {
         .field("error", &varn::wasm::RunResult::error);
 
     emscripten::function("varnRunChunk", &varn::wasm::WasmHost::runChunk);
+    emscripten::function("varnResetRuntime", &varn::wasm::WasmHost::resetRuntime);
 }
 #endif

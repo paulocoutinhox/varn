@@ -30,10 +30,10 @@ end
 function Reader:pull()
     local chunk, err = self.sock:receive(READ_CHUNK):await()
     if err then
-        error("[Redis] receive failed: " .. tostring(err))
+        error("[Redis] Receive failed: " .. tostring(err))
     end
     if chunk == "" then
-        error("[Redis] connection closed by server")
+        error("[Redis] Connection closed by server.")
     end
 
     -- drop the already-consumed prefix before appending so the buffer stays bounded.
@@ -103,7 +103,7 @@ function Reader:reply()
         return items
     end
 
-    error("[Redis] unexpected reply type: " .. tostring(line))
+    error("[Redis] Unexpected reply type: " .. tostring(line))
 end
 
 -- real methods live in a separate table so __index can fall through to dynamic command dispatch.
@@ -130,14 +130,14 @@ local function encodeArgument(value)
     if kind == "number" then
         return tostring(value)
     end
-    error("[Redis] command arguments must be string or number, got " .. kind)
+    error("[Redis] Command arguments must be string or number, got " .. kind .. ".")
 end
 
 -- encodes one command as a RESP array of bulk strings.
 local function encodeCommand(...)
     local args = table.pack(...)
     if args.n == 0 then
-        error("[Redis] command requires at least the command name")
+        error("[Redis] Command requires at least the command name.")
     end
 
     local parts = { "*" .. args.n .. "\r\n" }
@@ -150,14 +150,14 @@ end
 
 function methods:command(...)
     if self.dead then
-        error("[Redis] connection is poisoned after an earlier I/O failure and cannot be reused")
+        error("[Redis] Connection is poisoned after an earlier I/O failure and cannot be reused.")
     end
 
     local _, err = self.sock:send(encodeCommand(...)):await()
     if err then
         -- a send failure can leave a partial frame on the wire, so the connection is unsafe to reuse.
         self.dead = true
-        error("[Redis] send failed: " .. tostring(err))
+        error("[Redis] Send failed: " .. tostring(err))
     end
 
     -- any throw from the parser means the byte stream is unsynchronized, so mark the connection dead
@@ -197,7 +197,7 @@ end
 
 function methods:pipeline(builder)
     if self.dead then
-        error("[Redis] connection is poisoned after an earlier I/O failure and cannot be reused")
+        error("[Redis] Connection is poisoned after an earlier I/O failure and cannot be reused.")
     end
 
     local batch = setmetatable({ frames = {}, count = 0 }, Pipeline)
@@ -210,7 +210,7 @@ function methods:pipeline(builder)
     local _, err = self.sock:send(table.concat(batch.frames)):await()
     if err then
         self.dead = true
-        error("[Redis] pipeline send failed: " .. tostring(err))
+        error("[Redis] Pipeline send failed: " .. tostring(err))
     end
 
     -- read every reply before raising so a single server error cannot desync the stream. a parser
@@ -252,7 +252,7 @@ local redis = {}
 local function dial(options, host, port)
     local sock, err = socket.tcp.connect(host, port):await()
     if err then
-        error("[Redis] connect to " .. host .. ":" .. port .. " failed: " .. tostring(err), 0)
+        error("[Redis] Connect to " .. host .. ":" .. port .. " failed: " .. tostring(err), 0)
     end
 
     local client = setmetatable({ sock = sock, reader = Reader.new(sock) }, Client)
@@ -297,7 +297,7 @@ function redis.connect(options)
         failures[#failures + 1] = tostring(result)
     end
 
-    error("[Redis] could not connect to any endpoint: " .. table.concat(failures, "; "))
+    error("[Redis] Could not connect to any endpoint: " .. table.concat(failures, "; "))
 end
 
 return redis
