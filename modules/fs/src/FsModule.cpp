@@ -64,6 +64,46 @@ int FsModule::luaExists(lua_State* L) {
     return 1;
 }
 
+int FsModule::luaMkdir(lua_State* L) {
+    auto& rt = luaRuntime(L);
+    std::string path = varn::lua::LuaHelpers::checkString(L, 1);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, path = std::move(path)] {
+        try {
+            FsStorage::mkdir(path);
+            promise->resolve("ok");
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        } catch (...) {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int FsModule::luaRemoveRecursive(lua_State* L) {
+    auto& rt = luaRuntime(L);
+    std::string path = varn::lua::LuaHelpers::checkString(L, 1);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.taskPool().post([promise, path = std::move(path)] {
+        try {
+            FsStorage::removeRecursive(path);
+            promise->resolve("ok");
+        } catch (const std::exception& ex) {
+            promise->reject(ex.what());
+        } catch (...) {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        }
+    });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
 int FsModule::luaOpen(lua_State* L) {
     lua_newtable(L);
 
@@ -75,6 +115,12 @@ int FsModule::luaOpen(lua_State* L) {
 
     lua_pushcfunction(L, &FsModule::luaExists);
     lua_setfield(L, -2, "exists");
+
+    lua_pushcfunction(L, &FsModule::luaMkdir);
+    lua_setfield(L, -2, "mkdir");
+
+    lua_pushcfunction(L, &FsModule::luaRemoveRecursive);
+    lua_setfield(L, -2, "removeRecursive");
 
     return 1;
 }

@@ -5,7 +5,6 @@ local fs = require("fs")
 local crypto = require("crypto")
 
 local dataDir = "build/_integration_tmp"
-os.execute("mkdir -p '" .. dataDir .. "'")
 
 local function route(req, res)
     if req.path == "/write" then

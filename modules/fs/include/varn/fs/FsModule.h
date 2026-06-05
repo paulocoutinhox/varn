@@ -20,6 +20,8 @@ private:
     static int luaReadFile(struct lua_State* L);
     static int luaWriteFile(struct lua_State* L);
     static int luaExists(struct lua_State* L);
+    static int luaMkdir(struct lua_State* L);
+    static int luaRemoveRecursive(struct lua_State* L);
     static int luaOpen(struct lua_State* L);
 };
 

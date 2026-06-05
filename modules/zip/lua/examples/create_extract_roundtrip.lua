@@ -1,5 +1,6 @@
 -- creates a small archive and unpacks it, verifying the entry round-trips.
 local async = require("async")
+local fs = require("fs")
 local zip = require("zip")
 
 async.run(function()
@@ -11,7 +12,8 @@ async.run(function()
     f:write("zip-roundtrip\n")
     f:close()
 
-    os.execute("rm -rf '" .. outDir .. "' && mkdir -p '" .. outDir .. "'")
+    fs.removeRecursive(outDir):await()
+    fs.mkdir(outDir):await()
 
     local _, createErr = zip.create(archive, { { file = src, entry = "inside/hello.txt" } }):await()
     assert(not createErr, createErr)
@@ -24,7 +26,7 @@ async.run(function()
     rf:close()
     assert(body == "zip-roundtrip\n", "content mismatch")
 
-    os.execute("rm -rf '" .. outDir .. "'")
+    fs.removeRecursive(outDir):await()
     os.remove(archive)
     os.remove(src)
 

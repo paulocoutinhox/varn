@@ -17,4 +17,12 @@ bool FsStorage::exists(const std::string& /*path*/) {
     return false;
 }
 
+void FsStorage::mkdir(const std::string& /*path*/) {
+    throw std::runtime_error("[FsStorage] The file system module is not available in this build.");
+}
+
+void FsStorage::removeRecursive(const std::string& /*path*/) {
+    throw std::runtime_error("[FsStorage] The file system module is not available in this build.");
+}
+
 } // namespace varn::fs

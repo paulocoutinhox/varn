@@ -11,6 +11,10 @@ public:
     static std::string readAll(const std::string& path);
     static void writeAll(const std::string& path, const std::string& content);
     static bool exists(const std::string& path);
+    // creates the directory and every missing parent; succeeds silently if the directory already exists.
+    static void mkdir(const std::string& path);
+    // removes the file or directory and everything inside it; succeeds silently if the path is absent.
+    static void removeRecursive(const std::string& path);
 };
 
 } // namespace varn::fs

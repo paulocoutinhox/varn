@@ -50,4 +50,20 @@ bool FsStorage::exists(const std::string& path) {
     return std::filesystem::exists(path);
 }
 
+void FsStorage::mkdir(const std::string& path) {
+    std::error_code ec;
+    std::filesystem::create_directories(path, ec);
+    if (ec) {
+        throw std::runtime_error("[FsStorage] " + ec.message() + ".");
+    }
+}
+
+void FsStorage::removeRecursive(const std::string& path) {
+    std::error_code ec;
+    std::filesystem::remove_all(path, ec);
+    if (ec) {
+        throw std::runtime_error("[FsStorage] " + ec.message() + ".");
+    }
+}
+
 } // namespace varn::fs
