@@ -1,5 +1,4 @@
--- log security: hostile message content is treated as data and never crashes the logger.
--- covered classes: CWE-117 log injection, CWE-150 terminal escape injection, CWE-134 format string, CWE-400 resource exhaustion, CWE-626 nul handling.
+-- log security confirming hostile message content is treated as data and never crashes the logger, covering CWE-117 log injection, CWE-150 terminal escape injection, CWE-134 format string, CWE-400 resource exhaustion, and CWE-626 nul handling.
 local log = require("log")
 
 -- LOG-001 / LOG-002 / LOG-003 / LOG-014: newline and carriage-return content is handled without crashing.

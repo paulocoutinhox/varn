@@ -26,10 +26,7 @@ public:
     WasmHost() = delete;
 
     static RunResult runChunk(const std::string& source);
-    // drops the cached runtime so the next runChunk starts from a fresh lua_State. without this,
-    // globals, registered listeners, and any pending coroutines from earlier chunks survive across
-    // calls, which is the intended REPL behavior but offers no recovery if a chunk leaves the
-    // runtime in a bad state.
+    // drops the cached runtime so the next runChunk starts from a fresh lua_State, since otherwise globals, registered listeners, and pending coroutines from earlier chunks survive across calls as intended REPL behavior that offers no recovery when a chunk leaves the runtime in a bad state.
     static void resetRuntime();
 
 private:
@@ -108,8 +105,7 @@ void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt) {
             }
         } while (progressed);
 
-        // a pending fetch resumes via a JS callback, and an undue timer matures on the next pump,
-        // so either condition means more work is expected even though no job ran this iteration.
+        // a pending fetch resumes via a JS callback, and an undue timer matures on the next pump, so either condition means more work is expected even though no job ran this iteration.
         const bool fetchPending = varn::wasm::WasmAsyncHost::fetchInflight().load(std::memory_order_acquire) > 0;
         const bool timerPending = rt.mainLoop().hasPendingTimers();
         if (fetchPending || timerPending) {

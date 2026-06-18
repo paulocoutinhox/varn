@@ -1,5 +1,4 @@
--- socket security: confirms out-of-range arguments are rejected and closed-socket operations fail cleanly without crashing.
--- covered classes: port out of range (CWE-20), backlog out of range (CWE-400), use-after-close (CWE-416), peer-close/EOF read (CWE-20), bounded large receive (CWE-789).
+-- socket security confirming out-of-range arguments are rejected and closed-socket operations fail cleanly without crashing, covering port out of range (CWE-20), backlog out of range (CWE-400), use-after-close (CWE-416), peer-close/EOF read (CWE-20), and bounded large receive (CWE-789).
 local async = require("async")
 local socket = require("socket")
 

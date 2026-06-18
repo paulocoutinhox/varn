@@ -34,8 +34,7 @@ std::string HttpMultipart::extractBoundary(const std::string& contentType) {
 std::string HttpMultipart::multipartAttribute(const std::string& headers, const std::string& key) {
     std::size_t pos = 0;
     while ((pos = headers.find(key, pos)) != std::string::npos) {
-        // the attribute is only accepted when it starts at a real boundary.
-        // this avoids matching inside another token such as filename= or a custom x-name=.
+        // the attribute is only accepted when it starts at a real boundary, which avoids matching inside another token such as filename= or a custom x-name=.
         const char previous = pos == 0 ? ' ' : headers[pos - 1];
         if (pos == 0 || previous == ' ' || previous == ';') {
             const std::size_t start = pos + key.size();

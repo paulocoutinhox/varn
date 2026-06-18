@@ -39,17 +39,17 @@ jobs:
         with:
           arch: x64
 
-      - name: Cache CPM packages
+      - name: Cache CPM dependencies
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.CPM_SOURCE_CACHE }}
             build/release/_deps
-          key: cpm-windows-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'modules/ffi/libffi/varn-vendor-libffi.cmake', 'modules/ffi/libffi/fficonfig.h.in') }}
-          restore-keys: cpm-windows-
+          key: cpm-windows-ninja-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'modules/ffi/libffi/varn-vendor-libffi.cmake', 'modules/ffi/libffi/fficonfig.h.in') }}
+          restore-keys: cpm-windows-ninja-
 
       - name: Configure
-        run: cmake -B build/release -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        run: cmake -B build/release -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
 
       - name: Build
         run: cmake --build build/release --config ${{ env.BUILD_TYPE }} --parallel

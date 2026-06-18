@@ -87,8 +87,7 @@ int CryptoModule::luaEquals(lua_State* L) {
     const char* a = luaL_checklstring(L, 1, &lenA);
     const char* b = luaL_checklstring(L, 2, &lenB);
 
-    // constant-time comparison so verifying a mac or token does not leak its bytes through timing.
-    // a length mismatch folds into the accumulator and reports unequal.
+    // constant-time comparison so verifying a mac or token does not leak its bytes through timing, with a length mismatch folded into the accumulator to report unequal.
     std::size_t diff = lenA ^ lenB;
     const std::size_t common = lenA < lenB ? lenA : lenB;
     for (std::size_t i = 0; i < common; ++i) {

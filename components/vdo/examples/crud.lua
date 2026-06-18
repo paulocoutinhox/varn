@@ -1,6 +1,4 @@
--- driver-agnostic crud walkthrough: the same code runs against any backend the dsn selects.
--- defaults to an in-memory sqlite database so it runs anywhere with no server.
--- set VDO_DSN (and optionally VDO_USER / VDO_PASS) to target mysql or postgres instead.
+-- driver-agnostic crud walkthrough where the same code runs against any backend the dsn selects, defaulting to an in-memory sqlite database so it runs anywhere with no server unless VDO_DSN (and optionally VDO_USER / VDO_PASS) targets mysql or postgres instead.
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

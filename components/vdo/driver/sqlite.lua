@@ -156,8 +156,7 @@ function Statement:execute(params)
     -- step once so the statement actually runs now, buffering the first row for fetch.
     self.pending = self:step()
 
-    -- sqlite only tracks rows changed by data modification, so this is the affected count for an
-    -- insert, update or delete. it is not a row total for a select, matching pdo's sqlite behaviour.
+    -- sqlite only tracks rows changed by data modification, so this is the affected count for an insert, update or delete rather than a row total for a select, matching pdo's sqlite behaviour.
     self.affected = lib.sqlite3_changes(self.db)
     return self
 end
@@ -201,8 +200,7 @@ function Statement:close()
     self.handle = nil
 end
 
--- a statement left unclosed (for example db:query(sql):fetchAll()) is finalized when collected, so a
--- forgotten cursor cannot keep holding a lock on its table.
+-- a statement left unclosed (for example db:query(sql):fetchAll()) is finalized when collected, so a forgotten cursor cannot keep holding a lock on its table.
 Statement.__gc = Statement.close
 
 local function prepareStatement(self, statement)
@@ -229,8 +227,7 @@ function Connection:query(statement, params)
 end
 
 function Connection:exec(statement)
-    -- sqlite3_exec runs every statement in the string, so a multi-statement script is not silently
-    -- truncated to its first command like a single prepared step would be.
+    -- sqlite3_exec runs every statement in the string, so a multi-statement script is not silently truncated to its first command like a single prepared step would be.
     local errmsg = ffi.new("char *[1]")
     if lib.sqlite3_exec(self.handle, statement, nil, nil, errmsg) ~= SQLITE_OK then
         local message = not isNull(errmsg[0]) and ffi.string(errmsg[0]) or ffi.string(lib.sqlite3_errmsg(self.handle))
@@ -266,8 +263,7 @@ function Connection:inTransaction()
     return self.inTx == true
 end
 
--- runs fn inside a transaction: commits on success, rolls back and re-raises on any error, so a partial
--- change can never be left behind. fn receives the connection and its return value is passed through.
+-- runs fn inside a transaction (committing on success, rolling back and re-raising on any error so a partial change can never be left behind), passing the connection to fn and returning its value.
 function Connection:transaction(fn)
     self:beginTransaction()
 
@@ -276,8 +272,7 @@ function Connection:transaction(fn)
         local rollbackOk, rollbackErr = pcall(function()
             self:rollBack()
         end)
-        -- the original error takes priority. a rollback failure is appended so the caller knows the
-        -- connection may still hold an open transaction on the server.
+        -- the original error takes priority, with a rollback failure appended so the caller knows the connection may still hold an open transaction on the server.
         self.inTx = false
         if not rollbackOk then
             error(tostring(result) .. " | rollback also failed: " .. tostring(rollbackErr), 0)

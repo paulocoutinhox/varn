@@ -1,6 +1,4 @@
--- ffi features: exercise cdef, calls, new, cast, copy, string, and the introspection surface.
--- this stays inside the always-present process namespace ffi.C with standard libc symbols.
--- it never loads an optional library so it is ci-safe on ubuntu-24.04.
+-- ffi features exercising cdef, calls, new, cast, copy, string, and the introspection surface, staying inside the always-present process namespace ffi.C with standard libc symbols and never loading an optional library so it is ci-safe on ubuntu-24.04.
 local ffi = require("ffi")
 
 ffi.cdef [[

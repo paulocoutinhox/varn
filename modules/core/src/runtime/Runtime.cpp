@@ -14,8 +14,7 @@ Runtime::Runtime(std::vector<std::string> args, std::size_t scriptArgIndex)
       mainLoop_(workLedger_),
       taskPool_(std::thread::hardware_concurrency(), workLedger_),
       lua_(std::make_unique<LuaEngine>(*this)) {
-    // scriptArgIndex marks the entry in args that becomes Lua's arg[0], with later entries arg[1..] and earlier arg[-1..].
-    // install the notify hook before the pool spins up any worker, so no worker can observe it unset.
+    // scriptArgIndex marks the entry in args that becomes Lua's arg[0] (later entries arg[1..], earlier arg[-1..]), and the notify hook is installed before any worker spins up so none can observe it unset.
     workLedger_->setNotify([this] { mainLoop_.wake(); });
     taskPool_.start();
 }
@@ -99,8 +98,7 @@ void Runtime::releaseBackgroundDriver() {
     mainLoop_.wake();
 }
 
-// main-thread only. servers_ is read without a lock because it is written exclusively from the same
-// thread that constructs and runs the runtime, before any worker is spawned.
+// main-thread only, so servers_ is read without a lock because it is written exclusively from the thread that constructs and runs the runtime before any worker is spawned.
 void Runtime::stop() {
     bool expected = false;
     if (!stopped_.compare_exchange_strong(expected, true)) {
@@ -115,9 +113,7 @@ void Runtime::stop() {
 
     taskPool_.stop();
     mainLoop_.stop();
-    // workers are joined and the loop is stopped. dropping any job still queued releases its captured
-    // state, such as AppState holding lua registry refs, while the lua_State is still alive rather than
-    // during member teardown after lua_close.
+    // with workers joined and the loop stopped, dropping any still-queued job releases its captured state such as AppState holding lua registry refs while the lua_State is still alive, rather than during member teardown after lua_close.
     mainLoop_.clearPendingJobs();
 }
 

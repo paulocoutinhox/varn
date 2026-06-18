@@ -35,8 +35,7 @@ void EventLoop::postDelayed(long long delayMs, Job job) {
 }
 
 void EventLoop::run() {
-    // set the flag under the lock so a worker that called stop() between finishAfterUserChunk's flag
-    // check and this point cannot be clobbered by an out-of-order store.
+    // set the flag under the lock so a worker that called stop() between finishAfterUserChunk's flag check and this point cannot be clobbered by an out-of-order store.
     {
         std::lock_guard<std::mutex> lock(mutex_);
         running_ = true;
@@ -48,8 +47,7 @@ void EventLoop::run() {
 
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            // a pending timer keeps the loop waiting until its deadline (handled by wait_until's timeout),
-            // not via the predicate, so the wait does not spin while a timer is still in the future.
+            // a pending timer keeps the loop waiting until its deadline (handled by wait_until's timeout), not via the predicate, so the wait does not spin while a timer is still in the future.
             const auto predicate = [&] {
                 if (!running_) {
                     return true;
@@ -109,8 +107,7 @@ void EventLoop::stop() {
 }
 
 void EventLoop::clearPendingJobs() {
-    // each queued job and timer entered the work ledger at post time. drop them without invoking,
-    // then release the matching ledger entries outside the lock so leave's notify path stays unlocked.
+    // each queued job and timer entered the work ledger at post time, so drop them without invoking and release the matching ledger entries outside the lock so leave's notify path stays unlocked.
     std::queue<Job> drainedJobs;
     std::multimap<std::chrono::steady_clock::time_point, Job> drainedTimers;
     {
@@ -141,8 +138,7 @@ bool EventLoop::hasPendingJobs() const {
     if (!jobs_.empty()) {
         return true;
     }
-    // a timer whose deadline has arrived is a job that is ready to run, so it counts as pending for
-    // any caller that only ever pumps via drainPostedJobs.
+    // a timer whose deadline has arrived is a job that is ready to run, so it counts as pending for any caller that only ever pumps via drainPostedJobs.
     return !timers_.empty() && timers_.begin()->first <= std::chrono::steady_clock::now();
 }
 
@@ -157,8 +153,7 @@ void EventLoop::drainPostedJobs() {
         Job job;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            // move any timer whose deadline has passed into the ready queue, so a wasm pump that
-            // never calls run() still gets postDelayed jobs to fire eventually.
+            // move any timer whose deadline has passed into the ready queue, so a wasm pump that never calls run() still gets postDelayed jobs to fire eventually.
             const auto now = std::chrono::steady_clock::now();
             while (!timers_.empty() && timers_.begin()->first <= now) {
                 jobs_.push(std::move(timers_.begin()->second));

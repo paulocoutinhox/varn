@@ -1,5 +1,4 @@
--- async features: exercise sleep, spawn, promise await and isDone, sequencing, ordering, and errors.
--- delays are kept to a few milliseconds and every coroutine is driven to completion so the run exits.
+-- async features exercising sleep, spawn, promise await and isDone, sequencing, ordering, and errors, with delays kept to a few milliseconds and every coroutine driven to completion so the run exits.
 local async = require("async")
 
 async.run(function()

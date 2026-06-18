@@ -40,7 +40,7 @@ jobs:
           version: 4.0.17
           actions-cache-folder: emsdk-cache
 
-      - name: Cache CPM packages
+      - name: Cache CPM dependencies
         uses: actions/cache@v4
         with:
           path: |

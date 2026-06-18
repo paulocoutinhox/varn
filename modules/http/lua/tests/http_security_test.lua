@@ -1,8 +1,4 @@
--- http security: Lua-reachable abuse cases from docs/security-tests, asserting safe outcomes and no crash.
--- covered classes: response header injection (CWE-113), oversized body (CWE-400), cookie value injection
--- (CWE-113), jwt forgery alg-none/expired/wrong-signature/tamper (CWE-347/345/613), csrf cross-submit
--- (CWE-352), timing-safe api key mismatch (CWE-208/287), rate limiting (CWE-770), static path traversal
--- (CWE-22), and method-not-allowed with an Allow header (RFC 9110).
+-- http security for Lua-reachable abuse cases from docs/security-tests asserting safe outcomes and no crash, covering response header injection (CWE-113), oversized body (CWE-400), cookie value injection (CWE-113), jwt forgery alg-none/expired/wrong-signature/tamper (CWE-347/345/613), csrf cross-submit (CWE-352), timing-safe api key mismatch (CWE-208/287), rate limiting (CWE-770), static path traversal (CWE-22), and method-not-allowed with an Allow header (RFC 9110).
 local async = require("async")
 local http = require("http")
 local crypto = require("crypto")

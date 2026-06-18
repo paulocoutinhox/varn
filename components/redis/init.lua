@@ -1,15 +1,9 @@
--- redis client built on top of the native socket module, speaking RESP2 over a single connection.
--- every operation that touches the socket (redis.connect, client:command, client:pipeline, client:close)
--- yields on the event loop, so the entire client lifecycle must run inside an async coroutine
--- (async.spawn/async.run). there is no __gc finalizer: a forgotten client leaks until the runtime exits
--- because :close() cannot be invoked from outside an async coroutine. always close in the same scope
--- that opened the client, ideally via pcall to cover the error path.
+-- redis client built on the native socket module speaking RESP2 over a single connection, where every socket operation (redis.connect, client:command, client:pipeline, client:close) yields on the event loop so the whole lifecycle must run inside an async coroutine (async.spawn/async.run), and with no __gc finalizer a forgotten client leaks until the runtime exits since :close() cannot run outside an async coroutine, so always close in the same scope that opened the client, ideally via pcall to cover the error path.
 local socket = require("socket")
 
 local READ_CHUNK = 4096
 
--- a server error reply is represented as a value instead of raised mid-parse, so an error nested in an
--- array does not desync the stream. command() raises only when the top-level reply is an error.
+-- a server error reply is represented as a value instead of raised mid-parse so an error nested in an array does not desync the stream, with command() raising only when the top-level reply is an error.
 local function makeServerError(message)
     return setmetatable({ message = message }, { __index = { isRedisError = true } })
 end
@@ -18,8 +12,7 @@ local function isServerError(value)
     return type(value) == "table" and getmetatable(value) ~= nil and value.isRedisError == true
 end
 
--- buffered reader over a socket: socket:receive returns up to n bytes, so RESP framing needs its own
--- buffer to serve exact byte counts and crlf-terminated lines.
+-- buffered reader over a socket: socket:receive returns up to n bytes, so RESP framing needs its own buffer to serve exact byte counts and crlf-terminated lines.
 local Reader = {}
 Reader.__index = Reader
 
@@ -160,8 +153,7 @@ function methods:command(...)
         error("[Redis] Send failed: " .. tostring(err))
     end
 
-    -- any throw from the parser means the byte stream is unsynchronized, so mark the connection dead
-    -- before re-raising. a clean server error reply leaves the stream synchronized and is not poisoning.
+    -- any throw from the parser means the byte stream is unsynchronized so the connection is marked dead before re-raising, whereas a clean server error reply leaves the stream synchronized and is not poisoning.
     local parseOk, reply = pcall(self.reader.reply, self.reader)
     if not parseOk then
         self.dead = true
@@ -174,8 +166,7 @@ function methods:command(...)
     return reply
 end
 
--- a pipeline records commands without sending, then flushes them in one write and reads every reply
--- in order. it uses the same dynamic dispatch, so p:set(...), p:get(...) queue their commands.
+-- a pipeline records commands without sending, then flushes them in one write and reads every reply in order via the same dynamic dispatch where p:set(...) and p:get(...) queue their commands.
 local pipelineMethods = {}
 
 local Pipeline = {}
@@ -213,8 +204,7 @@ function methods:pipeline(builder)
         error("[Redis] Pipeline send failed: " .. tostring(err))
     end
 
-    -- read every reply before raising so a single server error cannot desync the stream. a parser
-    -- throw, on the other hand, means the bytes after the failed reply are unrecoverable.
+    -- read every reply before raising so a single server error cannot desync the stream, whereas a parser throw means the bytes after the failed reply are unrecoverable.
     local replies = {}
     local firstError
     for i = 1, batch.count do
@@ -247,8 +237,7 @@ end
 
 local redis = {}
 
--- opens one endpoint and brings it fully online (auth and database select). a failure here closes the
--- socket and propagates, so the caller can move on to the next endpoint.
+-- opens one endpoint and brings it fully online (auth and database select), with any failure closing the socket and propagating so the caller can move on to the next endpoint.
 local function dial(options, host, port)
     local sock, err = socket.tcp.connect(host, port):await()
     if err then
@@ -278,8 +267,7 @@ local function dial(options, host, port)
     return client
 end
 
--- connects to the first reachable endpoint. pass a single host/port, or a list of { host, port }
--- tables in `hosts` for failover: each is tried in order until one connects and answers.
+-- connects to the first reachable endpoint, taking a single host/port or a list of { host, port } tables in `hosts` for failover where each is tried in order until one connects and answers.
 function redis.connect(options)
     options = options or {}
 

@@ -114,8 +114,7 @@ struct AppState {
     std::vector<int> requestHooks;
     std::vector<int> responseHooks;
     std::vector<WsRoute> wsRoutes;
-    // live websocket connections tracked on the loop thread. their registry refs are released here
-    // when shutdown cuts a session short before wsRelease runs.
+    // live websocket connections tracked on the loop thread so their registry refs are released here when shutdown cuts a session short before wsRelease runs.
     std::vector<std::shared_ptr<WsConnState>> liveWsConns;
     int configRef = LUA_NOREF;
 
@@ -908,9 +907,7 @@ int HttpApp::chainContinue(lua_State* L, int status, lua_KContext ctx) {
 
 // upvalues: 1 = chain table, 2 = context, 3 = entry count, 4 = current index.
 int HttpApp::chainNext(lua_State* L) {
-    // upvalue 5 is a one-slot flag table guarding against a middleware that calls next() more than once.
-    // a second call must not re-run the rest of the chain and double session writes, Set-Cookie headers
-    // and rate-limit increments.
+    // upvalue 5 is a one-slot flag table guarding against a middleware that calls next() more than once, since a second call must not re-run the rest of the chain and double session writes, Set-Cookie headers and rate-limit increments.
     lua_rawgeti(L, lua_upvalueindex(5), 1);
     const bool alreadyFired = lua_toboolean(L, -1) != 0;
     lua_pop(L, 1);
@@ -1886,8 +1883,7 @@ void HttpApp::wsFlush(Poco::Net::WebSocket& socket, const std::shared_ptr<WsConn
     }
 }
 
-// blocks until the posted task runs, but gives up once the server starts shutting down.
-// this keeps the transport thread from deadlocking against a main loop that is being joined.
+// blocks until the posted task runs but gives up once the server starts shutting down, keeping the transport thread from deadlocking against a main loop that is being joined.
 void HttpApp::waitForMainLoop(std::future<void>& ready, const std::shared_ptr<std::atomic<bool>>& stopping) {
     while (ready.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
         if (stopping && stopping->load(std::memory_order_acquire)) {
@@ -2044,8 +2040,7 @@ void HttpApp::runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTP
             continue;
         }
 
-        // assemble continuation frames until the final fragment, bounding the total size.
-        // check before appending so the buffer never overshoots the cap by a whole frame.
+        // assemble continuation frames until the final fragment, checking the size bound before appending so the buffer never overshoots the cap by a whole frame.
         if (fragment.size() + static_cast<std::size_t>(received) > kWsMaxMessageBytes) {
             break;
         }
@@ -2449,9 +2444,7 @@ int HttpApp::luaAppListen(lua_State* L) {
 
     auto handler = [state](const HttpRequest& request, std::shared_ptr<HttpResponse> response) {
         state->runtime->mainLoop().post([state, request, response]() {
-            // the dispatch runs on the loop thread, outside the transport's per-request try/catch, so a
-            // native exception escaping here would unwind out of the event loop and abort the whole
-            // process. contain it and answer 500, mirroring how the transport handler treats a failure.
+            // the dispatch runs on the loop thread outside the transport's per-request try/catch, so contain a native exception here and answer 500 (mirroring the transport handler) since it would otherwise unwind out of the event loop and abort the whole process.
             try {
                 runDispatch(state, request, response);
             } catch (const std::exception& ex) {

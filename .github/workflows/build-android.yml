@@ -45,7 +45,7 @@ jobs:
           # the gradle module pins ndk 27.0.12077973 and cmake 3.31.6 (poco needs >= 3.26).
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.0.12077973" "cmake;3.31.6" >/dev/null
 
-      - name: Cache CPM sources
+      - name: Cache CPM dependencies
         uses: actions/cache@v4
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}

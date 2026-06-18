@@ -115,8 +115,7 @@ bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response
     // static responses bypass the middleware chain, so set the sniffing guard here.
     response.setHeader("X-Content-Type-Options", "nosniff");
 
-    // a matching validator means the client already holds this exact file, so send no representation.
-    // the entity tag takes precedence over the modification date per rfc 9110.
+    // a matching validator means the client already holds this exact file so send no representation, with the entity tag taking precedence over the modification date per rfc 9110.
     if (headerValue(request, "If-None-Match") == etag ||
         (headerValue(request, "If-None-Match").empty() && headerValue(request, "If-Modified-Since") == lastModified)) {
         response.setStatus(304);

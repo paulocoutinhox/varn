@@ -149,8 +149,7 @@ function Statement:execute(params)
         self:clearResult()
     end
 
-    -- copy each value into an owned, nul-terminated c buffer and keep it alive for the call, so the
-    -- pointers handed to libpq never depend on the lifetime of a temporary string conversion.
+    -- copy each value into an owned, nul-terminated c buffer and keep it alive for the call, so the pointers handed to libpq never depend on the lifetime of a temporary string conversion.
     local count = #self.parsed.order
     local values = ffi.new("const char *[?]", count == 0 and 1 or count)
     local pinned = {}
@@ -280,8 +279,7 @@ function Connection:exec(statement)
 end
 
 function Connection:lastInsertId(sequence)
-    -- the sequence name is interpolated into the statement, so reject anything that is not a plain
-    -- identifier (letters, digits, underscore, dot) before handing it to the server.
+    -- the sequence name is interpolated into the statement, so reject anything that is not a plain identifier (letters, digits, underscore, dot) before handing it to the server.
     if sequence ~= nil then
         if type(sequence) ~= "string" or not sequence:match("^[%w_.]+$") then
             error("[VdoPgsql] The lastInsertId sequence must be a plain identifier.")
@@ -320,8 +318,7 @@ function Connection:inTransaction()
     return self.inTx == true
 end
 
--- runs fn inside a transaction: commits on success, rolls back and re-raises on any error, so a partial
--- change can never be left behind. fn receives the connection and its return value is passed through.
+-- runs fn inside a transaction (committing on success, rolling back and re-raising on any error so a partial change can never be left behind), passing the connection to fn and returning its value.
 function Connection:transaction(fn)
     self:beginTransaction()
 
@@ -330,8 +327,7 @@ function Connection:transaction(fn)
         local rollbackOk, rollbackErr = pcall(function()
             self:rollBack()
         end)
-        -- the original error takes priority. a rollback failure is appended so the caller knows the
-        -- connection may still hold an open transaction on the server.
+        -- the original error takes priority, with a rollback failure appended so the caller knows the connection may still hold an open transaction on the server.
         self.inTx = false
         if not rollbackOk then
             error(tostring(result) .. " | rollback also failed: " .. tostring(rollbackErr), 0)

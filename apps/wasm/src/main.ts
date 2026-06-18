@@ -16,8 +16,7 @@ for i = 1, 4 do
 end
 `;
 
-// runnable examples tuned for the browser build.
-// crypto and ffi are unavailable in wasm, so they are intentionally omitted.
+// runnable examples tuned for the browser build, omitting crypto and ffi which are unavailable in wasm.
 const EXAMPLES: ReadonlyArray<{ label: string; code: string }> = [
   { label: "Lua — fibonacci", code: DEFAULT_LUA },
   {
@@ -366,8 +365,7 @@ function mount(): void {
   });
 
   stopBtn.addEventListener("click", () => {
-    // hard stop terminates the worker so a sleeping or runaway chunk ends immediately.
-    // a fresh worker is spawned afterwards so the run button becomes available again.
+    // hard stop terminates the worker so a sleeping or runaway chunk ends immediately, then spawns a fresh worker so the run button becomes available again.
     worker.terminate();
     appendLine("stopped.");
     status.textContent = "Stopped.";

@@ -1,5 +1,4 @@
--- full tour of the http app framework: routing, groups, middleware, params, constraints,
--- named routes, cookies, sessions, body parsing, uploads, downloads and static files.
+-- full tour of the http app framework: routing, groups, middleware, params, constraints, named routes, cookies, sessions, body parsing, uploads, downloads and static files.
 local http = require("http")
 
 local app = http.createApp()
@@ -47,9 +46,7 @@ app:use(function(ctx, next)
     print(string.format("[%s] %s %s", ctx.state.requestId, ctx.req.method, ctx.req.path))
 end)
 
--- built-in security middlewares: cors and security headers apply to every request.
--- origin may be "*" or an allowlist table that echoes only matching request origins.
--- credentials combined with origin "*" is rejected at setup, never silently.
+-- built-in security middlewares cors and security headers apply to every request, where origin may be "*" or an allowlist table that echoes only matching request origins and credentials combined with origin "*" is rejected at setup, never silently.
 app:use(http.cors({ origin = "*", methods = "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD" }))
 app:use(http.securityHeaders({ frameOptions = "SAMEORIGIN", referrerPolicy = "no-referrer", hsts = 31536000 }))
 
@@ -89,8 +86,7 @@ app:put("/items/:id", function(ctx) ctx:json({ updated = ctx.params.id }) end)
 app:delete("/items/:id", function(ctx) ctx:status(204):send() end)
 app:all("/any", function(ctx) ctx:text("method was " .. ctx.req.method) end)
 
--- route groups share a prefix and their own middleware (also used for versioning).
--- this group also enforces an api key and a rate limit on top of the custom token check.
+-- route groups share a prefix and their own middleware (also used for versioning), and this group enforces an api key and a rate limit on top of the custom token check.
 local api = app:group("/api/v1")
 api:use(http.rateLimit({ windowMs = 60000, max = 100 }))
 api:use(http.apiKey({ header = "X-API-Key", keys = { "demo-key" } }))
@@ -210,8 +206,7 @@ app:onNotFound(function(ctx)
     ctx:status(404):json({ error = "no route", path = ctx.req.path })
 end)
 
--- static files are served from publicDir with cache, range and directory listing support.
--- requestTimeoutMs bounds how long a handler may run before the server answers 504.
+-- static files are served from publicDir with cache, range and directory listing support, and requestTimeoutMs bounds how long a handler may run before the server answers 504.
 app:listen({
     host = "0.0.0.0",
     port = tonumber(os.getenv("VARN_PORT") or "3000"),

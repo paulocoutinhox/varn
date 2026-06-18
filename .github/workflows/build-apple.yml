@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache CPM sources
+      - name: Cache CPM dependencies
         uses: actions/cache@v4
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}

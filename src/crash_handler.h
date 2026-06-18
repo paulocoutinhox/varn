@@ -1,9 +1,6 @@
 #pragma once
 
-// installs last-resort handlers so a native crash prints a diagnosis to stderr instead of dying
-// silently. std::set_terminate is wired on every platform (it catches an unhandled c++ exception,
-// including one escaping a worker thread). the windows path adds a structured-exception filter
-// with a symbolized backtrace for faults the terminate handler never sees, such as an access violation.
+// installs last-resort handlers so a native crash prints a diagnosis to stderr instead of dying silently, wiring std::set_terminate on every platform to catch an unhandled c++ exception (including one escaping a worker thread) and adding a windows structured-exception filter with a symbolized backtrace for faults the terminate handler never sees, such as an access violation.
 
 #include <cstdio>
 #include <cstdlib>
@@ -72,8 +69,7 @@ inline void CrashHandler::printBacktrace() {
         return;
     }
 
-    // capture only the innermost frames: the fault site is near the top, and a short trace fits inside
-    // the tail the test runner echoes on failure.
+    // capture only the innermost frames: the fault site is near the top, and a short trace fits inside the tail the test runner echoes on failure.
     void* frames[30];
     const USHORT count = CaptureStackBackTrace(0, 30, frames, nullptr);
 
@@ -123,8 +119,7 @@ inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info) {
     }
     fflush(stderr);
 
-    // a stack overflow runs the handler on a nearly empty stack, so a symbolized walk would fault
-    // again. the summary above is enough to identify it.
+    // a stack overflow runs the handler on a nearly empty stack where a symbolized walk would fault again, so the summary above is enough to identify it.
     if (code != EXCEPTION_STACK_OVERFLOW) {
         printBacktrace();
         fflush(stderr);

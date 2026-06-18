@@ -1,7 +1,4 @@
--- async security: covered classes are rejection surfacing, deadlock freedom, isDone honesty, and re-await safety.
--- covered: ASY-053 await failure surfaced to the caller, ASY-049 a rejected operation does not crash the process,
--- ASY-009 many concurrent sleeps never deadlock, ASY-064/ASY-065 isDone never lies before or after settle,
--- ASY-074/ASY-089 re-awaiting one promise is safe and returns a stable result.
+-- async security covering rejection surfacing, deadlock freedom, isDone honesty, and re-await safety: ASY-053 await failure surfaced to the caller, ASY-049 a rejected operation does not crash the process, ASY-009 many concurrent sleeps never deadlock, ASY-064/ASY-065 isDone never lies before or after settle, and ASY-074/ASY-089 re-awaiting one promise is safe and returns a stable result.
 local async = require("async")
 
 async.run(function()

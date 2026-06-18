@@ -1,5 +1,4 @@
--- drives an in-process app with the client to show routing, body parsing and a json response, then exits.
--- the server runs on its own threads, so the script issues its requests inside async.run and finishes cleanly.
+-- drives an in-process app with the client to show routing, body parsing and a json response then exits, with the server on its own threads so the script issues its requests inside async.run and finishes cleanly.
 local async = require("async")
 local http = require("http")
 

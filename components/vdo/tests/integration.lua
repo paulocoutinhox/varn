@@ -1,9 +1,4 @@
--- real-application integration test for vdo, modelled as a small banking ledger. it exercises schema
--- with constraints, reused prepared statements, atomic money transfers, rollback on a constraint
--- violation, parameter binding against injection, aggregates, null handling, and last insert ids.
---
--- sqlite (in-memory) always runs. set VDO_MYSQL_DSN / VDO_PGSQL_DSN (with matching _USER / _PASS) to
--- also run against those backends. the same assertions must hold on every driver.
+-- real-application integration test for vdo modelled as a small banking ledger, exercising schema with constraints, reused prepared statements, atomic money transfers, rollback on a constraint violation, parameter binding against injection, aggregates, null handling, and last insert ids, where in-memory sqlite always runs and VDO_MYSQL_DSN / VDO_PGSQL_DSN (with matching _USER / _PASS) add those backends under the same assertions on every driver.
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 
@@ -43,8 +38,7 @@ local function balanceOf(db, id)
     return row and row.balance
 end
 
--- moves money atomically: the debit, guarded by a CHECK (balance >= 0), fails the whole transaction
--- when funds are short, so neither side is left changed.
+-- moves money atomically: the debit, guarded by a CHECK (balance >= 0), fails the whole transaction when funds are short, so neither side is left changed.
 local function transfer(db, fromId, toId, amount)
     return db:transaction(function(tx)
         local debit = tx:prepare("UPDATE accounts SET balance = balance - ? WHERE id = ?")
@@ -100,8 +94,7 @@ local function run(target)
     assert(not db:inTransaction(), "no transaction left open after rollback")
     print("  overdraft rolled back atomically")
 
-    -- a bound parameter is data, never sql: a classic injection string round-trips intact and the
-    -- table it tries to drop is still there afterwards.
+    -- a bound parameter is data, never sql: a classic injection string round-trips intact and the table it tries to drop is still there afterwards.
     local payload = "robert'); DROP TABLE accounts;--"
     local inject = db:prepare("INSERT INTO accounts (id, owner, balance) VALUES (?, ?, ?)")
     inject:execute({ 3, payload, 0 })

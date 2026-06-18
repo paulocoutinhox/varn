@@ -69,8 +69,7 @@ void TaskPool::stop() {
     running_ = false;
 #else
     {
-        // the flag must change under the same mutex the workers wait on, otherwise a worker that
-        // has already evaluated the predicate but not yet blocked misses the notify and never wakes.
+        // the flag must change under the same mutex the workers wait on, otherwise a worker that has already evaluated the predicate but not yet blocked misses the notify and never wakes.
         std::lock_guard<std::mutex> lock(mutex_);
         bool expected = true;
         if (!running_.compare_exchange_strong(expected, false)) {

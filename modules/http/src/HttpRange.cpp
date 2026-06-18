@@ -4,7 +4,7 @@
 
 namespace varn::http {
 
-// rfc 9110 range numbers are bare digits. std::stoull would otherwise accept "+5", spaces, or "5abc".
+// rfc 9110 range numbers are bare digits, unlike std::stoull which would otherwise accept "+5", spaces, or "5abc".
 bool HttpRange::allDigits(const std::string& value) {
     if (value.empty()) {
         return false;

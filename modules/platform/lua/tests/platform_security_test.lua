@@ -1,5 +1,4 @@
--- platform security: path building and argument handling stay safe under hostile input.
--- covered classes: CWE-22 path traversal, CWE-20 input validation, CWE-400 resource exhaustion, CWE-626 nul handling, CWE-74 control bytes.
+-- platform security confirming path building and argument handling stay safe under hostile input, covering CWE-22 path traversal, CWE-20 input validation, CWE-400 resource exhaustion, CWE-626 nul handling, and CWE-74 control bytes.
 local platform = require("platform")
 
 -- PLAT-024 / PLAT-036: an empty library name is rejected via an error rather than building a bogus path.

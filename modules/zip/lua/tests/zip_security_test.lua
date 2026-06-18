@@ -1,5 +1,4 @@
--- zip security suite covering the lua-reachable abuse cases from docs/security-tests/zip.md.
--- covered classes: CWE-22 path traversal, CWE-36 absolute paths, CWE-20 malformed input, CWE-22 backslash and mixed separators, CWE-400 entry-count cap surface.
+-- zip security suite covering the lua-reachable abuse cases from docs/security-tests/zip.md across CWE-22 path traversal, CWE-36 absolute paths, CWE-20 malformed input, CWE-22 backslash and mixed separators, and CWE-400 entry-count cap surface.
 local async = require("async")
 
 local dir = assert(os.getenv("VARN_TEST_DIR"), "VARN_TEST_DIR is not set; run tests with: python3 varn.py test")

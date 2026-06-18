@@ -1,8 +1,4 @@
--- real-application integration test for the redis client. it covers endpoint failover and the data
--- structures an app actually leans on: cached values with expiry, counters, hashes, lists, sets,
--- sorted-set leaderboards, MULTI/EXEC transactions, and pipelines.
---
--- point it at a server with VARN_REDIS_HOST / VARN_REDIS_PORT (and VARN_REDIS_USER / VARN_REDIS_PASS).
+-- real-application integration test for the redis client covering endpoint failover and the data structures an app leans on (cached values with expiry, counters, hashes, lists, sets, sorted-set leaderboards, MULTI/EXEC transactions, and pipelines), pointed at a server with VARN_REDIS_HOST / VARN_REDIS_PORT (and VARN_REDIS_USER / VARN_REDIS_PASS).
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 
@@ -21,8 +17,7 @@ local function key(name)
 end
 
 async.run(function()
-    -- failover: a dead endpoint is listed first, so a working client proves the client moved on to the
-    -- live one behind it.
+    -- failover: a dead endpoint is listed first so a working client proves the client moved on to the live one behind it.
     local client = redis.connect({
         hosts = {
             { host = "127.0.0.1", port = 1 },
@@ -96,7 +91,7 @@ async.run(function()
     assert(client:zrevrank(board, "bob") == 0, "zrevrank leader")
     print("sorted set ok")
 
-    -- a MULTI/EXEC transaction: queued commands answer QUEUED, then EXEC returns every result in order.
+    -- a MULTI/EXEC transaction where queued commands answer QUEUED and then EXEC returns every result in order.
     local txKey = key("tx")
     assert(client:command("MULTI") == "OK", "multi")
     assert(client:set(txKey, "1") == "QUEUED", "queued set")
@@ -116,8 +111,7 @@ async.run(function()
     assert(replies[1] == "OK" and replies[2] == 105 and replies[3] == "105", "pipeline replies")
     print("pipeline ok")
 
-    -- a short expiry actually elapses. the window is generous so a slow round trip to a remote server
-    -- cannot expire the key before the first check observes it.
+    -- a short expiry actually elapses, with a generous window so a slow round trip to a remote server cannot expire the key before the first check observes it.
     local volatile = key("volatile")
     client:set(volatile, "soon", "PX", 600)
     assert(client:exists(volatile) == 1, "exists before expiry")

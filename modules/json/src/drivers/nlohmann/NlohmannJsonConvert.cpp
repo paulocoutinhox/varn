@@ -33,8 +33,7 @@ bool JsonConvert::isSequence(lua_State* L, int index, lua_Integer& length) {
 }
 
 void JsonConvert::pushJson(lua_State* L, const nlohmann::json& value, int depth) {
-    // sits above the deserialize pre-scan cap (200) so any input that passed the scan converts fully
-    // rather than being silently truncated to nil at this layer.
+    // sits above the deserialize pre-scan cap (200) so any input that passed the scan converts fully rather than being silently truncated to nil at this layer.
     constexpr int maxDepth = 256;
     if (depth >= maxDepth || lua_checkstack(L, 4) == 0) {
         lua_pushnil(L);

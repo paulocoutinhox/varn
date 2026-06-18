@@ -1,12 +1,7 @@
--- splits a sql statement into literal chunks and an ordered placeholder list, recognizing both
--- positional (?) and named (:name) markers while ignoring anything inside string literals, line
--- comments, or postgres :: casts. the result drives both native-placeholder binding and emulated
--- literal substitution depending on the driver.
+-- splits a sql statement into literal chunks and an ordered placeholder list, recognizing both positional (?) and named (:name) markers while ignoring anything inside string literals, line comments, or postgres :: casts, with the result driving native-placeholder binding or emulated literal substitution depending on the driver.
 local sql = {}
 
--- parse returns { chunks, order } where the original sql equals chunks interleaved with placeholders:
--- chunks[1] .. ph(1) .. chunks[2] .. ph(2) .. ... so #chunks always equals #order + 1.
--- order[i] is a 1-based number for a positional marker, or the name string for a named marker.
+-- parse returns { chunks, order } where the original sql equals chunks interleaved with placeholders (chunks[1] .. ph(1) .. chunks[2] .. ph(2) .. ...) so #chunks always equals #order + 1, and order[i] is a 1-based number for a positional marker or the name string for a named marker.
 function sql.parse(statement)
     local chunks = {}
     local order = {}
@@ -81,8 +76,7 @@ function sql.parse(statement)
     return { chunks = chunks, order = order }
 end
 
--- resolves the bound value for placeholder slot index against the params table, accepting both a
--- positional array and a named map under the same call.
+-- resolves the bound value for placeholder slot index against the params table, accepting both a positional array and a named map under the same call.
 function sql.valueFor(parsed, params, index)
     local key = parsed.order[index]
     if params == nil then

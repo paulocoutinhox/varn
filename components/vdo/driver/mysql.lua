@@ -1,5 +1,4 @@
--- mysql/mariadb backend for vdo, binding the c client library through ffi. parameters are bound with
--- server-side escaping (mysql_real_escape_string), matching pdo's default emulated-prepare behaviour.
+-- mysql/mariadb backend for vdo, binding the c client library through ffi and binding parameters with server-side escaping (mysql_real_escape_string), matching pdo's default emulated-prepare behaviour.
 local ffi = require("ffi")
 local platform = require("platform")
 local sql = require("vdo.sql")
@@ -140,8 +139,7 @@ local function runQuery(handle, text)
     end
 end
 
--- buffers the current result client-side so the connection is free for the next statement. returns
--- nil when the statement produced no result set, e.g. an insert or ddl.
+-- buffers the current result client-side so the connection is free for the next statement, returning nil when the statement produced no result set (e.g. an insert or ddl).
 local function captureResult(handle)
     local result = lib.mysql_store_result(handle)
     if isNull(result) then
@@ -288,8 +286,7 @@ function Connection:inTransaction()
     return self.inTx == true
 end
 
--- runs fn inside a transaction: commits on success, rolls back and re-raises on any error, so a partial
--- change can never be left behind. fn receives the connection and its return value is passed through.
+-- runs fn inside a transaction (committing on success, rolling back and re-raising on any error so a partial change can never be left behind), passing the connection to fn and returning its value.
 function Connection:transaction(fn)
     self:beginTransaction()
 
@@ -298,8 +295,7 @@ function Connection:transaction(fn)
         local rollbackOk, rollbackErr = pcall(function()
             self:rollBack()
         end)
-        -- the original error takes priority. a rollback failure is appended so the caller knows the
-        -- connection may still hold an open transaction on the server.
+        -- the original error takes priority, with a rollback failure appended so the caller knows the connection may still hold an open transaction on the server.
         self.inTx = false
         if not rollbackOk then
             error(tostring(result) .. " | rollback also failed: " .. tostring(rollbackErr), 0)
@@ -359,9 +355,7 @@ function driver.connect(params, username, password)
         error("[VdoMysql] Connect: " .. message)
     end
 
-    -- a known charset keeps escaping correct and text decoding predictable. a silent fallback to
-    -- the server default would leave mysql_real_escape_string interpreting bytes under a different
-    -- encoding than the application expects, so a failure here aborts the connect.
+    -- a known charset keeps escaping correct and text decoding predictable, and since a silent fallback to the server default would leave mysql_real_escape_string interpreting bytes under a different encoding than the application expects, a failure here aborts the connect.
     local charset = params.charset or "utf8mb4"
     if lib.mysql_set_character_set(handle, charset) ~= 0 then
         local message = ffi.string(lib.mysql_error(handle))

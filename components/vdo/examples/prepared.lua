@@ -1,5 +1,4 @@
--- shows a single prepared statement reused across many executions, plus row-at-a-time fetching.
--- defaults to in-memory sqlite, override with VDO_DSN for another backend.
+-- shows a single prepared statement reused across many executions plus row-at-a-time fetching, defaulting to in-memory sqlite unless VDO_DSN overrides it for another backend.
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

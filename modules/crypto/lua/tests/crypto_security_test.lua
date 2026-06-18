@@ -1,6 +1,4 @@
--- crypto security suite covering the lua-reachable abuse cases from docs/security-tests/crypto.md.
--- covered classes: CWE-20 input validation, CWE-400 resource caps, CWE-193 cap boundaries,
--- CWE-626 nul-aware reads, CWE-327 known vectors, CWE-330 csprng output.
+-- crypto security suite covering the lua-reachable abuse cases from docs/security-tests/crypto.md across CWE-20 input validation, CWE-400 resource caps, CWE-193 cap boundaries, CWE-626 nul-aware reads, CWE-327 known vectors, and CWE-330 csprng output.
 local crypto = require("crypto")
 
 -- CRY-004 / CRY-179: an unknown algorithm produces a clean error, not a crash.
@@ -15,7 +13,7 @@ assert(not pcall(crypto.hmac, "__NOPE__", "key", "data", "hex"), "non-hash hmac 
 -- CRY-026 / CRY-073: an invalid format string is rejected.
 assert(not pcall(crypto.digest, "SHA256", "data", "b64"), "invalid format rejected")
 
--- no artificial input-size cap: varn runs trusted local code (like node), so large data hashes fine.
+-- no artificial input-size cap because varn runs trusted local code (like node), so large data hashes fine.
 assert(#crypto.digest("SHA256", string.rep("a", 8 * 1024 * 1024), "hex") == 64, "large digest input hashes")
 
 -- CRY-038 / CRY-176: a count past the addressable limit is rejected, not wrapped into a bad allocation.

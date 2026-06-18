@@ -13,8 +13,7 @@ local function parseWire(wire)
     return tonumber(status), wire:sub(nl + 1, nl + tonumber(len))
 end
 
--- the client wire returns only status and body, so any cross-request cookie is carried in the request
--- headers the test sets explicitly rather than read from an invisible Set-Cookie.
+-- the client wire returns only status and body, so any cross-request cookie is carried in the request headers the test sets explicitly rather than read from an invisible Set-Cookie.
 local function request(method, path, headers, body)
     headers = headers or {}
     if body then
@@ -84,8 +83,7 @@ app:post("/echo-multipart", function(ctx)
     })
 end)
 
--- sessions back a per-client counter and the client wire hides Set-Cookie, so the route also reports the
--- session-backed count in a readable carry cookie that the test resends to drive the count forward.
+-- sessions back a per-client counter and the client wire hides Set-Cookie, so the route also reports the session-backed count in a readable carry cookie that the test resends to drive the count forward.
 app:get("/counter", function(ctx)
     local session = ctx:session()
     local carried = tonumber(ctx.req.cookies.carry or "0") or 0
@@ -266,9 +264,7 @@ async.run(function()
     assert(parseWire(get("/limited/ping")) == 200, "rate limit second call failed")
     assert(parseWire(get("/limited/ping")) == 429, "rate limit cap not enforced")
 
-    -- csrf issues a token on a safe request and rejects an unsafe request that lacks a matching token.
-    -- the signed token is bound to the server-minted session, whose cookie the headerless wire cannot
-    -- replay, so the positive accept path is exercised at the token layer in the security suite instead.
+    -- csrf issues a token on a safe request and rejects an unsafe request that lacks a matching token, and since the signed token is bound to the server-minted session whose cookie the headerless wire cannot replay, the positive accept path is exercised at the token layer in the security suite instead.
     local _, csrfBody = parseWire(get("/forms/token"))
     local csrfToken = jsonField(csrfBody, "csrf")
     assert(csrfToken and #csrfToken > 0, "csrf token not issued")
@@ -277,7 +273,7 @@ async.run(function()
     assert(parseWire(request("POST", "/forms/submit", { ["X-CSRF-Token"] = csrfToken })) == 403,
         "csrf post with an unbound token accepted")
 
-    -- the file download succeeds. the attachment header lives on the wire the server set.
+    -- the file download succeeds with the attachment header living on the wire the server set.
     assert(parseWire(get("/download")) == 200, "file download failed")
 
     -- the central error handler turns a thrown handler into a controlled 500.

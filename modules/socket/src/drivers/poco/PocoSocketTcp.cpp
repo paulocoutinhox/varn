@@ -17,10 +17,7 @@
 
 namespace varn::socket {
 
-// close interrupts in-flight operations without racing the socket fd.
-// a stream connection blocks in send/receive and is interrupted instantly by shutdown(), which only issues a syscall and never invalidates the fd.
-// separate read and write mutexes let a duplex protocol send and receive at the same time, and close takes both before the final close().
-// a listener or udp socket has no shutdown that reliably interrupts accept/recvFrom, so those poll on a short tick guarded by an atomic close flag, bounding close latency by the poll interval.
+// close interrupts in-flight operations without racing the socket fd: a stream connection is interrupted instantly by shutdown() which only issues a syscall and never invalidates the fd while separate read and write mutexes let a duplex protocol send and receive at once and close takes both before the final close(), whereas a listener or udp socket has no such shutdown so those poll on a short tick guarded by an atomic close flag, bounding close latency by the poll interval.
 static const Poco::Timespan kSocketPollInterval(0, 200000); // 200 ms
 
 class PocoTcpConnection final : public TcpConnection {
@@ -84,8 +81,7 @@ public:
     }
 
     void closeBlocking() override {
-        // shutdown without a lock interrupts an in-flight send/receive instantly.
-        // taking both mutexes afterwards (released quickly once the syscalls return) closes with no thread inside the socket.
+        // shutdown without a lock interrupts an in-flight send/receive instantly, then taking both mutexes (released quickly once the syscalls return) closes with no thread inside the socket.
         closed_.store(true, std::memory_order_release);
 
         try {
