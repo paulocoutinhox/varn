@@ -21,20 +21,15 @@ public:
     explicit EventLoop(std::shared_ptr<WorkLedger> ledger);
 
     void post(Job job);
-    // schedules a job to run on the loop after delayMs, without occupying a worker thread.
     void postDelayed(long long delayMs, Job job);
     void run();
     void stop();
     void wake();
 
-    // discards queued jobs and timers without running them; used at shutdown so captured state
-    // (e.g. AppState) is released before the lua_State is destroyed, not after.
     void clearPendingJobs();
 
     void setIdleExitPredicate(IdleExitPredicate predicate);
 
-    // reports the queue or a timer whose deadline has already arrived. an undue timer is reported by
-    // hasPendingTimers, so a caller can decide whether to wait for it (instead of busy-polling).
     bool hasPendingJobs() const;
     bool hasPendingTimers() const;
 

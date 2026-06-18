@@ -1,7 +1,5 @@
 -- xml: security checks for the parser and encoder boundaries.
--- covered classes: external entity / XXE prevention (CWE-611), entity expansion (CWE-776),
--- recursion bounds (CWE-674), output injection (CWE-91), invalid encoding handling (CWE-176),
--- and exception safety (CWE-248).
+-- covered classes: external entity / XXE prevention (CWE-611), entity expansion (CWE-776), recursion bounds (CWE-674), output injection (CWE-91), invalid encoding handling (CWE-176), and exception safety (CWE-248).
 local xml = require("xml")
 
 -- XML-001 / XML-101 / XML-200: an XXE payload never reads a local file and the entity is not expanded.

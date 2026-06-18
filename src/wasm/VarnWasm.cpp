@@ -153,7 +153,7 @@ RunResult WasmHost::runChunk(const std::string& source) {
     bool ok = false;
 
     {
-        PrintSinkScope sink_scope(&collected);
+        PrintSinkScope sinkScope(&collected);
 #if defined(__EMSCRIPTEN__)
         ok = rt.runStringWithoutEventLoop(source, "=wasm", &err, &WasmHost::attachLineHook, nullptr);
         lua_sethook(L, nullptr, 0, 0);

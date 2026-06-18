@@ -1,10 +1,12 @@
-#include <lua.hpp>
-#include <string>
-#include <string_view>
-
 #include "varn/crypto/CryptoModule.h"
+
 #include "varn/crypto/CryptoPrimitives.h"
 #include "varn/lua/LuaHelpers.h"
+
+#include <lua.hpp>
+
+#include <string>
+#include <string_view>
 
 namespace varn::crypto {
 

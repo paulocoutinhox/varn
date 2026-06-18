@@ -6,6 +6,7 @@ TaskPool::TaskPool(std::size_t threadCount, std::shared_ptr<WorkLedger> ledger)
     : ledger_(std::move(ledger)), threadCount_(threadCount == 0 ? 4 : threadCount) {}
 
 void TaskPool::start() {
+    // the workers must spawn only after the ledger notify hook is installed, so none observes a half-set callback.
 #if !defined(__EMSCRIPTEN__)
     if (!workers_.empty()) {
         return;

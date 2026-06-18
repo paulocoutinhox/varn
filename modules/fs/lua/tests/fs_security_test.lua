@@ -1,6 +1,5 @@
 -- fs security: confirms the non-sandboxed fs API handles hostile paths and content consistently and never crashes.
--- covered classes: path traversal (CWE-22), NUL/control bytes in path (CWE-626, CWE-74), empty path (CWE-20),
--- covered classes: missing-file errors (CWE-20), large-content round-trip near the read cap (CWE-400), binary content (CWE-626).
+-- covered classes: path traversal (CWE-22), NUL/control bytes in path (CWE-626, CWE-74), empty path (CWE-20), missing-file errors (CWE-20), large-content round-trip near the read cap (CWE-400), binary content (CWE-626).
 local async = require("async")
 local fs = require("fs")
 

@@ -84,7 +84,7 @@ app:post("/echo-multipart", function(ctx)
     })
 end)
 
--- sessions back a per-client counter; the client wire hides Set-Cookie, so the route also reports the
+-- sessions back a per-client counter and the client wire hides Set-Cookie, so the route also reports the
 -- session-backed count in a readable carry cookie that the test resends to drive the count forward.
 app:get("/counter", function(ctx)
     local session = ctx:session()
@@ -277,7 +277,7 @@ async.run(function()
     assert(parseWire(request("POST", "/forms/submit", { ["X-CSRF-Token"] = csrfToken })) == 403,
         "csrf post with an unbound token accepted")
 
-    -- the file download succeeds; the attachment header lives on the wire the server set.
+    -- the file download succeeds. the attachment header lives on the wire the server set.
     assert(parseWire(get("/download")) == 200, "file download failed")
 
     -- the central error handler turns a thrown handler into a controlled 500.

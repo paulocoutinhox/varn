@@ -30,7 +30,7 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts) 
         "DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
 
 #if defined(_WIN32)
-    // windows tls uses one pkcs12 bundle instead of separate pem key and certificate paths
+    // windows tls uses one pkcs12 bundle instead of separate pem key and certificate paths.
     std::string pkcs12Path;
     if (pathLooksLikePkcs12(opts.certFile)) {
         pkcs12Path = opts.certFile;
@@ -64,9 +64,9 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts) 
 }
 
 void TlsServerContext::initializeSslManager(Poco::Net::Context::Ptr context) {
-    // the ssl manager is a process-global singleton; initialize its default handlers once so a second
+    // the ssl manager is a process-global singleton. initialize its default handlers once so a second
     // server start does not clobber the first server's configuration. each server still binds its own
-    // context to its socket, so the global default only supplies the passphrase/invalid-cert handlers.
+    // context to its socket, so the global default only supplies the passphrase and invalid-cert handlers.
     static std::once_flag onceFlag;
     std::call_once(onceFlag, [&context] {
         auto privateKeyHandler = Poco::SharedPtr<Poco::Net::PrivateKeyPassphraseHandler>(

@@ -52,8 +52,8 @@ self.onmessage = async (event: MessageEvent<MainToWorker>) => {
         return;
       }
 
-      const mod = await loadWasm();
       busy = true;
+      const mod = await loadWasm();
       const result = await Promise.resolve(mod.varnRunChunk(message.source));
       busy = false;
       const done: WorkerToMain = { type: "done", result };

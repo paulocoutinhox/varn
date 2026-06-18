@@ -31,7 +31,7 @@ int App::run(int argc, char** argv) {
         args.emplace_back(argv[i]);
     }
 
-    // the chunk (script path, or the -e source) becomes arg[0]; arguments after it become arg[1..].
+    // the chunk, either the script path or the -e source, becomes arg[0] and arguments after it arg[1..].
     const std::size_t scriptArgIndex = eval ? 2 : 1;
     Runtime runtime(std::move(args), scriptArgIndex);
 

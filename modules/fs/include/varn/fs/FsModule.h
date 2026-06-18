@@ -12,17 +12,17 @@ class FsModule {
 public:
     FsModule() = delete;
 
-    static void install(struct lua_State* L);
+    static void install(lua_State* L);
 
 private:
-    static varn::runtime::Runtime& luaRuntime(struct lua_State* L);
+    static varn::runtime::Runtime& luaRuntime(lua_State* L);
 
-    static int luaReadFile(struct lua_State* L);
-    static int luaWriteFile(struct lua_State* L);
-    static int luaExists(struct lua_State* L);
-    static int luaMkdir(struct lua_State* L);
-    static int luaRemoveRecursive(struct lua_State* L);
-    static int luaOpen(struct lua_State* L);
+    static int luaReadFile(lua_State* L);
+    static int luaWriteFile(lua_State* L);
+    static int luaExists(lua_State* L);
+    static int luaMkdir(lua_State* L);
+    static int luaRemoveRecursive(lua_State* L);
+    static int luaOpen(lua_State* L);
 };
 
 } // namespace varn::fs

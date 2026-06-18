@@ -29,7 +29,14 @@ bool ZipPath::entryPathSafe(std::string_view entry) {
 }
 
 bool ZipPath::isSubpath(const fs::path& baseCanon, const fs::path& candidateCanon) {
-    fs::path rel = fs::relative(candidateCanon, baseCanon);
+    std::error_code ec;
+    const fs::path rel = fs::relative(candidateCanon, baseCanon, ec);
+
+    // an unrelatable path (different root or mount) yields an empty result, which the guard must treat as unsafe.
+    if (ec || rel.empty()) {
+        return false;
+    }
+
     for (const auto& part : rel) {
         if (part == "..") {
             return false;

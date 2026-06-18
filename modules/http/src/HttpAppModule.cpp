@@ -114,8 +114,8 @@ struct AppState {
     std::vector<int> requestHooks;
     std::vector<int> responseHooks;
     std::vector<WsRoute> wsRoutes;
-    // live websocket connections, tracked on the loop thread so their registry refs are released
-    // deterministically here even if a session is cut short by shutdown before wsRelease runs.
+    // live websocket connections tracked on the loop thread. their registry refs are released here
+    // when shutdown cuts a session short before wsRelease runs.
     std::vector<std::shared_ptr<WsConnState>> liveWsConns;
     int configRef = LUA_NOREF;
 
@@ -908,9 +908,9 @@ int HttpApp::chainContinue(lua_State* L, int status, lua_KContext ctx) {
 
 // upvalues: 1 = chain table, 2 = context, 3 = entry count, 4 = current index.
 int HttpApp::chainNext(lua_State* L) {
-    // single-fire guard (upvalue 5 is a one-slot flag table): a middleware that calls next() more than
-    // once must not re-run the rest of the chain, which would double session writes, Set-Cookie headers,
-    // rate-limit increments, and so on.
+    // upvalue 5 is a one-slot flag table guarding against a middleware that calls next() more than once.
+    // a second call must not re-run the rest of the chain and double session writes, Set-Cookie headers
+    // and rate-limit increments.
     lua_rawgeti(L, lua_upvalueindex(5), 1);
     const bool alreadyFired = lua_toboolean(L, -1) != 0;
     lua_pop(L, 1);

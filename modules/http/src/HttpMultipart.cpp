@@ -9,7 +9,8 @@
 namespace varn::http {
 
 std::string HttpMultipart::extractBoundary(const std::string& contentType) {
-    const std::size_t pos = contentType.find("boundary=");
+    // the parameter name is case-insensitive per rfc 2045, while the boundary value keeps its original case.
+    const std::size_t pos = HttpText::toLower(contentType).find("boundary=");
     if (pos == std::string::npos) {
         return "";
     }
@@ -100,7 +101,7 @@ void HttpMultipart::pushMultipart(lua_State* L, const std::string& body, const s
         }
 
         std::size_t dataEnd = next;
-        if (dataEnd >= 2 && body[dataEnd - 2] == '\r' && body[dataEnd - 1] == '\n') {
+        if (dataEnd >= dataStart + 2 && body[dataEnd - 2] == '\r' && body[dataEnd - 1] == '\n') {
             dataEnd -= 2;
         }
         const std::string data = body.substr(dataStart, dataEnd - dataStart);

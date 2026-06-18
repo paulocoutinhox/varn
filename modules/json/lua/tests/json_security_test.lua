@@ -1,8 +1,6 @@
 -- json: security checks for the parser and encoder boundaries.
 -- the json security doc tracks cases by CWE class rather than numbered ids, so each case cites its class.
--- covered classes: recursion bounds (CWE-674), resource exhaustion (CWE-400), invalid encoding handling
--- (CWE-176), control-char injection (CWE-74/CWE-116), numeric range and precision (CWE-681/CWE-190),
--- malformed input rejection (CWE-20), and exception safety (CWE-248).
+-- covered classes: recursion bounds (CWE-674), resource exhaustion (CWE-400), invalid encoding handling (CWE-176), control-char injection (CWE-74/CWE-116), numeric range and precision (CWE-681/CWE-190), malformed input rejection (CWE-20), and exception safety (CWE-248).
 local json = require("json")
 
 -- CWE-674: deeply nested input is rejected before the parser can overflow the stack.

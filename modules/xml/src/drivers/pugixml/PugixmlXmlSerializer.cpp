@@ -59,10 +59,6 @@ std::string XmlSerializer::serialize(lua_State* L, int index) {
             size_t len = 0;
             const char* s = lua_tolstring(L, -1, &len);
             el.text().set(s, len);
-        } else if (lua_isnumber(L, -1)) {
-            std::ostringstream n;
-            n << lua_tonumber(L, -1);
-            el.append_child(pugi::node_pcdata).set_value(n.str().c_str());
         } else if (lua_isboolean(L, -1)) {
             el.append_child(pugi::node_pcdata).set_value(lua_toboolean(L, -1) ? "true" : "false");
         } else if (lua_isnil(L, -1)) {

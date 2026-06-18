@@ -25,7 +25,7 @@ public:
 };
 
 void Log::emit(Level level, std::string_view message) {
-    // worker threads and the loop thread can log concurrently; serialize so lines never interleave.
+    // worker threads and the loop thread can log concurrently, so serialize to keep lines from interleaving.
     static std::mutex sink;
     std::lock_guard<std::mutex> lock(sink);
     std::cout << '[' << StdoutBridge::levelTag(level) << "] ";

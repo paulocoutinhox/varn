@@ -19,6 +19,7 @@ void EventLoop::post(Job job) {
 }
 
 void EventLoop::postDelayed(long long delayMs, Job job) {
+    // a timer fires on the loop thread after the delay, so it never occupies a worker thread while it waits.
     ledger_->enter();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMs);
     {
@@ -141,7 +142,7 @@ bool EventLoop::hasPendingJobs() const {
         return true;
     }
     // a timer whose deadline has arrived is a job that is ready to run, so it counts as pending for
-    // any caller that only ever pumps via drainPostedJobs (which now matures due timers itself).
+    // any caller that only ever pumps via drainPostedJobs.
     return !timers_.empty() && timers_.begin()->first <= std::chrono::steady_clock::now();
 }
 

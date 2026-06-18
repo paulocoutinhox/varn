@@ -13,8 +13,7 @@ std::string FsStorage::readAll(const std::string& path) {
         throw std::runtime_error("[FsStorage] The file could not be opened for reading.");
     }
 
-    // read the whole file, like node's readFile — the caller owns the machine, so there is no
-    // artificial size cap; a file too large for memory fails the allocation, which is the caller's call.
+    // read the whole file into memory without an artificial size cap.
     std::string out;
     char chunk[65536];
     while (file) {
@@ -24,6 +23,11 @@ std::string FsStorage::readAll(const std::string& path) {
             break;
         }
         out.append(chunk, static_cast<std::size_t>(got));
+    }
+
+    // a read fault leaves badbit set without eofbit, so a truncated result is reported instead of returned silently.
+    if (file.bad()) {
+        throw std::runtime_error("[FsStorage] The file could not be read.");
     }
     return out;
 }

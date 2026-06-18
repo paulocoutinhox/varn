@@ -135,7 +135,7 @@ int Promise::prepareAwait(lua_State* L) {
 }
 
 void Promise::runPendingResumes() {
-    // during teardown the loop is stopping and the lua state is about to go away; never touch it.
+    // during teardown the loop is stopping and the lua state is about to go away, so never touch it.
     if (runtime_.stopped()) {
         return;
     }

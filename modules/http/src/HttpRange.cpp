@@ -32,7 +32,7 @@ bool HttpRange::parse(const std::string& header, std::uintmax_t total, std::uint
     const std::string first = spec.substr(0, dash);
     const std::string last = spec.substr(dash + 1);
 
-    // each present endpoint must be a run of digits; an empty endpoint is allowed on one side only.
+    // each present endpoint must be a run of digits, and an empty endpoint is allowed on one side only.
     if ((!first.empty() && !allDigits(first)) || (!last.empty() && !allDigits(last))) {
         return false;
     }

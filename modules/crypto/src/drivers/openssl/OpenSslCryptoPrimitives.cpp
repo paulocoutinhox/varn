@@ -158,8 +158,12 @@ std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string
     if (md == nullptr) {
         throw std::runtime_error("[CryptoPrimitives] The requested keyed hash algorithm is not known.");
     }
-    const int keyLen = key.size() > static_cast<std::size_t>(INT_MAX) ? INT_MAX : static_cast<int>(key.size());
-    const int dataLen = data.size() > static_cast<std::size_t>(INT_MAX) ? INT_MAX : static_cast<int>(data.size());
+    // the legacy hmac api takes int lengths, so an oversized input is rejected rather than silently truncated.
+    if (key.size() > static_cast<std::size_t>(INT_MAX) || data.size() > static_cast<std::size_t>(INT_MAX)) {
+        throw std::runtime_error("[CryptoPrimitives] The keyed hash input is too large.");
+    }
+    const int keyLen = static_cast<int>(key.size());
+    const int dataLen = static_cast<int>(data.size());
     unsigned char buf[EVP_MAX_MD_SIZE];
     unsigned int outLen = 0;
     if (HMAC(md,
@@ -179,7 +183,7 @@ std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string
 }
 
 std::string CryptoPrimitives::randomBytes(std::size_t count) {
-    // the only hard bound is the OpenSSL api taking an int length; the caller decides how much it wants.
+    // the only hard bound is the OpenSSL api taking an int length, so the caller decides how much it wants.
     if (count > static_cast<std::size_t>(INT_MAX)) {
         throw std::runtime_error("[CryptoPrimitives] The requested random byte count is too large.");
     }

@@ -102,7 +102,9 @@ void XmlConvert::buildElement(pugi::xml_node parent, lua_State* L, int nodeIndex
 
     lua_getfield(L, nodeIndex, "text");
     if (lua_isstring(L, -1)) {
-        el.text().set(lua_tostring(L, -1));
+        size_t len = 0;
+        const char* s = lua_tolstring(L, -1, &len);
+        el.text().set(s, len);
     }
     lua_pop(L, 1);
 }

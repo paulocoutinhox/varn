@@ -21,7 +21,7 @@ async.run(function()
     end
     assert(table.concat(seq, ",") == "1,2,3", "sequential awaits should complete in issue order")
 
-    -- spawn runs a background coroutine that can await; coordinate via a shared counter.
+    -- spawn runs a background coroutine that can await, so coordinate via a shared counter.
     local done = 0
     local total = 5
     for _ = 1, total do

@@ -87,6 +87,7 @@ The same scripts run on Linux, macOS, and Windows, on iPhone and Android, and in
 | 🛠️ Building and running | [docs/build.md](docs/build.md) |
 | ⏳ Async and promises | [docs/async.md](docs/async.md) |
 | 🔒 Safety notes | [docs/security.md](docs/security.md) |
+| 🔥 Stress testing | [docs/stress-test.md](docs/stress-test.md) |
 
 ## 💜 Support
 

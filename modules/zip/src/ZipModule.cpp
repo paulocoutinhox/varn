@@ -66,13 +66,15 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
 
         const fs::path outFile = destRoot / nm;
         const fs::path parentDir = outFile.parent_path();
-        fs::create_directories(parentDir);
 
+        // confirm containment before creating anything, so a pre-existing symlink cannot redirect mkdir outside the root.
         const fs::path canonParent = fs::weakly_canonical(parentDir);
         if (!ZipPath::isSubpath(destRoot, canonParent)) {
             zip_discard(za);
             throw std::runtime_error("[ZipModule] An entry tried to escape the destination directory.");
         }
+
+        fs::create_directories(parentDir);
 
         if (!nm.empty() && nm.back() == '/') {
             continue;

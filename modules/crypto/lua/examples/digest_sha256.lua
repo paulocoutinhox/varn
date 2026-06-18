@@ -1,4 +1,4 @@
--- checks a short string against a known hex fingerprint
+-- checks a short string against a known hex fingerprint.
 local crypto = require("crypto")
 
 local h = crypto.digest("SHA256", "varn", "hex")

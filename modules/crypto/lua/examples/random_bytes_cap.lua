@@ -1,11 +1,11 @@
--- shows the randomBytes count cap by drawing at the limit and rejecting one byte over it.
+-- shows randomBytes drawing a large requested size and rejecting a negative count.
 local crypto = require("crypto")
 
-local atCap = crypto.randomBytes(1024 * 1024)
-assert(#atCap == 1024 * 1024, "draw at the cap")
+local bytes = crypto.randomBytes(1024 * 1024)
+assert(#bytes == 1024 * 1024, "draw the requested size")
 
-local ok = pcall(crypto.randomBytes, 1024 * 1024 + 1)
-assert(not ok, "a count above the cap is rejected")
+local ok = pcall(crypto.randomBytes, -1)
+assert(not ok, "a negative count is rejected")
 
-print("crypto.randomBytes cap ok: at-cap len=", #atCap, "over-cap rejected")
+print("crypto.randomBytes ok: len=", #bytes, "negative rejected")
 os.exit(0)

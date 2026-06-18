@@ -17,12 +17,10 @@
 
 namespace varn::socket {
 
-// close interruption without racing the socket fd:
-//  - a stream connection blocks in send/receive and is interrupted instantly by shutdown() (which only
-//    issues a syscall, never invalidates the fd); separate read/write mutexes let a duplex protocol
-//    send and receive at the same time, and close takes both before the final close().
-//  - a listener/udp socket has no shutdown that reliably interrupts accept/recvFrom, so those poll on a
-//    short tick guarded by an atomic close flag instead (close latency bounded by the poll interval).
+// close interrupts in-flight operations without racing the socket fd.
+// a stream connection blocks in send/receive and is interrupted instantly by shutdown(), which only issues a syscall and never invalidates the fd.
+// separate read and write mutexes let a duplex protocol send and receive at the same time, and close takes both before the final close().
+// a listener or udp socket has no shutdown that reliably interrupts accept/recvFrom, so those poll on a short tick guarded by an atomic close flag, bounding close latency by the poll interval.
 static const Poco::Timespan kSocketPollInterval(0, 200000); // 200 ms
 
 class PocoTcpConnection final : public TcpConnection {
@@ -67,13 +65,13 @@ public:
             return {};
         }
 
-        // the caller chooses how large a read to request; the buffer is sized to it, like node.
+        // the caller chooses how large a read to request and the buffer is sized to it, like node.
         std::vector<char> buffer(static_cast<std::size_t>(maxBytes));
 
         // blocks until data, eof, or shutdown() (from closeBlocking) interrupts it.
         const int received = socket_.receiveBytes(buffer.data(), maxBytes);
 
-        // our own close() interrupting the read is an error; a 0/eof from the peer is an empty result.
+        // our own close() interrupting the read is an error, while a 0/eof from the peer is an empty result.
         if (closed_.load(std::memory_order_acquire)) {
             throw std::runtime_error("[PocoTcpConnection] The connection is closed.");
         }
@@ -86,8 +84,8 @@ public:
     }
 
     void closeBlocking() override {
-        // shutdown WITHOUT a lock interrupts an in-flight send/receive instantly; then take both
-        // mutexes (released quickly once the syscalls return) and close with no thread inside the socket.
+        // shutdown without a lock interrupts an in-flight send/receive instantly.
+        // taking both mutexes afterwards (released quickly once the syscalls return) closes with no thread inside the socket.
         closed_.store(true, std::memory_order_release);
 
         try {

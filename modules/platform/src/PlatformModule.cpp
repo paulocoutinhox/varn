@@ -68,7 +68,7 @@ int PlatformModule::luaEndianness(lua_State* L) {
 
 int PlatformModule::luaLibraryPathByName(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
-    const char* subdirRaw = (lua_gettop(L) >= 2 && lua_isstring(L, 2)) ? lua_tostring(L, 2) : ".";
+    const char* subdirRaw = luaL_optstring(L, 2, ".");
     try {
         std::string out = subdirRaw;
         const std::string file = PlatformInfo::libraryFilenameForName(name);

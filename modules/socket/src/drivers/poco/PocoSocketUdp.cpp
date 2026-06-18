@@ -14,8 +14,8 @@
 
 namespace varn::socket {
 
-// see PocoSocketTcp.cpp: receive is a poll loop guarded by an atomic close flag so close() never blocks
-// behind an in-flight receiveFrom and never races the socket fd.
+// receive is a poll loop guarded by an atomic close flag, so close() never blocks behind an in-flight receiveFrom and never races the socket fd.
+// see PocoSocketTcp.cpp for the same close strategy.
 static const Poco::Timespan kUdpPollInterval(0, 200000); // 200 ms
 
 class PocoUdpSocket final : public UdpSocket {

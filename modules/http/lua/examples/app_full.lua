@@ -42,11 +42,9 @@ end)
 
 -- global middleware runs on every request and can act before and after the handler.
 app:use(function(ctx, next)
-    local startedAt = os.clock()
     ctx.state.requestId = tostring(math.random(100000, 999999))
     next()
     print(string.format("[%s] %s %s", ctx.state.requestId, ctx.req.method, ctx.req.path))
-    local _ = startedAt
 end)
 
 -- built-in security middlewares: cors and security headers apply to every request.

@@ -23,8 +23,6 @@ namespace varn::runtime {
 
 class Runtime {
 public:
-    // scriptArgIndex is the position in args that becomes Lua's arg[0]; later entries become arg[1..]
-    // and earlier ones arg[-1..], matching the standard Lua argument convention.
     explicit Runtime(std::vector<std::string> args, std::size_t scriptArgIndex = 1);
     ~Runtime();
 

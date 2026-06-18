@@ -53,7 +53,7 @@ public:
 
             onRequest(inboundRequest, deferredResponse);
 
-            // write the buffered response after the handler returns when the library still owns the stream
+            // write the buffered response after the handler returns while the library still owns the stream.
             deferredResponse->flushTo(response);
         } catch (const RequestBodyTooLarge& ex) {
             log::Log::error("VarnRequestHandler", ex.what());

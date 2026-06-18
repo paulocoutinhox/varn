@@ -6,8 +6,8 @@
 
 namespace varn::lua {
 
-// last-resort handler for an error raised outside any protected call. lua is built as C, so without
-// this the default panic handler aborts the process with no message. this at least logs the cause.
+// last-resort handler for an error raised outside any protected call. without it the default panic
+// handler aborts the process with no message, so this logs the cause before the process terminates.
 int LuaEngine::handlePanic(lua_State* L) {
     const char* message = lua_tostring(L, -1);
     log::Log::error("LuaEngine", message ? message : "An unprotected Lua error occurred.");

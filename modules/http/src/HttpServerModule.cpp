@@ -382,7 +382,7 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index) {
     if (lua_isinteger(L, -1)) {
         const auto value = static_cast<int>(lua_tointeger(L, -1));
         if (value > 0) {
-            options.maxThreads = value;
+            options.maxThreads = std::clamp(value, 1, 1024);
         }
     }
     lua_pop(L, 1);
