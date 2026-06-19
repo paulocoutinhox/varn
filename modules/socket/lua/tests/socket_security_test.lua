@@ -58,5 +58,4 @@ async.run(function()
     assert(gerr, "receive after close should return an error")
 
     print("socket security ok")
-    os.exit(0)
 end)

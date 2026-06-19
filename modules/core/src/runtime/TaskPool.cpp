@@ -3,17 +3,17 @@
 namespace varn::runtime {
 
 TaskPool::TaskPool(std::size_t threadCount, std::shared_ptr<WorkLedger> ledger)
-    : ledger_(std::move(ledger)), threadCount_(threadCount == 0 ? 4 : threadCount) {}
+    : ledger(std::move(ledger)), threadCount(threadCount == 0 ? 4 : threadCount) {}
 
 void TaskPool::start() {
     // the workers must spawn only after the ledger notify hook is installed, so none observes a half-set callback.
 #if !defined(__EMSCRIPTEN__)
-    if (!workers_.empty()) {
+    if (!workers.empty()) {
         return;
     }
-    workers_.reserve(threadCount_);
-    for (std::size_t i = 0; i < threadCount_; ++i) {
-        workers_.emplace_back([this] {
+    workers.reserve(threadCount);
+    for (std::size_t i = 0; i < threadCount; ++i) {
+        workers.emplace_back([this] {
             workerLoop();
         });
     }
@@ -27,16 +27,16 @@ TaskPool::~TaskPool() {
 }
 
 void TaskPool::post(Job job) {
-    ledger_->enter();
+    ledger->enter();
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        jobs_.push([ledger = ledger_, j = std::move(job)]() mutable {
+        std::lock_guard<std::mutex> lock(mutex);
+        jobs.push([ledger = ledger, j = std::move(job)]() mutable {
             j();
             ledger->leave();
         });
     }
 #if !defined(__EMSCRIPTEN__)
-    cv_.notify_one();
+    cv.notify_one();
 #endif
 }
 
@@ -45,12 +45,12 @@ void TaskPool::drainPostedJobs() {
     for (;;) {
         Job job;
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (jobs_.empty()) {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (jobs.empty()) {
                 break;
             }
-            job = std::move(jobs_.front());
-            jobs_.pop();
+            job = std::move(jobs.front());
+            jobs.pop();
         }
         if (job) {
             job();
@@ -59,27 +59,27 @@ void TaskPool::drainPostedJobs() {
 }
 
 bool TaskPool::hasPostedJobs() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return !jobs_.empty();
+    std::lock_guard<std::mutex> lock(mutex);
+    return !jobs.empty();
 }
 #endif
 
 void TaskPool::stop() {
 #if defined(__EMSCRIPTEN__)
-    running_ = false;
+    running = false;
 #else
     {
         // the flag must change under the same mutex the workers wait on, otherwise a worker that has already evaluated the predicate but not yet blocked misses the notify and never wakes.
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex);
         bool expected = true;
-        if (!running_.compare_exchange_strong(expected, false)) {
+        if (!running.compare_exchange_strong(expected, false)) {
             return;
         }
     }
 
-    cv_.notify_all();
+    cv.notify_all();
 
-    for (auto& worker : workers_) {
+    for (auto& worker : workers) {
         if (worker.joinable()) {
             worker.join();
         }
@@ -88,21 +88,21 @@ void TaskPool::stop() {
 }
 
 void TaskPool::workerLoop() {
-    while (running_) {
+    while (running) {
         Job job;
 
         {
-            std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [&] {
-                return !running_ || !jobs_.empty();
+            std::unique_lock<std::mutex> lock(mutex);
+            cv.wait(lock, [&] {
+                return !running || !jobs.empty();
             });
 
-            if (!running_ && jobs_.empty()) {
+            if (!running && jobs.empty()) {
                 break;
             }
 
-            job = std::move(jobs_.front());
-            jobs_.pop();
+            job = std::move(jobs.front());
+            jobs.pop();
         }
 
         if (job) {

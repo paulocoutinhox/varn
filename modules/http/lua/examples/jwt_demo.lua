@@ -16,4 +16,3 @@ print("verified sub=" .. claims.sub .. " role=" .. claims.role)
 local forged, forgedErr = http.jwt.verify(token, "not-the-secret")
 print("wrong secret rejected: " .. tostring(forged == nil) .. " (" .. tostring(forgedErr) .. ")")
 
-os.exit(0)

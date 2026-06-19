@@ -24,5 +24,4 @@ async.run(function()
     conn:close():await()
 
     print("socket tcp round-trip ok")
-    os.exit(0)
 end)

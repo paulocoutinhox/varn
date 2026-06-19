@@ -40,4 +40,3 @@ print(string.format("rows: %d  average: %.3f", total.n, total.avg))
 
 db:close()
 print("vdo crud ok")
-os.exit(0)

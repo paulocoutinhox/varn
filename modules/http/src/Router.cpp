@@ -72,22 +72,22 @@ int Router::add(const std::string& method, const std::string& pattern) {
         route.segments.push_back(std::move(segment));
     }
 
-    routes_.push_back(std::move(route));
-    return static_cast<int>(routes_.size()) - 1;
+    routes.push_back(std::move(route));
+    return static_cast<int>(routes.size()) - 1;
 }
 
 void Router::setConstraint(int routeId, const std::string& param, const std::string& constraint) {
-    routes_.at(routeId).constraints[param] = compileConstraint(constraint);
+    routes.at(routeId).constraints[param] = compileConstraint(constraint);
 }
 
 void Router::setName(int routeId, const std::string& name) {
-    const auto existing = namedRoutes_.find(name);
-    if (existing != namedRoutes_.end()) {
+    const auto existing = namedRoutes.find(name);
+    if (existing != namedRoutes.end()) {
         throw std::runtime_error("[Router] The route name '" + name + "' is already in use.");
     }
 
-    routes_.at(routeId).name = name;
-    namedRoutes_[name] = routeId;
+    routes.at(routeId).name = name;
+    namedRoutes[name] = routeId;
 }
 
 bool Router::pathMatches(const Route& route, const std::vector<std::string>& parts, std::vector<RouteParam>& outParams) const {
@@ -152,8 +152,8 @@ MatchResult Router::match(const std::string& method, const std::string& path) co
     int headFallback = -1;
     std::vector<RouteParam> headParams;
 
-    for (std::size_t i = 0; i < routes_.size(); ++i) {
-        const Route& route = routes_[i];
+    for (std::size_t i = 0; i < routes.size(); ++i) {
+        const Route& route = routes[i];
 
         std::vector<RouteParam> params;
         if (!pathMatches(route, parts, params)) {
@@ -197,13 +197,13 @@ MatchResult Router::match(const std::string& method, const std::string& path) co
 
 std::optional<std::string> Router::buildUrl(const std::string& name,
                                             const std::unordered_map<std::string, std::string>& params) const {
-    const auto entry = namedRoutes_.find(name);
-    if (entry == namedRoutes_.end()) {
+    const auto entry = namedRoutes.find(name);
+    if (entry == namedRoutes.end()) {
         return std::nullopt;
     }
 
     std::string url;
-    for (const Segment& segment : routes_[entry->second].segments) {
+    for (const Segment& segment : routes[entry->second].segments) {
         url += '/';
 
         if (!segment.isParam) {

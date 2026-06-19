@@ -36,4 +36,3 @@ byKind:close()
 
 db:close()
 print("vdo prepared ok")
-os.exit(0)

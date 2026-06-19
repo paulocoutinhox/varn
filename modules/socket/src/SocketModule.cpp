@@ -25,6 +25,7 @@ Runtime& SocketModule::luaRuntime(lua_State* L) {
 }
 
 void SocketModule::pushTcpSocket(lua_State* L, std::shared_ptr<TcpConnection> conn) {
+    luaRuntime(L).registerSocket(conn);
     void* memory = lua_newuserdatauv(L, sizeof(std::shared_ptr<TcpConnection>), 0);
     new (memory) std::shared_ptr<TcpConnection>(std::move(conn));
     luaL_getmetatable(L, kTcpSocketMeta);
@@ -32,6 +33,7 @@ void SocketModule::pushTcpSocket(lua_State* L, std::shared_ptr<TcpConnection> co
 }
 
 void SocketModule::pushTcpListener(lua_State* L, std::shared_ptr<TcpListener> listener) {
+    luaRuntime(L).registerSocket(listener);
     void* memory = lua_newuserdatauv(L, sizeof(std::shared_ptr<TcpListener>), 0);
     new (memory) std::shared_ptr<TcpListener>(std::move(listener));
     luaL_getmetatable(L, kTcpListenerMeta);
@@ -40,6 +42,7 @@ void SocketModule::pushTcpListener(lua_State* L, std::shared_ptr<TcpListener> li
 }
 
 void SocketModule::pushUdpSocket(lua_State* L, std::shared_ptr<UdpSocket> socket) {
+    luaRuntime(L).registerSocket(socket);
     void* memory = lua_newuserdatauv(L, sizeof(std::shared_ptr<UdpSocket>), 0);
     new (memory) std::shared_ptr<UdpSocket>(std::move(socket));
     luaL_getmetatable(L, kUdpSocketMeta);

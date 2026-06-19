@@ -46,5 +46,4 @@ async.run(function()
     }):await())
     print("POST /echo -> " .. echoStatus .. " " .. echoBody)
 
-    os.exit(0)
 end)

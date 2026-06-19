@@ -31,8 +31,8 @@ private:
     void installNativeModules();
     void configureArgTable();
 
-    varn::runtime::Runtime& runtime_;
-    lua_State* L_ = nullptr;
+    varn::runtime::Runtime& runtime;
+    lua_State* L = nullptr;
 };
 
 } // namespace varn::lua

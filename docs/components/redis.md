@@ -31,7 +31,6 @@ async.run(function()
     local client = redis.connect({ host = "127.0.0.1", port = 6379, password = "secret" })
     -- ... use the client ...
     client:close()
-    os.exit(0)
 end)
 ```
 
@@ -132,7 +131,6 @@ async.run(function()
     client:close()
 
     print("redis basic ok")
-    os.exit(0)
 end)
 ```
 
@@ -177,6 +175,5 @@ async.run(function()
     client:close()
 
     print("redis hash and list ok")
-    os.exit(0)
 end)
 ```

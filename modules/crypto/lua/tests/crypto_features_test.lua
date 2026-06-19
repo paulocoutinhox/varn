@@ -74,4 +74,3 @@ assert(crypto.equals("a\0b", "a\0b") == true, "equals is nul-aware")
 assert(crypto.equals("a\0b", "a\0c") == false, "equals compares past a nul")
 
 print("crypto features ok")
-os.exit(0)

@@ -22,10 +22,10 @@ static const Poco::Timespan kSocketPollInterval(0, 200000); // 200 ms
 
 class PocoTcpConnection final : public TcpConnection {
 public:
-    explicit PocoTcpConnection(Poco::Net::StreamSocket socket) : socket_(std::move(socket)) {}
+    explicit PocoTcpConnection(Poco::Net::StreamSocket socket) : socket(std::move(socket)) {}
 
     void sendBlocking(const std::string& data) override {
-        std::lock_guard<std::mutex> lock(writeMutex_);
+        std::lock_guard<std::mutex> lock(writeMutex);
 
         if (data.empty()) {
             return;
@@ -34,13 +34,13 @@ public:
         std::size_t offset = 0;
 
         while (offset < data.size()) {
-            if (closed_.load(std::memory_order_acquire)) {
+            if (closed.load(std::memory_order_acquire)) {
                 throw std::runtime_error("[PocoTcpConnection] The connection was closed.");
             }
 
             const std::size_t remaining = data.size() - offset;
             const int chunk = static_cast<int>(std::min(remaining, static_cast<std::size_t>(INT_MAX)));
-            const int n = socket_.sendBytes(data.data() + offset, chunk);
+            const int n = socket.sendBytes(data.data() + offset, chunk);
 
             if (n <= 0) {
                 throw std::runtime_error("[PocoTcpConnection] The connection was closed before all data could be sent.");
@@ -51,10 +51,10 @@ public:
     }
 
     std::string receiveBlocking(int maxBytes) override {
-        std::lock_guard<std::mutex> lock(readMutex_);
+        std::lock_guard<std::mutex> lock(readMutex);
 
         // receiving on a socket the caller already closed is an error, distinct from a peer eof.
-        if (closed_.load(std::memory_order_acquire)) {
+        if (closed.load(std::memory_order_acquire)) {
             throw std::runtime_error("[PocoTcpConnection] The connection is closed.");
         }
 
@@ -66,10 +66,10 @@ public:
         std::vector<char> buffer(static_cast<std::size_t>(maxBytes));
 
         // blocks until data, eof, or shutdown() (from closeBlocking) interrupts it.
-        const int received = socket_.receiveBytes(buffer.data(), maxBytes);
+        const int received = socket.receiveBytes(buffer.data(), maxBytes);
 
         // our own close() interrupting the read is an error, while a 0/eof from the peer is an empty result.
-        if (closed_.load(std::memory_order_acquire)) {
+        if (closed.load(std::memory_order_acquire)) {
             throw std::runtime_error("[PocoTcpConnection] The connection is closed.");
         }
 
@@ -82,63 +82,63 @@ public:
 
     void closeBlocking() override {
         // shutdown without a lock interrupts an in-flight send/receive instantly, then taking both mutexes (released quickly once the syscalls return) closes with no thread inside the socket.
-        closed_.store(true, std::memory_order_release);
+        closed.store(true, std::memory_order_release);
 
         try {
-            socket_.shutdown();
+            socket.shutdown();
         } catch (...) {
         }
 
-        std::lock_guard<std::mutex> rlock(readMutex_);
-        std::lock_guard<std::mutex> wlock(writeMutex_);
+        std::lock_guard<std::mutex> rlock(readMutex);
+        std::lock_guard<std::mutex> wlock(writeMutex);
 
         try {
-            socket_.close();
+            socket.close();
         } catch (...) {
         }
     }
 
 private:
-    std::mutex readMutex_;
-    std::mutex writeMutex_;
-    std::atomic<bool> closed_{false};
-    Poco::Net::StreamSocket socket_;
+    std::mutex readMutex;
+    std::mutex writeMutex;
+    std::atomic<bool> closed{false};
+    Poco::Net::StreamSocket socket;
 };
 
 class PocoTcpListener final : public TcpListener {
 public:
-    explicit PocoTcpListener(Poco::Net::ServerSocket server) : server_(std::move(server)) {}
+    explicit PocoTcpListener(Poco::Net::ServerSocket server) : server(std::move(server)) {}
 
     std::shared_ptr<TcpConnection> acceptBlocking() override {
         while (true) {
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::lock_guard<std::mutex> lock(mutex);
 
-            if (closed_.load(std::memory_order_acquire)) {
+            if (closed.load(std::memory_order_acquire)) {
                 return nullptr;
             }
 
-            if (!server_.poll(kSocketPollInterval, Poco::Net::Socket::SELECT_READ)) {
+            if (!server.poll(kSocketPollInterval, Poco::Net::Socket::SELECT_READ)) {
                 continue;
             }
 
-            Poco::Net::StreamSocket accepted = server_.acceptConnection();
+            Poco::Net::StreamSocket accepted = server.acceptConnection();
             return std::make_shared<PocoTcpConnection>(std::move(accepted));
         }
     }
 
     void closeBlocking() override {
-        closed_.store(true, std::memory_order_release);
-        std::lock_guard<std::mutex> lock(mutex_);
+        closed.store(true, std::memory_order_release);
+        std::lock_guard<std::mutex> lock(mutex);
         try {
-            server_.close();
+            server.close();
         } catch (...) {
         }
     }
 
 private:
-    std::mutex mutex_;
-    std::atomic<bool> closed_{false};
-    Poco::Net::ServerSocket server_;
+    std::mutex mutex;
+    std::atomic<bool> closed{false};
+    Poco::Net::ServerSocket server;
 };
 
 void SocketTransport::checkPort(int port) {

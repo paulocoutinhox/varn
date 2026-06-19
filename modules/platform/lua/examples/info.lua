@@ -17,4 +17,3 @@ assert(p.pointerSize() == 4 or p.pointerSize() == 8, "pointerSize")
 assert(p.endianness() == "little" or p.endianness() == "big", "endianness")
 
 print("platform info ok")
-os.exit(0)

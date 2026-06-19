@@ -11,4 +11,3 @@ log.warn("log", "warn", 3)
 log.error("log", "error", 4)
 
 print("log ok")
-os.exit(0)

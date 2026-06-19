@@ -2,21 +2,24 @@
 #include "varn/lua/LuaEngine.h"
 #include "varn/log/Log.h"
 #include "varn/http/HttpTypes.h"
+#include "varn/socket/SocketTransport.h"
+
+#include <algorithm>
 
 namespace varn::runtime {
 
 using varn::lua::LuaEngine;
 
 Runtime::Runtime(std::vector<std::string> args, std::size_t scriptArgIndex)
-    : args_(std::move(args)),
-      scriptArgIndex_(scriptArgIndex),
-      workLedger_(std::make_shared<WorkLedger>()),
-      mainLoop_(workLedger_),
-      taskPool_(std::thread::hardware_concurrency(), workLedger_),
-      lua_(std::make_unique<LuaEngine>(*this)) {
+    : arguments(std::move(args)),
+      scriptArgPosition(scriptArgIndex),
+      workLedger(std::make_shared<WorkLedger>()),
+      loop(workLedger),
+      pool(std::thread::hardware_concurrency(), workLedger),
+      engine(std::make_unique<LuaEngine>(*this)) {
     // scriptArgIndex marks the entry in args that becomes Lua's arg[0] (later entries arg[1..], earlier arg[-1..]), and the notify hook is installed before any worker spins up so none can observe it unset.
-    workLedger_->setNotify([this] { mainLoop_.wake(); });
-    taskPool_.start();
+    workLedger->setNotify([this] { loop.wake(); });
+    pool.start();
 }
 
 Runtime::~Runtime() {
@@ -24,16 +27,16 @@ Runtime::~Runtime() {
 }
 
 int Runtime::runScript(const std::string& scriptPath) {
-    return finishAfterUserChunk(lua_->runFile(scriptPath));
+    return finishAfterUserChunk(engine->runFile(scriptPath));
 }
 
 int Runtime::runString(const std::string& source, const std::string& chunkName) {
-    return finishAfterUserChunk(lua_->runString(source, chunkName));
+    return finishAfterUserChunk(engine->runString(source, chunkName));
 }
 
 bool Runtime::runStringWithoutEventLoop(const std::string& source, const std::string& chunkName, std::string* errorMessage,
                                         void (*prePcallHook)(lua_State*, void*), void* prePcallUserdata) {
-    return lua_->runStringWithoutEventLoop(source, chunkName, errorMessage, prePcallHook, prePcallUserdata);
+    return engine->runStringWithoutEventLoop(source, chunkName, errorMessage, prePcallHook, prePcallUserdata);
 }
 
 int Runtime::finishAfterUserChunk(int loadRunExitCode) {
@@ -42,83 +45,98 @@ int Runtime::finishAfterUserChunk(int loadRunExitCode) {
     }
 
     // an async entry may have already failed or completed synchronously before the loop starts.
-    if (unhandledError_) {
+    if (unhandledError) {
         return 1;
     }
-    if (entryRequestedStop_) {
+    if (entryRequestedStop) {
         return 0;
     }
 
-    mainLoop_.setIdleExitPredicate([this] {
-        return servers_.empty() && backgroundDrivers_.load(std::memory_order_acquire) == 0
-            && workLedger_->depth() == 0;
+    loop.setIdleExitPredicate([this] {
+        return servers.empty() && backgroundDrivers.load(std::memory_order_acquire) == 0
+            && workLedger->depth() == 0;
     });
-    mainLoop_.run();
-    mainLoop_.setIdleExitPredicate({});
-    return unhandledError_ ? 1 : 0;
+    loop.run();
+    loop.setIdleExitPredicate({});
+    return unhandledError ? 1 : 0;
 }
 
 void Runtime::onAsyncComplete(bool ok, bool stopLoopOnSuccess, const std::string& error) {
     if (!ok) {
-        unhandledError_ = true;
+        unhandledError = true;
         log::Log::error("Runtime", error.empty() ? "A task failed without a message." : error);
-        mainLoop_.stop();
+        loop.stop();
         return;
     }
 
     if (stopLoopOnSuccess) {
-        entryRequestedStop_ = true;
-        mainLoop_.stop();
+        entryRequestedStop = true;
+        loop.stop();
     }
 }
 
 EventLoop& Runtime::mainLoop() {
-    return mainLoop_;
+    return loop;
 }
 
 TaskPool& Runtime::taskPool() {
-    return taskPool_;
+    return pool;
 }
 
 lua_State* Runtime::luaState() {
-    return lua_->state();
+    return engine->state();
 }
 
 void Runtime::addServer(std::shared_ptr<varn::http::HttpServer> server) {
-    servers_.push_back(std::move(server));
-    mainLoop_.wake();
+    servers.push_back(std::move(server));
+    loop.wake();
+}
+
+void Runtime::registerSocket(const std::shared_ptr<varn::socket::SocketHandle>& socket) {
+    sockets.erase(
+        std::remove_if(sockets.begin(), sockets.end(),
+                       [](const std::weak_ptr<varn::socket::SocketHandle>& entry) { return entry.expired(); }),
+        sockets.end());
+    sockets.push_back(socket);
 }
 
 void Runtime::retainBackgroundDriver() {
-    backgroundDrivers_.fetch_add(1, std::memory_order_relaxed);
+    backgroundDrivers.fetch_add(1, std::memory_order_relaxed);
 }
 
 void Runtime::releaseBackgroundDriver() {
-    backgroundDrivers_.fetch_sub(1, std::memory_order_acq_rel);
-    mainLoop_.wake();
+    backgroundDrivers.fetch_sub(1, std::memory_order_acq_rel);
+    loop.wake();
 }
 
-// main-thread only, so servers_ is read without a lock because it is written exclusively from the thread that constructs and runs the runtime before any worker is spawned.
+// main-thread only, so servers is read without a lock because it is written exclusively from the thread that constructs and runs the runtime before any worker is spawned.
 void Runtime::stop() {
     bool expected = false;
-    if (!stopped_.compare_exchange_strong(expected, true)) {
+    if (!stopFlag.compare_exchange_strong(expected, true)) {
         return;
     }
 
-    for (auto& server : servers_) {
+    for (auto& server : servers) {
         if (server) {
             server->stop();
         }
     }
 
-    taskPool_.stop();
-    mainLoop_.stop();
+    // close live sockets so a worker blocked in a blocking accept or receive returns before the pool is joined.
+    for (auto& entry : sockets) {
+        if (auto socket = entry.lock()) {
+            socket->closeBlocking();
+        }
+    }
+
+    pool.stop();
+    loop.stop();
     // with workers joined and the loop stopped, dropping any still-queued job releases its captured state such as AppState holding lua registry refs while the lua_State is still alive, rather than during member teardown after lua_close.
-    mainLoop_.clearPendingJobs();
+    loop.clearPendingJobs();
 }
 
 const std::vector<std::string>& Runtime::args() const {
-    return args_;
+    return arguments;
 }
 
 } // namespace varn::runtime

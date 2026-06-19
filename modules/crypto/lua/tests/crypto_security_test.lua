@@ -57,4 +57,3 @@ assert(a ~= b, "random draws differ")
 assert(#crypto.randomBytes(256) == 256, "random output keeps every byte")
 
 print("crypto security ok")
-os.exit(0)

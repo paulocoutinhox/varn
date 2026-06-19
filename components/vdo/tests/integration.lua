@@ -195,4 +195,3 @@ for _, target in ipairs(targets) do
 end
 
 print("vdo integration ok (" .. #targets .. " backend(s))")
-os.exit(0)

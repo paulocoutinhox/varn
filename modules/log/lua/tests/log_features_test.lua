@@ -24,4 +24,3 @@ for i = 1, 5 do
 end
 
 print("log features ok")
-os.exit(0)

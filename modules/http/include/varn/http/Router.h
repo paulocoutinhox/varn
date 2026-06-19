@@ -61,8 +61,8 @@ private:
     static constexpr std::size_t kMaxPathLength = 8192;
     static constexpr std::size_t kMaxSegmentLength = 1024;
 
-    std::vector<Route> routes_;
-    std::unordered_map<std::string, int> namedRoutes_;
+    std::vector<Route> routes;
+    std::unordered_map<std::string, int> namedRoutes;
 };
 
 } // namespace varn::http

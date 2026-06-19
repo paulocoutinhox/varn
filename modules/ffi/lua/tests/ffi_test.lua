@@ -9,4 +9,3 @@ assert(ffi.C.strlen("hello") == 5, "strlen(hello) should be 5")
 assert(ffi.C.strlen("") == 0, "strlen('') should be 0")
 
 print("ffi ok")
-os.exit(0)

@@ -38,4 +38,3 @@ local okEmptyPath = pcall(platform.getLibraryPathByName, "", "")
 assert(not okEmptyPath, "empty name in path builder should error")
 
 print("platform security ok")
-os.exit(0)

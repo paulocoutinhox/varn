@@ -9,4 +9,3 @@ print("ffi buffer length:", ffi.sizeof("char[6]"))
 print("ffi buffer text:", ffi.string(ptr))
 print("ffi buffer prefix:", ffi.string(buf, 3))
 
-os.exit(0)

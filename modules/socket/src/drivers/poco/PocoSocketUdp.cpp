@@ -19,17 +19,17 @@ static const Poco::Timespan kUdpPollInterval(0, 200000); // 200 ms
 
 class PocoUdpSocket final : public UdpSocket {
 public:
-    explicit PocoUdpSocket(Poco::Net::DatagramSocket socket) : socket_(std::move(socket)) {}
+    explicit PocoUdpSocket(Poco::Net::DatagramSocket socket) : socket(std::move(socket)) {}
 
     void sendToBlocking(const std::string& host, int port, const std::string& data) override {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex);
 
-        if (closed_.load(std::memory_order_acquire)) {
+        if (closed.load(std::memory_order_acquire)) {
             throw std::runtime_error("[PocoUdpSocket] The socket was closed.");
         }
 
         Poco::Net::SocketAddress destination(host, static_cast<std::uint16_t>(port));
-        const int sent = socket_.sendTo(data.data(), static_cast<int>(data.size()), destination);
+        const int sent = socket.sendTo(data.data(), static_cast<int>(data.size()), destination);
 
         if (sent < 0 || static_cast<std::size_t>(sent) != data.size()) {
             throw std::runtime_error("[PocoUdpSocket] The datagram could not be fully sent.");
@@ -50,18 +50,18 @@ public:
         std::vector<char> buffer(static_cast<std::size_t>(maxBytes));
 
         while (true) {
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::lock_guard<std::mutex> lock(mutex);
 
-            if (closed_.load(std::memory_order_acquire)) {
+            if (closed.load(std::memory_order_acquire)) {
                 return {};
             }
 
-            if (!socket_.poll(kUdpPollInterval, Poco::Net::Socket::SELECT_READ)) {
+            if (!socket.poll(kUdpPollInterval, Poco::Net::Socket::SELECT_READ)) {
                 continue;
             }
 
             Poco::Net::SocketAddress sender;
-            const int received = socket_.receiveFrom(buffer.data(), maxBytes, sender);
+            const int received = socket.receiveFrom(buffer.data(), maxBytes, sender);
 
             UdpDatagram datagram;
             if (received > 0) {
@@ -75,20 +75,20 @@ public:
     }
 
     void closeBlocking() override {
-        closed_.store(true, std::memory_order_release);
+        closed.store(true, std::memory_order_release);
 
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex);
 
         try {
-            socket_.close();
+            socket.close();
         } catch (...) {
         }
     }
 
 private:
-    std::mutex mutex_;
-    std::atomic<bool> closed_{false};
-    Poco::Net::DatagramSocket socket_;
+    std::mutex mutex;
+    std::atomic<bool> closed{false};
+    Poco::Net::DatagramSocket socket;
 };
 
 std::shared_ptr<UdpSocket> SocketTransport::bindUdpBlocking(const std::string& host, int port) {

@@ -8,5 +8,4 @@ async.spawn(function()
         seq[#seq + 1] = i
     end
     print("async.await sequence:", table.concat(seq, ","))
-    os.exit(0)
 end)

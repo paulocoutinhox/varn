@@ -337,7 +337,6 @@ async.spawn(function()
     local status, body = parseVarnWire(wire)
     print("status", status)
     print("body", body)
-    os.exit(0)
 end)
 ```
 
@@ -354,7 +353,6 @@ http.createServer(function(_, res)
 end):listen({ host = "127.0.0.1", port = port })
 
 print("http server listening on http://127.0.0.1:" .. port)
-os.exit(0)
 ```
 
 ### `https_json_server.lua`

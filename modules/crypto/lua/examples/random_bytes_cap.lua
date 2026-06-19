@@ -8,4 +8,3 @@ local ok = pcall(crypto.randomBytes, -1)
 assert(not ok, "a negative count is rejected")
 
 print("crypto.randomBytes ok: len=", #bytes, "negative rejected")
-os.exit(0)

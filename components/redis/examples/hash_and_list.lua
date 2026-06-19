@@ -39,5 +39,4 @@ async.run(function()
     client:close()
 
     print("redis hash and list ok")
-    os.exit(0)
 end)

@@ -19,5 +19,4 @@ async.spawn(function()
     assert(not fs.exists(tmp), "tmp should be removed")
 
     print("fs read/write/exists ok")
-    os.exit(0)
 end)

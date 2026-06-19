@@ -24,7 +24,6 @@ local v = p.hostVersion()
 print("hostVersion", v)
 assert(type(v) == "string" and #v > 0, "hostVersion")
 assert(v:match("^%d+%.%d+%.%d+"), "expected semver x.y.z")
-os.exit(0)
 ```
 
 ### `info.lua`
@@ -49,7 +48,6 @@ assert(p.pointerSize() == 4 or p.pointerSize() == 8, "pointerSize")
 assert(p.endianness() == "little" or p.endianness() == "big", "endianness")
 
 print("platform info ok")
-os.exit(0)
 ```
 
 ### `library_paths.lua`
@@ -67,5 +65,4 @@ print("getLibraryPathByName('z', 'vendor/libs') =", rel)
 
 assert(fn:match("%."), "expected extension in filename")
 print("platform library path helpers ok")
-os.exit(0)
 ```

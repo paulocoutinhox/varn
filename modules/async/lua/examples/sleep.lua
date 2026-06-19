@@ -5,5 +5,4 @@ async.spawn(function()
     async.sleep(50):await()
     local dt = (os.clock() - t0) * 1000
     print("async.sleep ok (requested 50ms, os.clock delta " .. string.format("%.1f", dt) .. " ms)")
-    os.exit(0)
 end)

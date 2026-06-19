@@ -36,7 +36,6 @@ ffi.cdef [[
 
 ffi.C.puts("ffi: hello from libc puts")
 
-os.exit(0)
 ```
 
 ### `sqlite3.lua`
@@ -230,5 +229,4 @@ must(S.sqlite3_finalize(sel), "finalize select")
 
 must(S.sqlite3_close(db), "close")
 print("ffi sqlite3: ok")
-os.exit(0)
 ```

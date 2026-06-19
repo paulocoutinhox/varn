@@ -33,5 +33,4 @@ async.run(function()
     client:close()
 
     print("redis basic ok")
-    os.exit(0)
 end)

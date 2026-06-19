@@ -7,4 +7,3 @@ ffi.cdef [[
 
 ffi.C.puts("ffi: hello from libc puts")
 
-os.exit(0)

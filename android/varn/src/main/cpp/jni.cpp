@@ -17,18 +17,25 @@ JNIEXPORT jlong JNICALL Java_com_varn_VarnRuntime_nativeNew(JNIEnv*, jclass) {
 }
 
 JNIEXPORT jint JNICALL Java_com_varn_VarnRuntime_nativeRunFile(JNIEnv* env, jclass, jlong handle, jstring path) {
-    const char* nativePath = env->GetStringUTFChars(path, nullptr);
+    // GetStringUTFChars requires a non-null jstring, so a null argument is forwarded as null for the C api to reject.
+    const char* nativePath = path != nullptr ? env->GetStringUTFChars(path, nullptr) : nullptr;
     const jint code = varn_runtime_run_file(asRuntime(handle), nativePath);
-    env->ReleaseStringUTFChars(path, nativePath);
+    if (nativePath != nullptr) {
+        env->ReleaseStringUTFChars(path, nativePath);
+    }
     return code;
 }
 
 JNIEXPORT jint JNICALL Java_com_varn_VarnRuntime_nativeRunString(JNIEnv* env, jclass, jlong handle, jstring source, jstring chunkName) {
-    const char* nativeSource = env->GetStringUTFChars(source, nullptr);
-    const char* nativeChunk = env->GetStringUTFChars(chunkName, nullptr);
+    const char* nativeSource = source != nullptr ? env->GetStringUTFChars(source, nullptr) : nullptr;
+    const char* nativeChunk = chunkName != nullptr ? env->GetStringUTFChars(chunkName, nullptr) : nullptr;
     const jint code = varn_runtime_run_string(asRuntime(handle), nativeSource, nativeChunk);
-    env->ReleaseStringUTFChars(source, nativeSource);
-    env->ReleaseStringUTFChars(chunkName, nativeChunk);
+    if (nativeSource != nullptr) {
+        env->ReleaseStringUTFChars(source, nativeSource);
+    }
+    if (nativeChunk != nullptr) {
+        env->ReleaseStringUTFChars(chunkName, nativeChunk);
+    }
     return code;
 }
 

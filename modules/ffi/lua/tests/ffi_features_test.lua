@@ -36,4 +36,3 @@ assert(ffi.string(buf, 3) == "wor", "ffi.string with an explicit length should t
 assert(tostring(ffi.nullptr) ~= nil, "ffi.nullptr should stringify")
 
 print("ffi features ok")
-os.exit(0)

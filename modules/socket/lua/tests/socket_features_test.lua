@@ -63,5 +63,4 @@ async.run(function()
     udp:close():await()
 
     print("socket features ok")
-    os.exit(0)
 end)

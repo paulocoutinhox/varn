@@ -12,8 +12,8 @@ public:
     bool tryServe(const HttpRequest& request, HttpResponse& response) const;
 
 private:
-    std::string publicDir_;
-    bool directoryListing_;
+    std::string publicDir;
+    bool directoryListing;
 };
 
 } // namespace varn::http

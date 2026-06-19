@@ -56,5 +56,4 @@ async.run(function()
     os.remove(path)
 
     print("fs features ok")
-    os.exit(0)
 end)

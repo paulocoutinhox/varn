@@ -43,8 +43,11 @@ void JsonConvert::pushJson(lua_State* L, const nlohmann::json& value, int depth)
     if (value.is_object()) {
         lua_createtable(L, 0, static_cast<int>(value.size()));
         for (auto it = value.begin(); it != value.end(); ++it) {
+            // push the key with its length so an embedded nul is preserved rather than truncating the key.
+            const std::string& key = it.key();
+            lua_pushlstring(L, key.data(), key.size());
             pushJson(L, it.value(), depth + 1);
-            lua_setfield(L, -2, it.key().c_str());
+            lua_rawset(L, -3);
         }
         return;
     }

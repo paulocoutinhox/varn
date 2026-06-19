@@ -6,4 +6,3 @@ print("cpuCount()", cpus)
 
 assert(type(cpus) == "number" and cpus >= 1, "cpuCount should be at least one")
 print("platform cpu count ok")
-os.exit(0)

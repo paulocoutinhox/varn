@@ -146,7 +146,6 @@ print(string.format("rows: %d  average: %.3f", total.n, total.avg))
 
 db:close()
 print("vdo crud ok")
-os.exit(0)
 ```
 
 ### `prepared.lua`
@@ -188,5 +187,4 @@ byKind:close()
 
 db:close()
 print("vdo prepared ok")
-os.exit(0)
 ```

@@ -35,20 +35,20 @@ int Promise::luaIsDone(lua_State* L) {
     return 1;
 }
 
-Promise::Promise(Runtime& runtime) : runtime_(runtime) {}
+Promise::Promise(Runtime& runtime) : runtime(runtime) {}
 
 Promise::~Promise() = default;
 
-void Promise::resolve(std::string value) {
+void Promise::resolve(std::string resolvedValue) {
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (state_ != State::Pending) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (phase != State::Pending) {
             return;
         }
-        state_ = State::Resolved;
-        customResolved_ = false;
-        customPush_ = nullptr;
-        value_ = std::move(value);
+        phase = State::Resolved;
+        customResolved = false;
+        customPush = nullptr;
+        value = std::move(resolvedValue);
     }
 
     resumeWaitersOnMainLoop();
@@ -56,37 +56,37 @@ void Promise::resolve(std::string value) {
 
 void Promise::resolveCustom(std::function<void(lua_State* L)> pushResolved) {
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (state_ != State::Pending) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (phase != State::Pending) {
             return;
         }
-        state_ = State::Resolved;
-        customResolved_ = true;
-        value_.clear();
-        customPush_ = std::move(pushResolved);
+        phase = State::Resolved;
+        customResolved = true;
+        value.clear();
+        customPush = std::move(pushResolved);
     }
 
     resumeWaitersOnMainLoop();
 }
 
-void Promise::reject(std::string error) {
+void Promise::reject(std::string rejectedError) {
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (state_ != State::Pending) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (phase != State::Pending) {
             return;
         }
-        state_ = State::Rejected;
-        customResolved_ = false;
-        customPush_ = nullptr;
-        error_ = std::move(error);
+        phase = State::Rejected;
+        customResolved = false;
+        customPush = nullptr;
+        error = std::move(rejectedError);
     }
 
     resumeWaitersOnMainLoop();
 }
 
 Promise::State Promise::state() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return state_;
+    std::lock_guard<std::mutex> lock(mutex);
+    return phase;
 }
 
 int Promise::prepareAwait(lua_State* L) {
@@ -100,21 +100,21 @@ int Promise::prepareAwait(lua_State* L) {
     std::string snapshotError;
 
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (state_ == State::Resolved) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (phase == State::Resolved) {
             luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
-            if (customResolved_) {
-                custom = customPush_;
+            if (customResolved) {
+                custom = customPush;
                 settledResolvedCustom = true;
             } else {
-                snapshotValue = value_;
+                snapshotValue = value;
                 settledResolvedString = true;
             }
-        } else if (state_ == State::Rejected) {
+        } else if (phase == State::Rejected) {
             luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
-            snapshotError = error_;
+            snapshotError = error;
         } else {
-            waitingRefs_.push_back(threadRef);
+            waitingRefs.push_back(threadRef);
             return -1;
         }
     }
@@ -136,26 +136,26 @@ int Promise::prepareAwait(lua_State* L) {
 
 void Promise::runPendingResumes() {
     // during teardown the loop is stopping and the lua state is about to go away, so never touch it.
-    if (runtime_.stopped()) {
+    if (runtime.stopped()) {
         return;
     }
 
-    lua_State* mainState = runtime_.luaState();
+    lua_State* mainState = runtime.luaState();
     std::vector<int> refs;
-    State state;
-    std::string value;
-    std::string error;
+    State phaseSnapshot;
+    std::string valueSnapshot;
+    std::string errorSnapshot;
 
-    std::function<void(lua_State*)> customPush;
+    std::function<void(lua_State*)> customPushSnapshot;
     bool useCustom = false;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        refs.swap(waitingRefs_);
-        state = state_;
-        value = value_;
-        error = error_;
-        useCustom = customResolved_;
-        customPush = customPush_;
+        std::lock_guard<std::mutex> lock(mutex);
+        refs.swap(waitingRefs);
+        phaseSnapshot = phase;
+        valueSnapshot = value;
+        errorSnapshot = error;
+        useCustom = customResolved;
+        customPushSnapshot = customPush;
     }
 
     for (int ref : refs) {
@@ -170,16 +170,16 @@ void Promise::runPendingResumes() {
 
         int argCount = 0;
 
-        if (state == State::Resolved) {
-            if (useCustom && customPush) {
-                customPush(coroutine);
+        if (phaseSnapshot == State::Resolved) {
+            if (useCustom && customPushSnapshot) {
+                customPushSnapshot(coroutine);
             } else {
-                lua_pushlstring(coroutine, value.data(), value.size());
+                lua_pushlstring(coroutine, valueSnapshot.data(), valueSnapshot.size());
             }
             argCount = 1;
         } else {
             lua_pushnil(coroutine);
-            lua_pushlstring(coroutine, error.data(), error.size());
+            lua_pushlstring(coroutine, errorSnapshot.data(), errorSnapshot.size());
             argCount = 2;
         }
 
@@ -204,7 +204,7 @@ void Promise::runPendingResumes() {
 
 void Promise::resumeWaitersOnMainLoop() {
     auto self = shared_from_this();
-    runtime_.mainLoop().post([self] {
+    runtime.mainLoop().post([self] {
         self->runPendingResumes();
     });
 }

@@ -5,21 +5,23 @@
 
 namespace varn::socket {
 
-class TcpConnection {
+// closeBlocking interrupts any in-flight blocking operation, so the runtime can release a socket at shutdown before joining its workers.
+class SocketHandle {
 public:
-    virtual ~TcpConnection() = default;
+    virtual ~SocketHandle() = default;
 
-    virtual void sendBlocking(const std::string& data) = 0;
-    virtual std::string receiveBlocking(int maxBytes) = 0;
     virtual void closeBlocking() = 0;
 };
 
-class TcpListener {
+class TcpConnection : public SocketHandle {
 public:
-    virtual ~TcpListener() = default;
+    virtual void sendBlocking(const std::string& data) = 0;
+    virtual std::string receiveBlocking(int maxBytes) = 0;
+};
 
+class TcpListener : public SocketHandle {
+public:
     virtual std::shared_ptr<TcpConnection> acceptBlocking() = 0;
-    virtual void closeBlocking() = 0;
 };
 
 struct UdpDatagram {
@@ -28,13 +30,10 @@ struct UdpDatagram {
     int port = 0;
 };
 
-class UdpSocket {
+class UdpSocket : public SocketHandle {
 public:
-    virtual ~UdpSocket() = default;
-
     virtual void sendToBlocking(const std::string& host, int port, const std::string& data) = 0;
     virtual UdpDatagram receiveFromBlocking(int maxBytes) = 0;
-    virtual void closeBlocking() = 0;
 };
 
 class SocketTransport {

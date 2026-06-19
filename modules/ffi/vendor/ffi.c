@@ -1184,7 +1184,12 @@ static int cdata_from_lua(lua_State *L, struct ctype *ct, void *ptr, int idx, bo
         if (ct->type == CTYPE_ARRAY && ct->array->ct->type == CTYPE_CHAR) {
             size_t len;
             const char *str = lua_tolstring(L, idx, &len);
-            memcpy(ptr, str, len + 1);
+            /* clamp to the array capacity so an oversized string cannot overflow the cdata block */
+            size_t cap = ctype_sizeof(ct);
+            size_t n = len < cap ? len : cap;
+            memcpy(ptr, str, n);
+            if (n < cap)
+                ((char *)ptr)[n] = '\0';
             return 0;
         }
         break;

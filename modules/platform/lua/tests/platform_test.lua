@@ -21,4 +21,3 @@ assert(type(platform.libPrefix()) == "string", "libPrefix")
 assert(#platform.libraryFilename("sqlite3") > 0, "libraryFilename")
 
 print(string.format("platform ok: %s/%s cpu=%d %s", osId, arch, platform.cpuCount(), endian))
-os.exit(0)

@@ -28,4 +28,3 @@ assert(pcall(log.error, string.rep("x", 200000)), "very long message should not 
 assert(pcall(log.error, "audit\nbypass\r%n"), "error level hostile content should not crash")
 
 print("log security ok")
-os.exit(0)

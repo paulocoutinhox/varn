@@ -3,4 +3,3 @@ local log = require("log")
 
 log.info("info example", "value", 2)
 print("log info example ok")
-os.exit(0)

@@ -16,5 +16,4 @@ async.run(function()
 
     os.remove(tmp)
     print("fs overwrite ok")
-    os.exit(0)
 end)

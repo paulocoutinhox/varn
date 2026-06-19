@@ -8,4 +8,3 @@ http.createServer(function(_, res)
 end):listen({ host = "127.0.0.1", port = port })
 
 print("http server listening on http://127.0.0.1:" .. port)
-os.exit(0)

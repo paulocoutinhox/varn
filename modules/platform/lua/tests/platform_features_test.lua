@@ -52,4 +52,3 @@ assert(platform.arch() == arch, "arch should be stable across calls")
 assert(platform.pointerSize() == pointer, "pointerSize should be stable across calls")
 
 print("platform features ok")
-os.exit(0)

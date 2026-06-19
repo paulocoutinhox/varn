@@ -19,6 +19,10 @@ namespace varn::lua {
 class LuaEngine;
 }
 
+namespace varn::socket {
+class SocketHandle;
+}
+
 namespace varn::runtime {
 
 class Runtime {
@@ -36,8 +40,9 @@ public:
     lua_State* luaState();
 
     void addServer(std::shared_ptr<varn::http::HttpServer> server);
+    void registerSocket(const std::shared_ptr<varn::socket::SocketHandle>& socket);
     void stop();
-    bool stopped() const { return stopped_.load(std::memory_order_acquire); }
+    bool stopped() const { return stopFlag.load(std::memory_order_acquire); }
 
     void onAsyncComplete(bool ok, bool stopLoopOnSuccess, const std::string& error);
 
@@ -45,20 +50,21 @@ public:
     void releaseBackgroundDriver();
 
     const std::vector<std::string>& args() const;
-    std::size_t scriptArgIndex() const { return scriptArgIndex_; }
+    std::size_t scriptArgIndex() const { return scriptArgPosition; }
 
 private:
-    std::vector<std::string> args_;
-    std::size_t scriptArgIndex_;
-    std::shared_ptr<WorkLedger> workLedger_;
-    EventLoop mainLoop_;
-    TaskPool taskPool_;
-    std::unique_ptr<varn::lua::LuaEngine> lua_;
-    std::vector<std::shared_ptr<varn::http::HttpServer>> servers_;
-    std::atomic<bool> stopped_{false};
-    std::atomic<int> backgroundDrivers_{0};
-    bool unhandledError_ = false;
-    bool entryRequestedStop_ = false;
+    std::vector<std::string> arguments;
+    std::size_t scriptArgPosition;
+    std::shared_ptr<WorkLedger> workLedger;
+    EventLoop loop;
+    TaskPool pool;
+    std::unique_ptr<varn::lua::LuaEngine> engine;
+    std::vector<std::shared_ptr<varn::http::HttpServer>> servers;
+    std::vector<std::weak_ptr<varn::socket::SocketHandle>> sockets;
+    std::atomic<bool> stopFlag{false};
+    std::atomic<int> backgroundDrivers{0};
+    bool unhandledError = false;
+    bool entryRequestedStop = false;
 
     int finishAfterUserChunk(int loadRunExitCode);
 };

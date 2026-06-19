@@ -20,7 +20,6 @@ local crypto = require("crypto")
 local raw = crypto.digest("SHA256", "raw-test", "raw")
 assert(#raw == 32, "raw sha256 length")
 print("crypto.digest raw ok, len=", #raw)
-os.exit(0)
 ```
 
 ### `digest_sha256.lua`
@@ -33,7 +32,6 @@ local h = crypto.digest("SHA256", "varn", "hex")
 assert(#h == 64, "sha256 hex length")
 assert(h:match("^[0-9a-f]+$"), "expected lowercase hex")
 print("crypto.digest SHA256 hex ok:", h:sub(1, 16), "...")
-os.exit(0)
 ```
 
 ### `digest_sha512.lua`
@@ -86,5 +84,4 @@ assert(#b16 == 16, "length")
 local b32 = crypto.randomBytes(32)
 assert(#b32 == 32, "length")
 print("crypto.randomBytes ok")
-os.exit(0)
 ```

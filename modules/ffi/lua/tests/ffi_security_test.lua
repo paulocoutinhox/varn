@@ -25,4 +25,3 @@ assert(ffi.C.strlen("ok") == 2, "valid calls should still succeed after a reject
 assert(ffi.C.abs(-9) == 9, "valid calls should still succeed after a rejected one")
 
 print("ffi security ok")
-os.exit(0)

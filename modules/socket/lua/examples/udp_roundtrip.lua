@@ -23,5 +23,4 @@ async.run(function()
     client:close():await()
 
     print("socket udp round-trip ok")
-    os.exit(0)
 end)

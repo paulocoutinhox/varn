@@ -44,14 +44,14 @@ private:
     static int luaAwait(lua_State* L);
     static int luaIsDone(lua_State* L);
 
-    mutable std::mutex mutex_;
-    varn::runtime::Runtime& runtime_;
-    State state_ = State::Pending;
-    std::string value_;
-    std::string error_;
-    bool customResolved_ = false;
-    std::function<void(lua_State* L)> customPush_;
-    std::vector<int> waitingRefs_;
+    mutable std::mutex mutex;
+    varn::runtime::Runtime& runtime;
+    State phase = State::Pending;
+    std::string value;
+    std::string error;
+    bool customResolved = false;
+    std::function<void(lua_State* L)> customPush;
+    std::vector<int> waitingRefs;
 };
 
 } // namespace varn::async

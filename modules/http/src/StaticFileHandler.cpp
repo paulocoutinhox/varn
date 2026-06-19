@@ -9,7 +9,7 @@
 namespace varn::http {
 
 StaticFileHandler::StaticFileHandler(std::string publicDir, bool directoryListing)
-    : publicDir_(std::move(publicDir)), directoryListing_(directoryListing) {}
+    : publicDir(std::move(publicDir)), directoryListing(directoryListing) {}
 
 bool StaticFileHandler::tryServe(const HttpRequest& request, HttpResponse& response) const {
     if (request.method != "GET" && request.method != "HEAD") {
@@ -27,7 +27,7 @@ bool StaticFileHandler::tryServe(const HttpRequest& request, HttpResponse& respo
         }
     }
 
-    std::filesystem::path root = std::filesystem::weakly_canonical(publicDir_);
+    std::filesystem::path root = std::filesystem::weakly_canonical(publicDir);
     std::filesystem::path candidate = std::filesystem::weakly_canonical(root / requestPath.substr(1));
 
     // keep the resolved path inside the public directory tree, rejecting siblings and traversal.
@@ -50,7 +50,7 @@ bool StaticFileHandler::tryServe(const HttpRequest& request, HttpResponse& respo
         std::filesystem::path index = candidate / "index.html";
         if (std::filesystem::is_regular_file(index, ec)) {
             candidate = index;
-        } else if (directoryListing_) {
+        } else if (directoryListing) {
             StaticContent::serveListing(response, root, candidate);
             return true;
         } else {

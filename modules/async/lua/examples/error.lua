@@ -8,5 +8,4 @@ async.spawn(function()
     end
     local ok, err = pcall(failing)
     print("async.error caught:", ok, err)
-    os.exit(0)
 end)

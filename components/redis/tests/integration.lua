@@ -124,5 +124,4 @@ async.run(function()
     client:close()
 
     print("redis integration ok")
-    os.exit(0)
 end)

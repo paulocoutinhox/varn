@@ -10,4 +10,3 @@ print("getLibraryPathByName('z', 'vendor/libs') =", rel)
 
 assert(fn:match("%."), "expected extension in filename")
 print("platform library path helpers ok")
-os.exit(0)

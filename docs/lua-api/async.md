@@ -26,7 +26,6 @@ async.spawn(function()
     p:await()
     assert(p:isDone() == true, "sleep promise should be done after await")
     print("promise:isDone ok")
-    os.exit(0)
 end)
 ```
 
@@ -40,7 +39,6 @@ async.spawn(function()
     async.sleep(50):await()
     local dt = (os.clock() - t0) * 1000
     print("async.sleep ok (requested 50ms, os.clock delta " .. string.format("%.1f", dt) .. " ms)")
-    os.exit(0)
 end)
 ```
 
@@ -60,6 +58,5 @@ async.spawn(function()
     async.sleep(1):await()
     assert(done, "inner spawn should have run")
     print("async.spawn ok")
-    os.exit(0)
 end)
 ```

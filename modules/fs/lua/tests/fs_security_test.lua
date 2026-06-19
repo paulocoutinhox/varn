@@ -59,5 +59,4 @@ async.run(function()
     os.remove(binPath)
 
     print("fs security ok")
-    os.exit(0)
 end)

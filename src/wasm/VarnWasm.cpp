@@ -31,10 +31,10 @@ public:
 
 private:
     struct PrintSinkScope {
-        explicit PrintSinkScope(std::string* sink) { printSink_ = sink; }
+        explicit PrintSinkScope(std::string* sink) { printSink = sink; }
         PrintSinkScope(const PrintSinkScope&) = delete;
         PrintSinkScope& operator=(const PrintSinkScope&) = delete;
-        ~PrintSinkScope() { printSink_ = nullptr; }
+        ~PrintSinkScope() { printSink = nullptr; }
     };
 
     static int luaPrintCapture(lua_State* L);
@@ -47,14 +47,14 @@ private:
 
     static std::unique_ptr<varn::runtime::Runtime>& runtime();
 
-    inline static std::string* printSink_ = nullptr;
+    inline static std::string* printSink = nullptr;
 #if defined(__EMSCRIPTEN__)
-    inline static int hookTick_ = 0;
+    inline static int hookTick = 0;
 #endif
 };
 
 int WasmHost::luaPrintCapture(lua_State* L) {
-    if (!printSink_) {
+    if (!printSink) {
         return 0;
     }
 
@@ -72,20 +72,20 @@ int WasmHost::luaPrintCapture(lua_State* L) {
     }
 
     line += '\n';
-    printSink_->append(line);
+    printSink->append(line);
     return 0;
 }
 
 #if defined(__EMSCRIPTEN__)
 void WasmHost::lineHook(lua_State* /*L*/, lua_Debug* /*ar*/) {
-    ++hookTick_;
-    if ((hookTick_ % 32) == 0) {
+    ++hookTick;
+    if ((hookTick % 32) == 0) {
         emscripten_sleep(0);
     }
 }
 
 void WasmHost::attachLineHook(lua_State* L, void*) {
-    hookTick_ = 0;
+    hookTick = 0;
     lua_sethook(L, &WasmHost::lineHook, LUA_MASKCOUNT, 500);
 }
 

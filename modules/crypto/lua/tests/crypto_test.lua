@@ -15,4 +15,3 @@ assert(#crypto.randomBytes(16) == 16, "randomBytes(16)")
 assert(#crypto.randomBytes(32) == 32, "randomBytes(32)")
 
 print("crypto ok")
-os.exit(0)
