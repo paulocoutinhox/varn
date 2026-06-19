@@ -2,13 +2,15 @@
 #include "varn/lua/LuaEngine.h"
 #include "varn/log/Log.h"
 #include "varn/http/HttpTypes.h"
-#include "varn/socket/SocketTransport.h"
-
-#include <algorithm>
 
 namespace varn::runtime {
 
 using varn::lua::LuaEngine;
+
+namespace {
+// a dedicated pool sized for blocking i/o (http client, filesystem), so it never starves the cpu task pool.
+constexpr std::size_t kIoThreads = 32;
+} // namespace
 
 Runtime::Runtime(std::vector<std::string> args, std::size_t scriptArgIndex)
     : arguments(std::move(args)),
@@ -83,6 +85,14 @@ TaskPool& Runtime::taskPool() {
     return pool;
 }
 
+TaskPool& Runtime::ioPool() {
+    if (!ioWorkers) {
+        ioWorkers = std::make_unique<TaskPool>(kIoThreads, workLedger);
+        ioWorkers->start();
+    }
+    return *ioWorkers;
+}
+
 lua_State* Runtime::luaState() {
     return engine->state();
 }
@@ -92,12 +102,12 @@ void Runtime::addServer(std::shared_ptr<varn::http::HttpServer> server) {
     loop.wake();
 }
 
-void Runtime::registerSocket(const std::shared_ptr<varn::socket::SocketHandle>& socket) {
-    sockets.erase(
-        std::remove_if(sockets.begin(), sockets.end(),
-                       [](const std::weak_ptr<varn::socket::SocketHandle>& entry) { return entry.expired(); }),
-        sockets.end());
-    sockets.push_back(socket);
+void Runtime::setIoService(std::shared_ptr<IoService> service) {
+    ioServiceImpl = std::move(service);
+}
+
+IoService* Runtime::ioService() const {
+    return ioServiceImpl.get();
 }
 
 void Runtime::retainBackgroundDriver() {
@@ -122,14 +132,15 @@ void Runtime::stop() {
         }
     }
 
-    // close live sockets so a worker blocked in a blocking accept or receive returns before the pool is joined.
-    for (auto& entry : sockets) {
-        if (auto socket = entry.lock()) {
-            socket->closeBlocking();
-        }
+    // stop the i/o service so its thread is joined before the loop and pool are torn down.
+    if (ioServiceImpl) {
+        ioServiceImpl->stop();
     }
 
     pool.stop();
+    if (ioWorkers) {
+        ioWorkers->stop();
+    }
     loop.stop();
     // with workers joined and the loop stopped, dropping any still-queued job releases its captured state such as AppState holding lua registry refs while the lua_State is still alive, rather than during member teardown after lua_close.
     loop.clearPendingJobs();

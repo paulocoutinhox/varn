@@ -36,3 +36,7 @@ async.spawn(function()
     print("fs read/write/exists ok")
 end)
 ```
+
+## Under the hood
+
+Built on the C++ standard library filesystem, with reads and writes running on a background I/O thread pool so they never block the event loop.

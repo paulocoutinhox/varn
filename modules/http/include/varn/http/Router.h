@@ -57,7 +57,6 @@ private:
     static std::string toUpper(std::string value);
     static std::regex compileConstraint(const std::string& spec);
 
-    // bounds the work an attacker-controlled path can drive through constraint regexes.
     static constexpr std::size_t kMaxPathLength = 8192;
     static constexpr std::size_t kMaxSegmentLength = 1024;
 

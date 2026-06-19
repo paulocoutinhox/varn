@@ -49,17 +49,17 @@ Every module is independent and used through `require`, so you pull in only what
 
 | Module | What you get |
 |----------------|--------------|
-| 🌐 `http` | web server and client, routing, middleware, WebSockets, and static file serving |
-| 🔌 `socket` | network client and server connections |
-| ⏳ `async` | background tasks, timers, and awaitable promises |
-| 📁 `fs` | read and write files, check what already exists |
-| 🔐 `crypto` | hashing, signatures, and secure random data |
-| 🧾 `json` | encode and decode JSON with a full Lua mapping |
-| 🧬 `xml` | encode and decode XML with a full Lua mapping |
-| 🗜️ `zip` | create, extract, and list archives |
-| 🧩 `ffi` | call functions from native libraries |
-| 🖥️ `platform` | system, architecture, processor, and path information |
-| 📝 `log` | leveled logging with debug, info, warn, and error |
+| 🌐 `http` | Web server and client, routing, middleware, WebSockets, and static file serving |
+| 🔌 `socket` | Network client and server connections |
+| ⏳ `async` | Background tasks, timers, and awaitable promises |
+| 📁 `fs` | Read and write files, check what already exists |
+| 🔐 `crypto` | Hashing, signatures, and secure random data |
+| 🧾 `json` | Encode and decode JSON with a full Lua mapping |
+| 🧬 `xml` | Encode and decode XML with a full Lua mapping |
+| 🗜️ `zip` | Create, extract, and list archives |
+| 🧩 `ffi` | Call functions from native libraries |
+| 🖥️ `platform` | System, architecture, processor, and path information |
+| 📝 `log` | Leveled logging with debug, info, warn, and error |
 
 Full feature reference: [docs/lua-api.md](docs/lua-api.md).
 

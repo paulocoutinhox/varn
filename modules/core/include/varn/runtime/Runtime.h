@@ -1,6 +1,7 @@
 #pragma once
 
 #include "varn/runtime/EventLoop.h"
+#include "varn/runtime/IoService.h"
 #include "varn/runtime/TaskPool.h"
 #include "varn/runtime/WorkLedger.h"
 
@@ -19,10 +20,6 @@ namespace varn::lua {
 class LuaEngine;
 }
 
-namespace varn::socket {
-class SocketHandle;
-}
-
 namespace varn::runtime {
 
 class Runtime {
@@ -37,10 +34,12 @@ public:
 
     EventLoop& mainLoop();
     TaskPool& taskPool();
+    TaskPool& ioPool();
     lua_State* luaState();
 
     void addServer(std::shared_ptr<varn::http::HttpServer> server);
-    void registerSocket(const std::shared_ptr<varn::socket::SocketHandle>& socket);
+    void setIoService(std::shared_ptr<IoService> service);
+    IoService* ioService() const;
     void stop();
     bool stopped() const { return stopFlag.load(std::memory_order_acquire); }
 
@@ -58,11 +57,12 @@ private:
     std::shared_ptr<WorkLedger> workLedger;
     EventLoop loop;
     TaskPool pool;
+    std::unique_ptr<TaskPool> ioWorkers;
+    std::atomic<int> backgroundDrivers{0};
     std::unique_ptr<varn::lua::LuaEngine> engine;
     std::vector<std::shared_ptr<varn::http::HttpServer>> servers;
-    std::vector<std::weak_ptr<varn::socket::SocketHandle>> sockets;
+    std::shared_ptr<IoService> ioServiceImpl;
     std::atomic<bool> stopFlag{false};
-    std::atomic<int> backgroundDrivers{0};
     bool unhandledError = false;
     bool entryRequestedStop = false;
 

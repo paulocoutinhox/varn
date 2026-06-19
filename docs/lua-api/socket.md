@@ -106,3 +106,7 @@ async.spawn(function()
     sock:close():await()
 end)
 ```
+
+## Under the hood
+
+Built on the Poco C++ networking libraries, with every socket multiplexed on a single event-driven I/O thread so a blocked accept or receive never ties up a worker.

@@ -1,7 +1,6 @@
 # 🧬 xml
 
-A standalone XML module that converts between XML text and a Lua node model, backed by the
-C++ serializer (pugixml).
+A standalone XML module that converts between XML text and a Lua node model.
 
 - `xml.encode(node [, options])` → XML text from a node table. Alias: `xml.stringify`.
   - `options.pretty = true` indents with two spaces; `options.indent = N` indents with `N` spaces.
@@ -61,3 +60,7 @@ end
 
 print(xml.encode(node))
 ```
+
+## Under the hood
+
+Parsing and serialization use the pugixml C++ library.

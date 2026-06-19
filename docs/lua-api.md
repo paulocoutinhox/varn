@@ -6,19 +6,19 @@ its full API and every runnable example. The examples also live next to each mod
 
 ## Modules
 
-| Module | Description |
-|--------|-------------|
-| [🌐 http](lua-api/http.md) | HTTP server, app framework, client, and WebSockets |
-| [🔌 socket](lua-api/socket.md) | Async TCP and UDP sockets |
-| [⏳ async](lua-api/async.md) | Coroutines, promises, and the event loop |
-| [📁 fs](lua-api/fs.md) | Filesystem read/write/exists |
-| [🔐 crypto](lua-api/crypto.md) | Digests, HMAC, and secure random bytes |
-| [🧾 json](lua-api/json.md) | JSON encode/decode with a full Lua mapping |
-| [🧬 xml](lua-api/xml.md) | XML encode/decode with a full Lua mapping |
-| [🗜️ zip](lua-api/zip.md) | Create, extract, and list ZIP archives |
-| [🧩 ffi](lua-api/ffi.md) | Declare and call C functions |
-| [🖥️ platform](lua-api/platform.md) | Host and build information |
-| [📝 log](lua-api/log.md) | Leveled logging |
+| Module | What you get |
+|----------------|--------------|
+| [🌐 `http`](lua-api/http.md) | Web server and client, routing, middleware, WebSockets, and static file serving |
+| [🔌 `socket`](lua-api/socket.md) | Network client and server connections |
+| [⏳ `async`](lua-api/async.md) | Background tasks, timers, and awaitable promises |
+| [📁 `fs`](lua-api/fs.md) | Read and write files, check what already exists |
+| [🔐 `crypto`](lua-api/crypto.md) | Hashing, signatures, and secure random data |
+| [🧾 `json`](lua-api/json.md) | Encode and decode JSON with a full Lua mapping |
+| [🧬 `xml`](lua-api/xml.md) | Encode and decode XML with a full Lua mapping |
+| [🗜️ `zip`](lua-api/zip.md) | Create, extract, and list archives |
+| [🧩 `ffi`](lua-api/ffi.md) | Call functions from native libraries |
+| [🖥️ `platform`](lua-api/platform.md) | System, architecture, processor, and path information |
+| [📝 `log`](lua-api/log.md) | Leveled logging with debug, info, warn, and error |
 
 ## The `arg` global
 

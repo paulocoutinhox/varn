@@ -16,5 +16,9 @@ log.debug("debug", "line", 1)
 log.info("info", "line", 2)
 log.warn("warn", "line", 3)
 log.error("error", "line", 4)
-print("log levels emitted (check sink: spdlog/stdout/dummy per build)")
+print("log levels emitted")
 ```
+
+## Under the hood
+
+The default sink uses spdlog, and the logging backend is selected at build time.

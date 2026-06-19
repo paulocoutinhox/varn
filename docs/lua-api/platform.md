@@ -66,3 +66,7 @@ print("getLibraryPathByName('z', 'vendor/libs') =", rel)
 assert(fn:match("%."), "expected extension in filename")
 print("platform library path helpers ok")
 ```
+
+## Under the hood
+
+Reads the host operating-system and build APIs directly, with no external dependency.

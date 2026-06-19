@@ -1,6 +1,6 @@
 # 🗜️ zip
 
-Create, extract, and list ZIP archives (libzip-backed). All three return promises.
+Create, extract, and list ZIP archives. All three return promises.
 
 - `zip.create(archivePath, entries)` — `entries` is an array of `{ file = "...", entry = "..." }`.
 - `zip.extract(archivePath, destDir)` — extracts under `destDir`, rejecting unsafe entry paths (zip slip) and bounding total size and entry count (zip bomb).
@@ -81,3 +81,7 @@ async.run(function()
     print("zip.list ok: " .. table.concat(entries, ", "))
 end)
 ```
+
+## Under the hood
+
+Archives are handled by the libzip C++ library, with zlib for compression.

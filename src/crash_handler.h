@@ -1,7 +1,5 @@
 #pragma once
 
-// installs last-resort handlers so a native crash prints a diagnosis to stderr instead of dying silently, wiring std::set_terminate on every platform to catch an unhandled c++ exception (including one escaping a worker thread) and adding a windows structured-exception filter with a symbolized backtrace for faults the terminate handler never sees, such as an access violation.
-
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -9,7 +7,6 @@
 #if defined(_WIN32)
 
 #include <windows.h>
-// dbghelp.h must follow windows.h.
 #include <dbghelp.h>
 
 #include <cstdint>
@@ -69,7 +66,6 @@ inline void CrashHandler::printBacktrace() {
         return;
     }
 
-    // capture only the innermost frames: the fault site is near the top, and a short trace fits inside the tail the test runner echoes on failure.
     void* frames[30];
     const USHORT count = CaptureStackBackTrace(0, 30, frames, nullptr);
 
@@ -107,7 +103,6 @@ inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info) {
     const EXCEPTION_RECORD* record = info->ExceptionRecord;
     const DWORD code = record->ExceptionCode;
 
-    // emit and flush the essentials first, so they survive even if the stack walk below faults.
     fprintf(stderr, "\n[CrashHandler] Unhandled exception 0x%08lX (%s) at %p.\n", static_cast<unsigned long>(code),
             exceptionName(code), record->ExceptionAddress);
 
@@ -119,7 +114,6 @@ inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info) {
     }
     fflush(stderr);
 
-    // a stack overflow runs the handler on a nearly empty stack where a symbolized walk would fault again, so the summary above is enough to identify it.
     if (code != EXCEPTION_STACK_OVERFLOW) {
         printBacktrace();
         fflush(stderr);
@@ -161,7 +155,6 @@ inline void CrashHandler::install() {
     std::set_terminate(&CrashHandler::terminateHandler);
 
 #if defined(_WIN32)
-    // keep a stack reserve so the filter can still run and report on a stack-overflow exception.
     ULONG reserve = 65536;
     SetThreadStackGuarantee(&reserve);
     SetUnhandledExceptionFilter(&CrashHandler::crashFilter);

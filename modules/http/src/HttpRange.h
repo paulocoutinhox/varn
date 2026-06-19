@@ -5,7 +5,6 @@
 
 namespace varn::http {
 
-// parses a single http byte range against a known total size.
 class HttpRange {
 public:
     HttpRange() = delete;

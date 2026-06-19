@@ -1,172 +1,176 @@
 #include "varn/socket/SocketTransport.h"
 
+#include "PocoSocketReactor.h"
+
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
-#include <Poco/Timespan.h>
 
 #include <algorithm>
-#include <atomic>
-#include <cstdint>
 #include <climits>
+#include <cstdint>
 #include <memory>
-#include <mutex>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace varn::socket {
 
-// close interrupts in-flight operations without racing the socket fd: a stream connection is interrupted instantly by shutdown() which only issues a syscall and never invalidates the fd while separate read and write mutexes let a duplex protocol send and receive at once and close takes both before the final close(), whereas a listener or udp socket has no such shutdown so those poll on a short tick guarded by an atomic close flag, bounding close latency by the poll interval.
-static const Poco::Timespan kSocketPollInterval(0, 200000); // 200 ms
+namespace {
 
-class PocoTcpConnection final : public TcpConnection {
+void closeManagedSocket(const std::shared_ptr<PocoSocketReactor>& reactor, const Poco::Net::Socket& socket) {
+    if (reactor->running()) {
+        reactor->closeSocket(socket);
+        return;
+    }
+    // the reactor is already stopped at shutdown, so the fd can be closed here with no thread to race.
+    try {
+        socket.impl()->close();
+    } catch (...) {
+    }
+}
+
+class PocoTcpConnection : public TcpConnection, public std::enable_shared_from_this<PocoTcpConnection> {
 public:
-    explicit PocoTcpConnection(Poco::Net::StreamSocket socket) : socket(std::move(socket)) {}
+    PocoTcpConnection(Poco::Net::StreamSocket socket, std::shared_ptr<PocoSocketReactor> reactor)
+        : socket(std::move(socket)), reactor(std::move(reactor)) {
+        this->socket.setBlocking(false);
+    }
 
-    void sendBlocking(const std::string& data) override {
-        std::lock_guard<std::mutex> lock(writeMutex);
-
-        if (data.empty()) {
+    void receiveAsync(int maxBytes, ReceiveCallback callback) override {
+        if (closed) {
+            callback(false, "[PocoTcpConnection] The connection is closed.");
             return;
         }
-
-        std::size_t offset = 0;
-
-        while (offset < data.size()) {
-            if (closed.load(std::memory_order_acquire)) {
-                throw std::runtime_error("[PocoTcpConnection] The connection was closed.");
+        auto self = shared_from_this();
+        reactor->watchRead(socket, [self, maxBytes, callback = std::move(callback)]() -> bool {
+            try {
+                std::vector<char> buffer(static_cast<std::size_t>(maxBytes));
+                const int received = self->socket.receiveBytes(buffer.data(), maxBytes);
+                if (received < 0) {
+                    return false;
+                }
+                callback(true, received > 0 ? std::string(buffer.data(), static_cast<std::size_t>(received)) : std::string());
+                return true;
+            } catch (const std::exception& ex) {
+                callback(false, ex.what());
+                return true;
             }
-
-            const std::size_t remaining = data.size() - offset;
-            const int chunk = static_cast<int>(std::min(remaining, static_cast<std::size_t>(INT_MAX)));
-            const int n = socket.sendBytes(data.data() + offset, chunk);
-
-            if (n <= 0) {
-                throw std::runtime_error("[PocoTcpConnection] The connection was closed before all data could be sent.");
-            }
-
-            offset += static_cast<std::size_t>(n);
-        }
+        });
     }
 
-    std::string receiveBlocking(int maxBytes) override {
-        std::lock_guard<std::mutex> lock(readMutex);
-
-        // receiving on a socket the caller already closed is an error, distinct from a peer eof.
-        if (closed.load(std::memory_order_acquire)) {
-            throw std::runtime_error("[PocoTcpConnection] The connection is closed.");
+    void sendAsync(std::string data, SendCallback callback) override {
+        if (closed) {
+            callback(false, "[PocoTcpConnection] The connection is closed.");
+            return;
         }
-
-        if (maxBytes <= 0) {
-            return {};
-        }
-
-        // the caller chooses how large a read to request and the buffer is sized to it, like node.
-        std::vector<char> buffer(static_cast<std::size_t>(maxBytes));
-
-        // blocks until data, eof, or shutdown() (from closeBlocking) interrupts it.
-        const int received = socket.receiveBytes(buffer.data(), maxBytes);
-
-        // our own close() interrupting the read is an error, while a 0/eof from the peer is an empty result.
-        if (closed.load(std::memory_order_acquire)) {
-            throw std::runtime_error("[PocoTcpConnection] The connection is closed.");
-        }
-
-        if (received <= 0) {
-            return {};
-        }
-
-        return std::string(buffer.data(), static_cast<std::size_t>(received));
+        auto self = shared_from_this();
+        auto payload = std::make_shared<std::string>(std::move(data));
+        auto sent = std::make_shared<std::size_t>(0);
+        reactor->watchWrite(socket, [self, payload, sent, callback = std::move(callback)]() -> bool {
+            try {
+                while (*sent < payload->size()) {
+                    const std::size_t remaining = payload->size() - *sent;
+                    const int chunk = static_cast<int>(std::min(remaining, static_cast<std::size_t>(INT_MAX)));
+                    const int wrote = self->socket.sendBytes(payload->data() + *sent, chunk);
+                    if (wrote < 0) {
+                        return false;
+                    }
+                    if (wrote == 0) {
+                        callback(false, "[PocoTcpConnection] The connection was closed before all data was sent.");
+                        return true;
+                    }
+                    *sent += static_cast<std::size_t>(wrote);
+                }
+                callback(true, std::string());
+                return true;
+            } catch (const std::exception& ex) {
+                callback(false, ex.what());
+                return true;
+            }
+        });
     }
 
-    void closeBlocking() override {
-        // shutdown without a lock interrupts an in-flight send/receive instantly, then taking both mutexes (released quickly once the syscalls return) closes with no thread inside the socket.
-        closed.store(true, std::memory_order_release);
-
-        try {
-            socket.shutdown();
-        } catch (...) {
-        }
-
-        std::lock_guard<std::mutex> rlock(readMutex);
-        std::lock_guard<std::mutex> wlock(writeMutex);
-
-        try {
-            socket.close();
-        } catch (...) {
-        }
+    void close() override {
+        closed = true;
+        closeManagedSocket(reactor, socket);
     }
 
 private:
-    std::mutex readMutex;
-    std::mutex writeMutex;
-    std::atomic<bool> closed{false};
     Poco::Net::StreamSocket socket;
+    std::shared_ptr<PocoSocketReactor> reactor;
+    bool closed = false;
 };
 
-class PocoTcpListener final : public TcpListener {
+class PocoTcpListener : public TcpListener, public std::enable_shared_from_this<PocoTcpListener> {
 public:
-    explicit PocoTcpListener(Poco::Net::ServerSocket server) : server(std::move(server)) {}
-
-    std::shared_ptr<TcpConnection> acceptBlocking() override {
-        while (true) {
-            std::lock_guard<std::mutex> lock(mutex);
-
-            if (closed.load(std::memory_order_acquire)) {
-                return nullptr;
-            }
-
-            if (!server.poll(kSocketPollInterval, Poco::Net::Socket::SELECT_READ)) {
-                continue;
-            }
-
-            Poco::Net::StreamSocket accepted = server.acceptConnection();
-            return std::make_shared<PocoTcpConnection>(std::move(accepted));
-        }
+    PocoTcpListener(Poco::Net::ServerSocket server, std::shared_ptr<PocoSocketReactor> reactor)
+        : server(std::move(server)), reactor(std::move(reactor)) {
+        this->server.setBlocking(false);
     }
 
-    void closeBlocking() override {
-        closed.store(true, std::memory_order_release);
-        std::lock_guard<std::mutex> lock(mutex);
-        try {
-            server.close();
-        } catch (...) {
+    void acceptAsync(AcceptCallback callback) override {
+        if (closed) {
+            callback(nullptr, "[PocoTcpListener] The listener is closed.");
+            return;
         }
+        auto self = shared_from_this();
+        reactor->watchRead(server, [self, callback = std::move(callback)]() -> bool {
+            try {
+                Poco::Net::StreamSocket accepted = self->server.acceptConnection();
+                callback(std::make_shared<PocoTcpConnection>(std::move(accepted), self->reactor), "");
+                return true;
+            } catch (const std::exception& ex) {
+                callback(nullptr, ex.what());
+                return true;
+            }
+        });
+    }
+
+    void close() override {
+        closed = true;
+        closeManagedSocket(reactor, server);
     }
 
 private:
-    std::mutex mutex;
-    std::atomic<bool> closed{false};
     Poco::Net::ServerSocket server;
+    std::shared_ptr<PocoSocketReactor> reactor;
+    bool closed = false;
 };
 
-void SocketTransport::checkPort(int port) {
-    if (port <= 0 || port > 65535) {
-        throw std::runtime_error("[SocketTransport] Port must be between 1 and 65535.");
-    }
-}
+} // namespace
 
-void SocketTransport::checkBacklog(int backlog) {
-    if (backlog <= 0 || backlog > 4096) {
-        throw std::runtime_error("[SocketTransport] Backlog must be between 1 and 4096.");
-    }
-}
+void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, ConnectCallback callback) {
+    auto reactor = PocoSocketReactor::forRuntime(runtime);
 
-std::shared_ptr<TcpConnection> SocketTransport::connectBlocking(const std::string& host, int port) {
-    checkPort(port);
-    Poco::Net::SocketAddress address(host, static_cast<std::uint16_t>(port));
     Poco::Net::StreamSocket socket;
-    socket.connect(address);
-    return std::make_shared<PocoTcpConnection>(std::move(socket));
+    try {
+        socket.connectNB(Poco::Net::SocketAddress(host, static_cast<Poco::UInt16>(port)));
+    } catch (const std::exception& ex) {
+        callback(nullptr, ex.what());
+        return;
+    }
+    socket.setBlocking(false);
+
+    reactor->watchWrite(socket, [reactor, socket, callback = std::move(callback)]() mutable -> bool {
+        int error = 0;
+        try {
+            error = socket.impl()->socketError();
+        } catch (...) {
+            error = -1;
+        }
+        if (error != 0) {
+            callback(nullptr, "[SocketTransport] The connection could not be established.");
+            return true;
+        }
+        callback(std::make_shared<PocoTcpConnection>(socket, reactor), "");
+        return true;
+    });
 }
 
-std::shared_ptr<TcpListener> SocketTransport::listenBlocking(const std::string& host, int port, int backlog) {
-    checkPort(port);
-    checkBacklog(backlog);
-    Poco::Net::SocketAddress address(host, static_cast<std::uint16_t>(port));
-    Poco::Net::ServerSocket server(address, backlog);
-    return std::make_shared<PocoTcpListener>(std::move(server));
+std::shared_ptr<TcpListener> SocketTransport::listen(varn::runtime::Runtime& runtime, const std::string& host, int port, int backlog) {
+    auto reactor = PocoSocketReactor::forRuntime(runtime);
+    Poco::Net::ServerSocket server(Poco::Net::SocketAddress(host, static_cast<Poco::UInt16>(port)), backlog);
+    return std::make_shared<PocoTcpListener>(std::move(server), std::move(reactor));
 }
 
 } // namespace varn::socket

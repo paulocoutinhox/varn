@@ -1,6 +1,6 @@
 # 🔐 crypto
 
-Hashing, keyed hashing, and cryptographically secure random bytes (OpenSSL-backed).
+Hashing, keyed hashing, and cryptographically secure random bytes.
 
 - `crypto.digest(algorithm, data, format?)` → a digest of `data`. `algorithm` is a name like `"SHA256"` or `"SHA512"`. `format` is `"hex"` (default) or `"raw"`.
 - `crypto.hmac(algorithm, key, data, format?)` → an HMAC, with the same `format` options.
@@ -85,3 +85,7 @@ local b32 = crypto.randomBytes(32)
 assert(#b32 == 32, "length")
 print("crypto.randomBytes ok")
 ```
+
+## Under the hood
+
+Hashes, HMAC, and random bytes are provided by OpenSSL.

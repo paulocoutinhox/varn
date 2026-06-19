@@ -1,7 +1,7 @@
 # 🌐 http
 
 An in-process HTTP/1.1 server (with a higher-level app framework), an HTTP client, and
-WebSocket support. Built on Poco. JSON and XML response helpers are available when those
+WebSocket support. JSON and XML response helpers are available when those
 modules are built.
 
 ## Server
@@ -538,3 +538,7 @@ server:listen({
     servePublic = true
 })
 ```
+
+## Under the hood
+
+The HTTP server and client are built on the Poco C++ libraries.

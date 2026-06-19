@@ -21,7 +21,7 @@ int FsModule::luaReadFile(lua_State* L) {
     std::string path = varn::lua::LuaHelpers::checkString(L, 1);
     auto promise = std::make_shared<Promise>(rt);
 
-    rt.taskPool().post([promise, path = std::move(path)] {
+    rt.ioPool().post([promise, path = std::move(path)] {
         try {
             promise->resolve(FsStorage::readAll(path));
         } catch (const std::exception& ex) {
@@ -42,7 +42,7 @@ int FsModule::luaWriteFile(lua_State* L) {
     std::string content = varn::lua::LuaHelpers::checkString(L, 2);
     auto promise = std::make_shared<Promise>(rt);
 
-    rt.taskPool().post([promise, path = std::move(path), content = std::move(content)] {
+    rt.ioPool().post([promise, path = std::move(path), content = std::move(content)] {
         try {
             FsStorage::writeAll(path, content);
             promise->resolve("ok");
@@ -69,7 +69,7 @@ int FsModule::luaMkdir(lua_State* L) {
     std::string path = varn::lua::LuaHelpers::checkString(L, 1);
     auto promise = std::make_shared<Promise>(rt);
 
-    rt.taskPool().post([promise, path = std::move(path)] {
+    rt.ioPool().post([promise, path = std::move(path)] {
         try {
             FsStorage::mkdir(path);
             promise->resolve("ok");
@@ -89,7 +89,7 @@ int FsModule::luaRemoveRecursive(lua_State* L) {
     std::string path = varn::lua::LuaHelpers::checkString(L, 1);
     auto promise = std::make_shared<Promise>(rt);
 
-    rt.taskPool().post([promise, path = std::move(path)] {
+    rt.ioPool().post([promise, path = std::move(path)] {
         try {
             FsStorage::removeRecursive(path);
             promise->resolve("ok");

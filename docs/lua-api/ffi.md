@@ -230,3 +230,7 @@ must(S.sqlite3_finalize(sel), "finalize select")
 must(S.sqlite3_close(db), "close")
 print("ffi sqlite3: ok")
 ```
+
+## Under the hood
+
+Built on libffi.

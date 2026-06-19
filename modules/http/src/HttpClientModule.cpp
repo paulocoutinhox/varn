@@ -107,13 +107,13 @@ int HttpClientModule::luaClientRequest(lua_State* L) {
         promise->reject(ex.what());
     }
 #else
-    rt.taskPool().post([promise, methodStr, urlStr, headers, body, options] {
+    rt.ioPool().post([promise, methodStr, urlStr, headers, body, options] {
         try {
             promise->resolve(varn::http::client::HttpClientPerform::perform(methodStr, urlStr, headers, body, options));
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape: that would terminate the process.
+            // a worker thread must never let an exception escape and terminate the process.
             promise->reject("[HttpClientModule] The request failed with a non-standard error.");
         }
     });

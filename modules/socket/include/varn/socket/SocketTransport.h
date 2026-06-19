@@ -1,28 +1,16 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 
+namespace varn::runtime {
+class Runtime;
+}
+
 namespace varn::socket {
 
-// closeBlocking interrupts any in-flight blocking operation, so the runtime can release a socket at shutdown before joining its workers.
-class SocketHandle {
-public:
-    virtual ~SocketHandle() = default;
-
-    virtual void closeBlocking() = 0;
-};
-
-class TcpConnection : public SocketHandle {
-public:
-    virtual void sendBlocking(const std::string& data) = 0;
-    virtual std::string receiveBlocking(int maxBytes) = 0;
-};
-
-class TcpListener : public SocketHandle {
-public:
-    virtual std::shared_ptr<TcpConnection> acceptBlocking() = 0;
-};
+class TcpConnection;
 
 struct UdpDatagram {
     std::string data;
@@ -30,23 +18,45 @@ struct UdpDatagram {
     int port = 0;
 };
 
-class UdpSocket : public SocketHandle {
+using ConnectCallback = std::function<void(std::shared_ptr<TcpConnection> connection, const std::string& error)>;
+using AcceptCallback = std::function<void(std::shared_ptr<TcpConnection> connection, const std::string& error)>;
+using ReceiveCallback = std::function<void(bool ok, const std::string& data)>;
+using SendCallback = std::function<void(bool ok, const std::string& error)>;
+using ReceiveFromCallback = std::function<void(bool ok, const UdpDatagram& datagram, const std::string& error)>;
+
+class TcpConnection {
 public:
-    virtual void sendToBlocking(const std::string& host, int port, const std::string& data) = 0;
-    virtual UdpDatagram receiveFromBlocking(int maxBytes) = 0;
+    virtual ~TcpConnection() = default;
+
+    virtual void receiveAsync(int maxBytes, ReceiveCallback callback) = 0;
+    virtual void sendAsync(std::string data, SendCallback callback) = 0;
+    virtual void close() = 0;
+};
+
+class TcpListener {
+public:
+    virtual ~TcpListener() = default;
+
+    virtual void acceptAsync(AcceptCallback callback) = 0;
+    virtual void close() = 0;
+};
+
+class UdpSocket {
+public:
+    virtual ~UdpSocket() = default;
+
+    virtual void sendToAsync(std::string host, int port, std::string data, SendCallback callback) = 0;
+    virtual void receiveFromAsync(int maxBytes, ReceiveFromCallback callback) = 0;
+    virtual void close() = 0;
 };
 
 class SocketTransport {
 public:
     SocketTransport() = delete;
 
-    static std::shared_ptr<TcpConnection> connectBlocking(const std::string& host, int port);
-    static std::shared_ptr<TcpListener> listenBlocking(const std::string& host, int port, int backlog);
-    static std::shared_ptr<UdpSocket> bindUdpBlocking(const std::string& host, int port);
-
-private:
-    static void checkPort(int port);
-    static void checkBacklog(int backlog);
+    static void connectAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, ConnectCallback callback);
+    static std::shared_ptr<TcpListener> listen(varn::runtime::Runtime& runtime, const std::string& host, int port, int backlog);
+    static std::shared_ptr<UdpSocket> bindUdp(varn::runtime::Runtime& runtime, const std::string& host, int port);
 };
 
 } // namespace varn::socket

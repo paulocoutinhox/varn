@@ -1,101 +1,117 @@
 #include "varn/socket/SocketTransport.h"
 
+#include "PocoSocketReactor.h"
+
 #include <Poco/Net/DatagramSocket.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/Timespan.h>
 
-#include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace varn::socket {
 
-// receive is a poll loop guarded by an atomic close flag so close() never blocks behind an in-flight receiveFrom and never races the socket fd, with the same close strategy as PocoSocketTcp.cpp.
-static const Poco::Timespan kUdpPollInterval(0, 200000); // 200 ms
+namespace {
 
-class PocoUdpSocket final : public UdpSocket {
+constexpr int kMaxDatagramBytes = 65536;
+
+class PocoUdpSocket : public UdpSocket, public std::enable_shared_from_this<PocoUdpSocket> {
 public:
-    explicit PocoUdpSocket(Poco::Net::DatagramSocket socket) : socket(std::move(socket)) {}
-
-    void sendToBlocking(const std::string& host, int port, const std::string& data) override {
-        std::lock_guard<std::mutex> lock(mutex);
-
-        if (closed.load(std::memory_order_acquire)) {
-            throw std::runtime_error("[PocoUdpSocket] The socket was closed.");
-        }
-
-        Poco::Net::SocketAddress destination(host, static_cast<std::uint16_t>(port));
-        const int sent = socket.sendTo(data.data(), static_cast<int>(data.size()), destination);
-
-        if (sent < 0 || static_cast<std::size_t>(sent) != data.size()) {
-            throw std::runtime_error("[PocoUdpSocket] The datagram could not be fully sent.");
-        }
+    PocoUdpSocket(Poco::Net::DatagramSocket socket, std::shared_ptr<PocoSocketReactor> reactor)
+        : socket(std::move(socket)), reactor(std::move(reactor)) {
+        this->socket.setBlocking(false);
     }
 
-    UdpDatagram receiveFromBlocking(int maxBytes) override {
-        if (maxBytes <= 0) {
-            return {};
+    void sendToAsync(std::string host, int port, std::string data, SendCallback callback) override {
+        if (closed) {
+            callback(false, "[PocoUdpSocket] The socket is closed.");
+            return;
         }
-
-        // a datagram never exceeds this, so bound the buffer instead of trusting the requested size.
-        constexpr int kMaxDatagramBytes = 65536;
-        if (maxBytes > kMaxDatagramBytes) {
-            maxBytes = kMaxDatagramBytes;
-        }
-
-        std::vector<char> buffer(static_cast<std::size_t>(maxBytes));
-
-        while (true) {
-            std::lock_guard<std::mutex> lock(mutex);
-
-            if (closed.load(std::memory_order_acquire)) {
-                return {};
-            }
-
-            if (!socket.poll(kUdpPollInterval, Poco::Net::Socket::SELECT_READ)) {
-                continue;
-            }
-
-            Poco::Net::SocketAddress sender;
-            const int received = socket.receiveFrom(buffer.data(), maxBytes, sender);
-
-            UdpDatagram datagram;
-            if (received > 0) {
-                datagram.data.assign(buffer.data(), static_cast<std::size_t>(received));
-            }
-
-            datagram.host = sender.host().toString();
-            datagram.port = static_cast<int>(sender.port());
-            return datagram;
-        }
-    }
-
-    void closeBlocking() override {
-        closed.store(true, std::memory_order_release);
-
-        std::lock_guard<std::mutex> lock(mutex);
-
+        std::shared_ptr<Poco::Net::SocketAddress> destination;
         try {
-            socket.close();
+            destination = std::make_shared<Poco::Net::SocketAddress>(host, static_cast<Poco::UInt16>(port));
+        } catch (const std::exception& ex) {
+            callback(false, ex.what());
+            return;
+        }
+
+        auto self = shared_from_this();
+        auto payload = std::make_shared<std::string>(std::move(data));
+        reactor->watchWrite(socket, [self, payload, destination, callback = std::move(callback)]() -> bool {
+            try {
+                const int wrote = self->socket.sendTo(payload->data(), static_cast<int>(payload->size()), *destination);
+                if (wrote < 0) {
+                    return false;
+                }
+                if (static_cast<std::size_t>(wrote) != payload->size()) {
+                    callback(false, "[PocoUdpSocket] The datagram could not be fully sent.");
+                    return true;
+                }
+                callback(true, std::string());
+                return true;
+            } catch (const std::exception& ex) {
+                callback(false, ex.what());
+                return true;
+            }
+        });
+    }
+
+    void receiveFromAsync(int maxBytes, ReceiveFromCallback callback) override {
+        if (closed) {
+            callback(false, UdpDatagram{}, "[PocoUdpSocket] The socket is closed.");
+            return;
+        }
+        const int capacity = maxBytes > kMaxDatagramBytes ? kMaxDatagramBytes : maxBytes;
+        auto self = shared_from_this();
+        reactor->watchRead(socket, [self, capacity, callback = std::move(callback)]() -> bool {
+            try {
+                std::vector<char> buffer(static_cast<std::size_t>(capacity));
+                Poco::Net::SocketAddress sender;
+                const int received = self->socket.receiveFrom(buffer.data(), capacity, sender);
+                if (received < 0) {
+                    return false;
+                }
+
+                UdpDatagram datagram;
+                if (received > 0) {
+                    datagram.data.assign(buffer.data(), static_cast<std::size_t>(received));
+                }
+                datagram.host = sender.host().toString();
+                datagram.port = sender.port();
+                callback(true, datagram, "");
+                return true;
+            } catch (const std::exception& ex) {
+                callback(false, UdpDatagram{}, ex.what());
+                return true;
+            }
+        });
+    }
+
+    void close() override {
+        closed = true;
+        if (reactor->running()) {
+            reactor->closeSocket(socket);
+            return;
+        }
+        try {
+            socket.impl()->close();
         } catch (...) {
         }
     }
 
 private:
-    std::mutex mutex;
-    std::atomic<bool> closed{false};
     Poco::Net::DatagramSocket socket;
+    std::shared_ptr<PocoSocketReactor> reactor;
+    bool closed = false;
 };
 
-std::shared_ptr<UdpSocket> SocketTransport::bindUdpBlocking(const std::string& host, int port) {
-    checkPort(port);
-    Poco::Net::SocketAddress address(host, static_cast<std::uint16_t>(port));
-    Poco::Net::DatagramSocket socket(address, false);
-    return std::make_shared<PocoUdpSocket>(std::move(socket));
+} // namespace
+
+std::shared_ptr<UdpSocket> SocketTransport::bindUdp(varn::runtime::Runtime& runtime, const std::string& host, int port) {
+    auto reactor = PocoSocketReactor::forRuntime(runtime);
+    Poco::Net::DatagramSocket socket(Poco::Net::SocketAddress(host, static_cast<Poco::UInt16>(port)), false);
+    return std::make_shared<PocoUdpSocket>(std::move(socket), std::move(reactor));
 }
 
 } // namespace varn::socket

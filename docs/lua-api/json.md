@@ -1,7 +1,6 @@
 # 🧾 json
 
-A standalone JSON module that converts between JSON text and Lua values, backed by the C++
-serializer.
+A standalone JSON module that converts between JSON text and Lua values.
 
 - `json.encode(value [, options])` → JSON text for any Lua value. Alias: `json.stringify`.
   - `options.pretty = true` indents with two spaces; `options.indent = N` indents with `N` spaces.
@@ -56,3 +55,7 @@ print(json.encode({ nested = { a = 1, b = { 2, 3 } } }))
 local v = json.decode('{"i":7,"f":1.5,"b":false,"arr":[1,2],"obj":{"k":"v"}}')
 print(v.i, v.f, v.b, v.arr[2], v.obj.k)
 ```
+
+## Under the hood
+
+Parsing and serialization use the nlohmann/json C++ library.

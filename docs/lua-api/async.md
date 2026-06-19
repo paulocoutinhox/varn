@@ -60,3 +60,7 @@ async.spawn(function()
     print("async.spawn ok")
 end)
 ```
+
+## Under the hood
+
+Implemented directly on the runtime's event loop, with no external dependency.

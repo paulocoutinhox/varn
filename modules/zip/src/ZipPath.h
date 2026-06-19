@@ -5,7 +5,6 @@
 
 namespace varn::zip {
 
-// path-safety predicates for archive extraction, kept independent of libzip so they are unit-testable.
 class ZipPath {
 public:
     static bool entryPathSafe(std::string_view entry);
