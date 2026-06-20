@@ -921,7 +921,7 @@ private:
     static int onHeaderValueComplete(llhttp_t* parser)
     {
         auto* self = static_cast<HttpConnection*>(parser->data);
-        self->pendingHeaders[self->parseField] = self->parseValue;
+        self->pendingHeaders.emplace_back(self->parseField, self->parseValue);
         self->parseField.clear();
         self->parseValue.clear();
         return 0;
@@ -944,7 +944,7 @@ private:
     }
 
     // splits a Cookie header into name/value pairs, trimming optional whitespace around each.
-    static void parseCookies(const std::string& header, std::map<std::string, std::string>& out)
+    static void parseCookies(const std::string& header, std::vector<std::pair<std::string, std::string>>& out)
     {
         std::size_t pos = 0;
         while (pos < header.size())
@@ -966,7 +966,7 @@ private:
                         value = header.substr(valueBegin, valueEnd - valueBegin + 1);
                     }
 
-                    out[header.substr(nameBegin, nameEnd - nameBegin + 1)] = value;
+                    out.emplace_back(header.substr(nameBegin, nameEnd - nameBegin + 1), value);
                 }
             }
 
@@ -1025,7 +1025,7 @@ private:
     }
 
     // splits a raw query string into decoded name/value pairs.
-    static void parseQuery(const std::string& query, std::map<std::string, std::string>& out)
+    static void parseQuery(const std::string& query, std::vector<std::pair<std::string, std::string>>& out)
     {
         std::size_t pos = 0;
         while (pos < query.size())
@@ -1038,12 +1038,12 @@ private:
                 std::string name = urlDecode(query.substr(pos, equals - pos), true);
                 if (!name.empty())
                 {
-                    out[name] = urlDecode(query.substr(equals + 1, end - equals - 1), true);
+                    out.emplace_back(name, urlDecode(query.substr(equals + 1, end - equals - 1), true));
                 }
             }
             else if (end > pos)
             {
-                out[urlDecode(query.substr(pos, end - pos), true)] = std::string();
+                out.emplace_back(urlDecode(query.substr(pos, end - pos), true), std::string());
             }
 
             if (ampersand == std::string::npos)
@@ -1200,7 +1200,7 @@ private:
         handler(request, response);
     }
 
-    static std::string headerValue(const std::map<std::string, std::string>& headers, const std::string& name)
+    static std::string headerValue(const std::vector<std::pair<std::string, std::string>>& headers, const std::string& name)
     {
         for (const auto& [key, value] : headers)
         {
@@ -1544,9 +1544,9 @@ private:
     std::string pendingPath;
     std::string pendingQueryString;
     std::string pendingHost;
-    std::map<std::string, std::string> pendingHeaders;
-    std::map<std::string, std::string> pendingCookies;
-    std::map<std::string, std::string> pendingQuery;
+    std::vector<std::pair<std::string, std::string>> pendingHeaders;
+    std::vector<std::pair<std::string, std::string>> pendingCookies;
+    std::vector<std::pair<std::string, std::string>> pendingQuery;
 
     llhttp_t parser;
     std::string parseField;

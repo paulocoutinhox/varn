@@ -2,9 +2,10 @@
 
 #include <cstdint>
 #include <functional>
-#include <map>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace varn::http
 {
@@ -18,9 +19,9 @@ struct HttpRequest
     std::string queryString;
     std::string body;
     std::string remoteAddress;
-    std::map<std::string, std::string> headers;
-    std::map<std::string, std::string> cookies;
-    std::map<std::string, std::string> query;
+    std::vector<std::pair<std::string, std::string>> headers;
+    std::vector<std::pair<std::string, std::string>> cookies;
+    std::vector<std::pair<std::string, std::string>> query;
 };
 
 class HttpResponse

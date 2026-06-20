@@ -28,6 +28,8 @@ The rate-limit middleware keys buckets by client IP. With `trustProxy = true` it
 
 At the transport level the server rejects ambiguous or abusive requests automatically: duplicate or conflicting `Content-Length`/`Transfer-Encoding` (request smuggling), bodies over 16 MB, and malformed chunked encoding. Connections that stall — a slow or partial request, or a client reading its response too slowly (slowloris) — are closed once they pass `requestTimeoutMs`/`keepAliveTimeoutSeconds`.
 
+An `app:ws` route accepts upgrades from any origin unless you set its `origins` allowlist. A WebSocket carries the browser's ambient cookies, so a cookie-authenticated socket without `origins` is open to cross-site WebSocket hijacking — set `origins` on any authenticated socket, the same way you would restrict CORS.
+
 ## 🧩 ffi
 
 `ffi` can call any native function available to the process. Treat scripts that use `ffi` as equivalent to native code for sandboxing purposes.

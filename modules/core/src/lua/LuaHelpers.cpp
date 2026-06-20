@@ -5,7 +5,7 @@
 namespace varn::lua
 {
 
-void LuaHelpers::pushStringMap(lua_State* L, const std::map<std::string, std::string>& values)
+void LuaHelpers::pushStringMap(lua_State* L, const std::vector<std::pair<std::string, std::string>>& values)
 {
     lua_newtable(L);
 

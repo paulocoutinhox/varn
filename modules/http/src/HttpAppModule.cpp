@@ -1440,7 +1440,22 @@ std::string HttpApp::clientIp(lua_State* L, bool trustProxy)
             const std::size_t end = first.find_last_not_of(" \t");
             if (begin != std::string::npos)
             {
-                return first.substr(begin, end - begin + 1);
+                const std::string candidate = first.substr(begin, end - begin + 1);
+                bool hasControl = false;
+                for (char c : candidate)
+                {
+                    if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) == 0x7f)
+                    {
+                        hasControl = true;
+                        break;
+                    }
+                }
+
+                // a forwarded value carrying control bytes could truncate or poison the rate-limit key, so fall back to the socket address.
+                if (!hasControl)
+                {
+                    return candidate;
+                }
             }
         }
     }
@@ -1515,7 +1530,7 @@ int HttpApp::corsMiddleware(lua_State* L)
         }
         if (varyOrigin || allowOrigin != "*")
         {
-            context->response->setHeader("Vary", "Origin");
+            context->response->addHeader("Vary", "Origin");
         }
 
         context->response->setHeader("Access-Control-Allow-Methods", optString(L, opts, "methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD"));
