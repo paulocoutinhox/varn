@@ -2,6 +2,19 @@
 
 [k6](https://k6.io) drives load against a running Varn HTTP server so you can measure throughput, latency, and where it starts to degrade. Varn does not bundle k6: you run it as a separate client against a server you start yourself.
 
+## 📊 Varn vs Node vs Python
+
+A reproducible comparison benchmark lives under [bench/](../bench/): the same `/plaintext` and `/json` routes served by Varn, raw Node `http`, and a raw ASGI app on uvicorn — no framework on any side — driven by the same `wrk` load. Measured on Linux (the deploy target), requests per second:
+
+| Scenario | Varn | Node | Python |
+|----------|-----:|-----:|-------:|
+| 1 core, plaintext | **97k** | 60k | 15k |
+| 1 core, json | **92k** | 53k | 14k |
+| 4 workers, plaintext | **347k** | 204k | 10k |
+| 4 workers, json | **333k** | 183k | 9k |
+
+Varn serves about **1.6× the requests of Node per core** and scales near-linearly with `VARN_WORKERS` (97k → 347k across four cores); Python's throughput drops under multiple workers. Run it locally with `bash bench/run.sh`, or on Linux through Docker with `bash bench/docker-bench.sh`. A Mac's allocator and `kqueue` penalize every allocation-heavy server, so local macOS numbers understate production — measure on Linux.
+
 ## 📦 Install k6
 
 ```bash
