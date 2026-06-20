@@ -10,7 +10,6 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/SHA1Engine.h>
 #include <Poco/String.h>
-#include <Poco/URI.h>
 
 #include <cstring>
 #include <llhttp.h>
@@ -979,8 +978,85 @@ private:
         }
     }
 
+    static int hexDigit(char c)
+    {
+        if (c >= '0' && c <= '9')
+        {
+            return c - '0';
+        }
+
+        if (c >= 'a' && c <= 'f')
+        {
+            return c - 'a' + 10;
+        }
+
+        if (c >= 'A' && c <= 'F')
+        {
+            return c - 'A' + 10;
+        }
+
+        return -1;
+    }
+
+    // decodes percent-escapes, and optionally treats '+' as a space for query components.
+    static std::string urlDecode(const std::string& in, bool plusAsSpace)
+    {
+        std::string out;
+        out.reserve(in.size());
+        for (std::size_t i = 0; i < in.size(); ++i)
+        {
+            const char c = in[i];
+            if (c == '%' && i + 2 < in.size())
+            {
+                const int hi = hexDigit(in[i + 1]);
+                const int lo = hexDigit(in[i + 2]);
+                if (hi >= 0 && lo >= 0)
+                {
+                    out += static_cast<char>((hi << 4) | lo);
+                    i += 2;
+                    continue;
+                }
+            }
+
+            out += (plusAsSpace && c == '+') ? ' ' : c;
+        }
+
+        return out;
+    }
+
+    // splits a raw query string into decoded name/value pairs.
+    static void parseQuery(const std::string& query, std::map<std::string, std::string>& out)
+    {
+        std::size_t pos = 0;
+        while (pos < query.size())
+        {
+            const std::size_t ampersand = query.find('&', pos);
+            const std::size_t end = ampersand == std::string::npos ? query.size() : ampersand;
+            const std::size_t equals = query.find('=', pos);
+            if (equals != std::string::npos && equals < end)
+            {
+                std::string name = urlDecode(query.substr(pos, equals - pos), true);
+                if (!name.empty())
+                {
+                    out[name] = urlDecode(query.substr(equals + 1, end - equals - 1), true);
+                }
+            }
+            else if (end > pos)
+            {
+                out[urlDecode(query.substr(pos, end - pos), true)] = std::string();
+            }
+
+            if (ampersand == std::string::npos)
+            {
+                break;
+            }
+            pos = ampersand + 1;
+        }
+    }
+
     bool parseHeaders()
     {
+        pendingMethod.clear();
         pendingTarget.clear();
         pendingHeaders.clear();
         parseField.clear();
@@ -1054,21 +1130,24 @@ private:
             keepAlive = Poco::icompare(connectionHeader, "close") != 0;
         }
 
-        try
+        // split the target into path and query in place, decoding only the parts that carry escapes.
+        const std::size_t queryStart = pendingTarget.find('?');
+        const std::string rawPath = queryStart == std::string::npos ? pendingTarget : pendingTarget.substr(0, queryStart);
+        pendingPath = rawPath.find('%') == std::string::npos ? rawPath : urlDecode(rawPath, false);
+        if (pendingPath.empty())
         {
-            Poco::URI uri(pendingTarget);
-            pendingPath = uri.getPath().empty() ? "/" : uri.getPath();
-            pendingQueryString = uri.getRawQuery();
-            pendingQuery.clear();
-            for (const auto& param : uri.getQueryParameters())
-            {
-                pendingQuery[param.first] = param.second;
-            }
+            pendingPath = "/";
         }
-        catch (...)
+
+        pendingQuery.clear();
+        if (queryStart == std::string::npos)
         {
-            sendSimpleAndClose(400);
-            return false;
+            pendingQueryString.clear();
+        }
+        else
+        {
+            pendingQueryString = pendingTarget.substr(queryStart + 1);
+            parseQuery(pendingQueryString, pendingQuery);
         }
 
         pendingHost = headerValue(pendingHeaders, "Host");
