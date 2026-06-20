@@ -31,6 +31,7 @@ int Promise::luaAwait(lua_State* L)
     {
         return lua_yield(L, 0);
     }
+
     return outcome;
 }
 
@@ -56,6 +57,7 @@ void Promise::resolve(std::string resolvedValue)
         {
             return;
         }
+
         phase = State::Resolved;
         customResolved = false;
         customPush = nullptr;
@@ -73,6 +75,7 @@ void Promise::resolveCustom(std::function<void(lua_State* L)> pushResolved)
         {
             return;
         }
+
         phase = State::Resolved;
         customResolved = true;
         value.clear();
@@ -90,6 +93,7 @@ void Promise::reject(std::string rejectedError)
         {
             return;
         }
+
         phase = State::Rejected;
         customResolved = false;
         customPush = nullptr;
@@ -149,14 +153,17 @@ int Promise::prepareAwait(lua_State* L)
         lua_pushlstring(L, snapshotValue.data(), snapshotValue.size());
         return 1;
     }
+
     if (settledResolvedCustom)
     {
         if (custom)
         {
             custom(L);
         }
+
         return 1;
     }
+
     lua_pushnil(L);
     lua_pushlstring(L, snapshotError.data(), snapshotError.size());
     return 2;
@@ -212,6 +219,7 @@ void Promise::runPendingResumes()
             {
                 lua_pushlstring(coroutine, valueSnapshot.data(), valueSnapshot.size());
             }
+
             argCount = 1;
         }
         else

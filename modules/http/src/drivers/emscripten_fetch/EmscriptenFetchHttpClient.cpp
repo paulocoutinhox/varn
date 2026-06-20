@@ -41,6 +41,7 @@ public:
         {
             respBody.assign(static_cast<const char*>(data), numBytes);
         }
+
         try
         {
             ctx->promise->resolve(wire(status, respBody));
@@ -48,6 +49,7 @@ public:
         catch (...)
         {
         }
+
         delete ctx;
     }
 
@@ -60,6 +62,7 @@ public:
         catch (...)
         {
         }
+
         delete ctx;
     }
 
@@ -87,10 +90,12 @@ extern "C"
             {
             }
         }
+
         if (bodyPtr != 0)
         {
             std::free(reinterpret_cast<void*>(bodyPtr));
         }
+
         varn::wasm::WasmAsyncHost::fetchInflight().fetch_sub(1, std::memory_order_acq_rel);
     }
 
@@ -107,6 +112,7 @@ extern "C"
         {
             copy = "[EmscriptenFetchHttpClient] The request failed.";
         }
+
         if (ctx != nullptr)
         {
             try
@@ -117,6 +123,7 @@ extern "C"
             {
             }
         }
+
         varn::wasm::WasmAsyncHost::fetchInflight().fetch_sub(1, std::memory_order_acq_rel);
     }
 
@@ -133,6 +140,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
             _varn_fetch_js_on_error(ctx, 0);
             return;
         }
+
         stringToUTF8(message, eptr, len);
         _varn_fetch_js_on_error(ctx, eptr);
     }
@@ -151,11 +159,13 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
         reportError("[EmscriptenFetchHttpClient] Invalid headers json (" + String(e) + ")");
         return;
     }
+
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
     {
         reportError("[EmscriptenFetchHttpClient] Headers json must be a JSON object.");
         return;
     }
+
     const headersInit = {};
     for (const key of Object.keys(parsed))
     {
@@ -165,6 +175,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
             reportError("[EmscriptenFetchHttpClient] Header value must be a string (key: " + key + ")");
             return;
         }
+
         headersInit[key] = value;
     }
 
@@ -191,6 +202,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
             {
                 clearTimeout(tid);
             }
+
             const u8 = new Uint8Array(x.ab);
             const len = u8.byteLength;
             if (max_bytes > 0 && len > max_bytes)
@@ -198,6 +210,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
                 reportError("[EmscriptenFetchHttpClient] The response body exceeds the maximum allowed size.");
                 return;
             }
+
             let ptr = 0;
             if (len > 0)
             {
@@ -206,8 +219,10 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
                 {
                     throw new Error("[EmscriptenFetchHttpClient] The response body could not be allocated.");
                 }
+
                 HEAPU8.set(u8, ptr);
             }
+
             _varn_fetch_js_on_success(ctx, x.status, ptr, len);
         })
         .catch((e) => {
@@ -215,6 +230,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
             {
                 clearTimeout(tid);
             }
+
             reportError(String(e));
         });
 });
@@ -235,6 +251,7 @@ void HttpClientPerform::performAsync(
     {
         hdr[kv.first] = kv.second;
     }
+
     ctx->headersJson = hdr.dump();
 
     varn::wasm::WasmAsyncHost::fetchInflight().fetch_add(1, std::memory_order_relaxed);

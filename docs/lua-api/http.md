@@ -563,3 +563,9 @@ The server runs an event loop on the same thread as Lua — `epoll` on Linux, `k
 macOS/BSD, `IOCP` on Windows — so one process serves many thousands of connections without a
 thread per connection. Poco provides the sockets and TLS; the HTTP client is built on Poco (in
 the browser build, the client uses the host's `fetch`).
+
+Each handler runs inline on the loop thread the moment its request is parsed, with no per-request
+hand-off, and the Lua runtime collects garbage generationally so the short-lived objects a request
+creates are reclaimed cheaply. On plaintext connections static files are sent with the kernel's
+`sendfile`, going straight from the file to the socket without a copy through user space — over TLS
+the payload must be encrypted in user space, so it streams through the normal buffer.

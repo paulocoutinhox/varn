@@ -17,6 +17,7 @@ void TaskPool::start()
     {
         return;
     }
+
     workers.reserve(threadCount);
     for (std::size_t i = 0; i < threadCount; ++i)
     {
@@ -60,9 +61,11 @@ void TaskPool::drainPostedJobs()
             {
                 break;
             }
+
             job = std::move(jobs.front());
             jobs.pop();
         }
+
         if (job)
         {
             job();

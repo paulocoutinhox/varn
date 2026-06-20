@@ -36,6 +36,7 @@ std::string CryptoPrimitives::trimAlgo(std::string_view in)
     {
         in.remove_suffix(1);
     }
+
     return std::string(in);
 }
 
@@ -47,6 +48,7 @@ std::string CryptoPrimitives::toHex(const unsigned char* data, std::size_t len)
     {
         out << std::setw(2) << static_cast<int>(data[i]);
     }
+
     return out.str();
 }
 
@@ -72,6 +74,7 @@ std::string CryptoPrimitives::digest(std::string_view algorithm, std::string_vie
         EVP_MD_CTX_free(ctx);
         throw std::runtime_error("[CryptoPrimitives] The requested hash algorithm is not known.");
     }
+
     initOk = EVP_DigestInit_ex2(ctx, fetched, nullptr);
     if (initOk != 1)
     {
@@ -79,6 +82,7 @@ std::string CryptoPrimitives::digest(std::string_view algorithm, std::string_vie
         EVP_MD_CTX_free(ctx);
         throw std::runtime_error("[CryptoPrimitives] The hash could not be initialized.");
     }
+
     EVP_MD_free(fetched);
 #else
     const EVP_MD* md = EVP_get_digestbyname(algo.c_str());
@@ -87,6 +91,7 @@ std::string CryptoPrimitives::digest(std::string_view algorithm, std::string_vie
         EVP_MD_CTX_free(ctx);
         throw std::runtime_error("[CryptoPrimitives] The requested hash algorithm is not known.");
     }
+
     initOk = EVP_DigestInit_ex(ctx, md, nullptr);
     if (initOk != 1)
     {
@@ -108,12 +113,14 @@ std::string CryptoPrimitives::digest(std::string_view algorithm, std::string_vie
         EVP_MD_CTX_free(ctx);
         throw std::runtime_error("[CryptoPrimitives] The hash could not be finalized.");
     }
+
     EVP_MD_CTX_free(ctx);
 
     if (outputHex)
     {
         return toHex(buf, outLen);
     }
+
     return std::string(reinterpret_cast<const char*>(buf), static_cast<std::size_t>(outLen));
 }
 
@@ -131,6 +138,7 @@ std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string
     {
         throw std::runtime_error("[CryptoPrimitives] The keyed hash backend could not be loaded.");
     }
+
     EVP_MAC_CTX* ctx = EVP_MAC_CTX_new(mac);
     EVP_MAC_free(mac);
     if (ctx == nullptr)
@@ -152,17 +160,20 @@ std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string
         EVP_MAC_CTX_free(ctx);
         throw std::runtime_error("[CryptoPrimitives] The keyed hash could not be initialized.");
     }
+
     if (EVP_MAC_update(ctx, reinterpret_cast<const unsigned char*>(data.data()), data.size()) != 1)
     {
         EVP_MAC_CTX_free(ctx);
         throw std::runtime_error("[CryptoPrimitives] The keyed hash could not process the input.");
     }
+
     const std::size_t macSize = EVP_MAC_CTX_get_mac_size(ctx);
     if (macSize == 0 || macSize > EVP_MAX_MD_SIZE)
     {
         EVP_MAC_CTX_free(ctx);
         throw std::runtime_error("[CryptoPrimitives] The keyed hash produced an invalid output size.");
     }
+
     unsigned char buf[EVP_MAX_MD_SIZE];
     std::size_t outLen = sizeof(buf);
     if (EVP_MAC_final(ctx, buf, &outLen, sizeof(buf)) != 1)
@@ -170,12 +181,14 @@ std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string
         EVP_MAC_CTX_free(ctx);
         throw std::runtime_error("[CryptoPrimitives] The keyed hash could not be finalized.");
     }
+
     EVP_MAC_CTX_free(ctx);
 
     if (outputHex)
     {
         return toHex(buf, outLen);
     }
+
     return std::string(reinterpret_cast<const char*>(buf), outLen);
 #else
     const EVP_MD* md = EVP_get_digestbyname(algo.c_str());
@@ -183,11 +196,13 @@ std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string
     {
         throw std::runtime_error("[CryptoPrimitives] The requested keyed hash algorithm is not known.");
     }
+
     // the legacy hmac api takes int lengths, so an oversized input is rejected rather than silently truncated.
     if (key.size() > static_cast<std::size_t>(INT_MAX) || data.size() > static_cast<std::size_t>(INT_MAX))
     {
         throw std::runtime_error("[CryptoPrimitives] The keyed hash input is too large.");
     }
+
     const int keyLen = static_cast<int>(key.size());
     const int dataLen = static_cast<int>(data.size());
     unsigned char buf[EVP_MAX_MD_SIZE];
@@ -202,10 +217,12 @@ std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string
     {
         throw std::runtime_error("[CryptoPrimitives] The keyed hash could not be computed.");
     }
+
     if (outputHex)
     {
         return toHex(buf, static_cast<std::size_t>(outLen));
     }
+
     return std::string(reinterpret_cast<const char*>(buf), static_cast<std::size_t>(outLen));
 #endif
 }
@@ -217,11 +234,13 @@ std::string CryptoPrimitives::randomBytes(std::size_t count)
     {
         throw std::runtime_error("[CryptoPrimitives] The requested random byte count is too large.");
     }
+
     std::string bytes(count, '\0');
     if (RAND_bytes(reinterpret_cast<unsigned char*>(bytes.data()), static_cast<int>(count)) != 1)
     {
         throw std::runtime_error("[CryptoPrimitives] Random bytes could not be generated.");
     }
+
     return bytes;
 }
 

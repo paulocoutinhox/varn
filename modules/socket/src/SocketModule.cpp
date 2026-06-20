@@ -76,8 +76,10 @@ int SocketModule::luaTcpSocketGc(lua_State* L)
         {
             (*holder)->close();
         }
+
         std::destroy_at(holder);
     }
+
     return 0;
 }
 
@@ -90,9 +92,11 @@ int SocketModule::luaTcpListenerGc(lua_State* L)
         {
             (*holder)->close();
         }
+
         std::destroy_at(holder);
         luaRuntime(L).releaseBackgroundDriver();
     }
+
     return 0;
 }
 
@@ -105,9 +109,11 @@ int SocketModule::luaUdpSocketGc(lua_State* L)
         {
             (*holder)->close();
         }
+
         std::destroy_at(holder);
         luaRuntime(L).releaseBackgroundDriver();
     }
+
     return 0;
 }
 
@@ -119,6 +125,7 @@ int SocketModule::luaTcpConnect(lua_State* L)
     {
         return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
+
     const int port = static_cast<int>(portArg);
 
     auto* runtime = &luaRuntime(L);
@@ -138,6 +145,7 @@ int SocketModule::luaTcpConnect(lua_State* L)
                                       {
                                           promise->reject(error);
                                       }
+
                                       runtime->releaseBackgroundDriver();
                                   });
 
@@ -154,6 +162,7 @@ int SocketModule::luaTcpListen(lua_State* L)
     {
         return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
+
     if (backlogArg < 1 || backlogArg > 4096)
     {
         return luaL_error(L, "[SocketModule] Backlog must be between 1 and 4096.");
@@ -195,6 +204,7 @@ int SocketModule::luaTcpSocketSend(lua_State* L)
         } else {
             promise->reject(error);
         }
+
         runtime->releaseBackgroundDriver(); });
 
     Promise::push(L, promise);
@@ -222,6 +232,7 @@ int SocketModule::luaTcpSocketReceive(lua_State* L)
         } else {
             promise->reject(data);
         }
+
         runtime->releaseBackgroundDriver(); });
 
     Promise::push(L, promise);
@@ -256,6 +267,7 @@ int SocketModule::luaTcpListenerAccept(lua_State* L)
         } else {
             promise->reject(error);
         }
+
         runtime->releaseBackgroundDriver(); });
 
     Promise::push(L, promise);
@@ -311,6 +323,7 @@ int SocketModule::luaUdpSocketSendTo(lua_State* L)
     {
         return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
+
     size_t len = 0;
     const char* data = luaL_checklstring(L, 4, &len);
 
@@ -330,6 +343,7 @@ int SocketModule::luaUdpSocketSendTo(lua_State* L)
                             {
                                 promise->reject(error);
                             }
+
                             runtime->releaseBackgroundDriver();
                         });
 
@@ -367,6 +381,7 @@ int SocketModule::luaUdpSocketRecvFrom(lua_State* L)
         } else {
             promise->reject(error);
         }
+
         runtime->releaseBackgroundDriver(); });
 
     Promise::push(L, promise);
@@ -402,6 +417,7 @@ void SocketModule::createMetatables(lua_State* L)
         lua_setfield(L, -2, "close");
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 
     if (luaL_newmetatable(L, kTcpListenerMeta))
@@ -416,6 +432,7 @@ void SocketModule::createMetatables(lua_State* L)
         lua_setfield(L, -2, "close");
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 
     if (luaL_newmetatable(L, kUdpSocketMeta))
@@ -432,6 +449,7 @@ void SocketModule::createMetatables(lua_State* L)
         lua_setfield(L, -2, "close");
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 }
 

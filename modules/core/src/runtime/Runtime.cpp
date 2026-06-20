@@ -60,6 +60,7 @@ int Runtime::finishAfterUserChunk(int loadRunExitCode)
     {
         return 1;
     }
+
     if (entryRequestedStop)
     {
         return 0;
@@ -106,6 +107,7 @@ TaskPool& Runtime::ioPool()
         ioWorkers = std::make_unique<TaskPool>(kIoThreads, workLedger);
         ioWorkers->start();
     }
+
     return *ioWorkers;
 }
 
@@ -152,6 +154,7 @@ void Runtime::stop()
     {
         ioWorkers->stop();
     }
+
     loop.stop();
     // with workers joined and the loop stopped, dropping any still-queued job releases its captured state such as AppState holding lua registry refs while the lua_State is still alive, rather than during member teardown after lua_close.
     loop.clearPendingJobs();

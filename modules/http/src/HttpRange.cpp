@@ -11,6 +11,7 @@ bool HttpRange::allDigits(const std::string& value)
     {
         return false;
     }
+
     for (const char c : value)
     {
         if (c < '0' || c > '9')
@@ -18,6 +19,7 @@ bool HttpRange::allDigits(const std::string& value)
             return false;
         }
     }
+
     return true;
 }
 
@@ -54,11 +56,13 @@ bool HttpRange::parse(const std::string& header, std::uintmax_t total, std::uint
             {
                 return false;
             }
+
             const std::uintmax_t count = std::stoull(last);
             if (count == 0)
             {
                 return false;
             }
+
             start = count >= total ? 0 : total - count;
             end = total - 1;
             return true;
@@ -76,6 +80,7 @@ bool HttpRange::parse(const std::string& header, std::uintmax_t total, std::uint
     {
         end = total - 1;
     }
+
     return start <= end && start < total;
 }
 

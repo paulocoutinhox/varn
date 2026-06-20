@@ -73,6 +73,7 @@ int WasmHost::luaPrintCapture(lua_State* L)
         {
             line += '\t';
         }
+
         size_t len = 0;
         const char* chunk = luaL_tolstring(L, i, &len);
         line.append(chunk, len);
@@ -114,6 +115,7 @@ void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt)
                 rt.taskPool().drainPostedJobs();
                 progressed = true;
             }
+
             if (rt.mainLoop().hasPendingJobs())
             {
                 rt.mainLoop().drainPostedJobs();
@@ -129,6 +131,7 @@ void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt)
             emscripten_sleep(0);
             continue;
         }
+
         break;
     }
 }
@@ -188,6 +191,7 @@ RunResult WasmHost::runChunk(const std::string& source)
     {
         result.error = std::move(err);
     }
+
     return result;
 }
 

@@ -29,6 +29,7 @@ void XmlConvert::pushElement(lua_State* L, const pugi::xml_node& node, int depth
             lua_pushstring(L, attr.value());
             lua_setfield(L, -2, attr.name());
         }
+
         lua_setfield(L, -2, "attributes");
     }
 
@@ -73,6 +74,7 @@ void XmlConvert::buildElement(pugi::xml_node parent, lua_State* L, int nodeIndex
     {
         return;
     }
+
     nodeIndex = lua_absindex(L, nodeIndex);
 
     std::string name = "node";
@@ -81,6 +83,7 @@ void XmlConvert::buildElement(pugi::xml_node parent, lua_State* L, int nodeIndex
     {
         name = lua_tostring(L, -1);
     }
+
     lua_pop(L, 1);
 
     pugi::xml_node el = parent.append_child(XmlSerializer::sanitizeElementName(name).c_str());
@@ -100,6 +103,7 @@ void XmlConvert::buildElement(pugi::xml_node parent, lua_State* L, int nodeIndex
             lua_pop(L, 1);
         }
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, nodeIndex, "children");
@@ -114,9 +118,11 @@ void XmlConvert::buildElement(pugi::xml_node parent, lua_State* L, int nodeIndex
             {
                 buildElement(el, L, lua_gettop(L), depth + 1);
             }
+
             lua_pop(L, 1);
         }
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, nodeIndex, "text");
@@ -126,6 +132,7 @@ void XmlConvert::buildElement(pugi::xml_node parent, lua_State* L, int nodeIndex
         const char* s = lua_tolstring(L, -1, &len);
         el.text().set(s, len);
     }
+
     lua_pop(L, 1);
 }
 

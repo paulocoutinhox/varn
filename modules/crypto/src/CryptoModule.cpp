@@ -17,21 +17,25 @@ bool CryptoModule::parseDigestFormat(lua_State* L, int index, bool& hexOut)
     {
         return true;
     }
+
     const char* fmt = lua_tostring(L, index);
     if (fmt == nullptr)
     {
         return true;
     }
+
     if (std::string_view(fmt) == "hex")
     {
         hexOut = true;
         return true;
     }
+
     if (std::string_view(fmt) == "raw")
     {
         hexOut = false;
         return true;
     }
+
     return false;
 }
 

@@ -24,6 +24,7 @@ std::string PlatformInfo::toLower(std::string s)
     {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
+
     return s;
 }
 
@@ -110,10 +111,12 @@ std::string PlatformInfo::endianness()
     {
         return "little";
     }
+
     if constexpr (std::endian::native == std::endian::big)
     {
         return "big";
     }
+
     return "mixed";
 }
 
@@ -153,6 +156,7 @@ std::string PlatformInfo::libraryFilenameForName(std::string_view logicalName)
         {
             return s;
         }
+
         return toLower(std::move(s)) + ".dll";
     }
 
@@ -161,6 +165,7 @@ std::string PlatformInfo::libraryFilenameForName(std::string_view logicalName)
     {
         stem = stem.substr(3);
     }
+
     const auto dot = stem.rfind('.');
     if (dot != std::string::npos)
     {

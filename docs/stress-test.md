@@ -8,12 +8,12 @@ A reproducible comparison benchmark lives under [bench/](../bench/): the same `/
 
 | Scenario | Varn | Node | Python |
 |----------|-----:|-----:|-------:|
-| 1 core, plaintext | **104k** | 57k | 52k |
-| 1 core, json | **95k** | 52k | 47k |
-| 4 workers, plaintext | **350k** | 191k | 198k |
-| 4 workers, json | **338k** | 176k | 185k |
+| 1 core, plaintext | **129k** | 57k | 52k |
+| 1 core, json | **120k** | 52k | 48k |
+| 4 workers, plaintext | **405k** | 199k | 200k |
+| 4 workers, json | **391k** | 178k | 183k |
 
-Varn serves about **1.8× the requests of Node per core** (and ~2× Python) and scales near-linearly with `VARN_WORKERS` (104k → 350k across four cores). Each runtime is at its best with no framework: the Node baseline is raw `http`, and the Python one is a raw ASGI app on uvicorn with `uvloop`+`httptools`. Run it locally with `bash bench/run.sh`, or on Linux through Docker with `bash bench/docker-bench.sh`. A Mac's allocator and `kqueue` penalize every allocation-heavy server, so local macOS numbers understate production — measure on Linux.
+Varn serves about **2.3× the requests of Node per core** (and ~2.5× Python) and scales near-linearly with `VARN_WORKERS` (129k → 405k across four cores). Each runtime is at its best with no framework: the Node baseline is raw `http`, and the Python one is a raw ASGI app on uvicorn with `uvloop`+`httptools`. Run it locally with `bash bench/run.sh`, or on Linux through Docker with `bash bench/docker-bench.sh`. A Mac's allocator and `kqueue` penalize every allocation-heavy server, so local macOS numbers understate production — measure on Linux.
 
 ## 📦 Install k6
 

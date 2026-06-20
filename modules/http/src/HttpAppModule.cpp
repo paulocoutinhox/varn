@@ -134,6 +134,7 @@ struct AppState
             {
                 luaL_unref(luaMain, LUA_REGISTRYINDEX, ref);
             }
+
             luaL_unref(luaMain, LUA_REGISTRYINDEX, route.handlerRef);
         }
 
@@ -342,6 +343,7 @@ Target HttpApp::resolveTarget(lua_State* L)
     {
         return Target{static_cast<AppUserdata*>(app)->state, 0};
     }
+
     if (void* group = luaL_testudata(L, 1, kGroupMeta))
     {
         auto* userdata = static_cast<GroupUserdata*>(group);
@@ -369,6 +371,7 @@ std::string HttpApp::findContentType(const HttpRequest& request)
             return value;
         }
     }
+
     return "";
 }
 
@@ -386,6 +389,7 @@ std::string HttpApp::randomSessionId()
     {
         id << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
     }
+
     return id.str();
 }
 
@@ -415,6 +419,7 @@ void HttpApp::evictOldestSession(AppState& app, lua_State* L)
             oldest = it;
         }
     }
+
     if (oldest != app.sessions.end())
     {
         luaL_unref(L, LUA_REGISTRYINDEX, oldest->second.dataRef);
@@ -443,6 +448,7 @@ int HttpApp::luaContextHeader(lua_State* L)
         {
             throw std::runtime_error("[HttpApp] A header name is required.");
         }
+
         for (unsigned char c : name)
         {
             if (c <= 0x20 || c == 0x7f || c == ':')
@@ -521,6 +527,7 @@ bool HttpApp::invalidCookieToken(const std::string& token)
             return true;
         }
     }
+
     return false;
 }
 
@@ -533,6 +540,7 @@ bool HttpApp::invalidCookieAttribute(const std::string& value)
             return true;
         }
     }
+
     return false;
 }
 
@@ -562,8 +570,10 @@ int HttpApp::luaContextCookie(lua_State* L)
                     lua_pop(L, 1);
                     throw std::runtime_error("[HttpApp] The cookie path contains invalid characters.");
                 }
+
                 cookie += "; Path=" + path;
             }
+
             lua_pop(L, 1);
 
             lua_getfield(L, 4, "domain");
@@ -575,8 +585,10 @@ int HttpApp::luaContextCookie(lua_State* L)
                     lua_pop(L, 1);
                     throw std::runtime_error("[HttpApp] The cookie domain contains invalid characters.");
                 }
+
                 cookie += "; Domain=" + domain;
             }
+
             lua_pop(L, 1);
 
             lua_getfield(L, 4, "maxAge");
@@ -593,8 +605,10 @@ int HttpApp::luaContextCookie(lua_State* L)
                     lua_pop(L, 1);
                     throw std::runtime_error("[HttpApp] The cookie expires value contains invalid characters.");
                 }
+
                 cookie += "; Expires=" + expires;
             }
+
             lua_pop(L, 1);
 
             lua_getfield(L, 4, "secure");
@@ -625,6 +639,7 @@ int HttpApp::luaContextCookie(lua_State* L)
                     throw std::runtime_error("[HttpApp] The cookie sameSite value must be Strict, Lax or None.");
                 }
             }
+
             lua_pop(L, 1);
 
             // browsers reject a SameSite=None cookie that is not also marked Secure.
@@ -637,6 +652,7 @@ int HttpApp::luaContextCookie(lua_State* L)
             {
                 cookie += "; SameSite=" + sameSite;
             }
+
             if (secure)
             {
                 cookie += "; Secure";
@@ -681,6 +697,7 @@ int HttpApp::luaContextBody(lua_State* L)
             {
                 throw std::runtime_error("[HttpApp] The request body is not valid JSON.");
             }
+
             return 1;
         }
 #endif
@@ -698,6 +715,7 @@ int HttpApp::luaContextBody(lua_State* L)
             {
                 throw std::runtime_error("[HttpApp] The multipart body has no boundary.");
             }
+
             HttpMultipart::pushMultipart(L, body, boundary);
             return 1;
         }
@@ -722,6 +740,7 @@ int HttpApp::luaContextSession(lua_State* L)
     {
         return 1;
     }
+
     lua_pop(L, 1);
 
     const long long now = nowMs();
@@ -735,6 +754,7 @@ int HttpApp::luaContextSession(lua_State* L)
     {
         id = lua_tostring(L, -1);
     }
+
     lua_pop(L, 3);
 
     auto entry = app->sessions.find(id);
@@ -758,6 +778,7 @@ int HttpApp::luaContextSession(lua_State* L)
         {
             cookie += "; Secure";
         }
+
         context->response->addHeader("Set-Cookie", cookie);
     }
     else
@@ -808,6 +829,7 @@ int HttpApp::luaContextRegenerateSession(lua_State* L)
     {
         cookie += "; Secure";
     }
+
     context->response->addHeader("Set-Cookie", cookie);
 
     // rotate the csrf token with the session so the double-submit cookie stays bound to the new id, the way django and rails do on login.
@@ -818,6 +840,7 @@ int HttpApp::luaContextRegenerateSession(lua_State* L)
         {
             csrfCookie += "; Secure";
         }
+
         context->response->addHeader("Set-Cookie", csrfCookie);
     }
 
@@ -838,6 +861,7 @@ std::string HttpApp::contentDispositionAttachment(const std::string& filename)
         {
             continue;
         }
+
         fallback += (c == '"' || c >= 0x80) ? '_' : static_cast<char>(c);
 
         const bool attrChar = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
@@ -847,6 +871,7 @@ std::string HttpApp::contentDispositionAttachment(const std::string& filename)
             encoded += static_cast<char>(c);
             continue;
         }
+
         encoded += '%';
         encoded += hex[c >> 4];
         encoded += hex[c & 0x0F];
@@ -856,6 +881,7 @@ std::string HttpApp::contentDispositionAttachment(const std::string& filename)
     {
         fallback = "download";
     }
+
     return "attachment; filename=\"" + fallback + "\"; filename*=UTF-8''" + encoded;
 }
 
@@ -889,6 +915,7 @@ int HttpApp::luaContextFile(lua_State* L)
             const std::string filename = std::filesystem::path(path).filename().string();
             context->response->setHeader("Content-Disposition", contentDispositionAttachment(filename));
         }
+
         lua_pop(L, 1);
     }
 
@@ -935,11 +962,13 @@ int HttpApp::luaContextIndex(lua_State* L)
         lua_getiuservalue(L, 1, 2);
         return 1;
     }
+
     if (std::strcmp(key, "state") == 0)
     {
         lua_getiuservalue(L, 1, 3);
         return 1;
     }
+
     if (std::strcmp(key, "req") == 0 || std::strcmp(key, "request") == 0)
     {
         lua_getiuservalue(L, 1, 1);
@@ -959,61 +988,73 @@ int HttpApp::luaContextIndex(lua_State* L)
         lua_pushcfunction(L, &luaContextStatus);
         return 1;
     }
+
     if (std::strcmp(key, "header") == 0)
     {
         lua_pushcfunction(L, &luaContextHeader);
         return 1;
     }
+
     if (std::strcmp(key, "type") == 0)
     {
         lua_pushcfunction(L, &luaContextType);
         return 1;
     }
+
     if (std::strcmp(key, "text") == 0)
     {
         lua_pushcfunction(L, &luaContextText);
         return 1;
     }
+
     if (std::strcmp(key, "html") == 0)
     {
         lua_pushcfunction(L, &luaContextHtml);
         return 1;
     }
+
     if (std::strcmp(key, "redirect") == 0)
     {
         lua_pushcfunction(L, &luaContextRedirect);
         return 1;
     }
+
     if (std::strcmp(key, "write") == 0)
     {
         lua_pushcfunction(L, &luaContextWrite);
         return 1;
     }
+
     if (std::strcmp(key, "cookie") == 0)
     {
         lua_pushcfunction(L, &luaContextCookie);
         return 1;
     }
+
     if (std::strcmp(key, "body") == 0)
     {
         lua_pushcfunction(L, &luaContextBody);
         return 1;
     }
+
     if (std::strcmp(key, "session") == 0)
     {
         lua_pushcfunction(L, &luaContextSession);
         return 1;
     }
+
     if (std::strcmp(key, "regenerateSession") == 0)
     {
         lua_pushcfunction(L, &luaContextRegenerateSession);
         return 1;
     }
+
     if (std::strcmp(key, "file") == 0)
     {
         lua_pushcfunction(L, &luaContextFile);
         return 1;
     }
+
     if (std::strcmp(key, "send") == 0 || std::strcmp(key, "finish") == 0)
     {
         lua_pushcfunction(L, &luaContextSend);
@@ -1063,6 +1104,7 @@ int HttpApp::terminalMethodNotAllowed(lua_State* L)
     {
         context->response->setHeader("Allow", allow);
     }
+
     context->response->setHeader("Content-Type", "text/plain; charset=utf-8");
     context->response->end("Method Not Allowed");
     return 0;
@@ -1077,6 +1119,7 @@ int HttpApp::terminalAutoOptions(lua_State* L)
     {
         context->response->setHeader("Allow", allow);
     }
+
     context->response->end("");
     return 0;
 }
@@ -1099,6 +1142,7 @@ int HttpApp::chainNext(lua_State* L)
     {
         return 0;
     }
+
     lua_pushboolean(L, 1);
     lua_rawseti(L, lua_upvalueindex(5), 1);
 
@@ -1148,6 +1192,7 @@ void HttpApp::pushContext(lua_State* L, std::shared_ptr<AppState> app, const Htt
         lua_pushlstring(L, param.value.data(), param.value.size());
         lua_setfield(L, -2, param.name.c_str());
     }
+
     lua_setiuservalue(L, -2, 2);
 
     lua_newtable(L);
@@ -1181,6 +1226,7 @@ int HttpApp::buildChain(lua_State* L, int chainIndex, const std::shared_ptr<AppS
                 append(ref);
             }
         }
+
         for (int ref : route.middleware)
         {
             append(ref);
@@ -1205,6 +1251,7 @@ int HttpApp::buildChain(lua_State* L, int chainIndex, const std::shared_ptr<AppS
         {
             methods.push_back("HEAD");
         }
+
         if (std::find(methods.begin(), methods.end(), "OPTIONS") == methods.end())
         {
             methods.push_back("OPTIONS");
@@ -1217,8 +1264,10 @@ int HttpApp::buildChain(lua_State* L, int chainIndex, const std::shared_ptr<AppS
             {
                 allow += ", ";
             }
+
             allow += methods[i];
         }
+
         lua_pushlstring(L, allow.data(), allow.size());
 
         // an unhandled OPTIONS for a known path is answered with the method list instead of a 405.
@@ -1235,6 +1284,7 @@ int HttpApp::buildChain(lua_State* L, int chainIndex, const std::shared_ptr<AppS
     {
         lua_pushcfunction(L, &terminalNotFound);
     }
+
     lua_rawseti(L, chainIndex, ++length);
     return length;
 }
@@ -1282,6 +1332,7 @@ int HttpApp::dispatchFinalize(lua_State* L, int status, lua_KContext kctx)
         {
             response->setHeader("Content-Type", "text/plain; charset=utf-8");
         }
+
         response->end(failed ? "Internal server error." : "");
     }
 
@@ -1381,6 +1432,7 @@ std::string HttpApp::optString(lua_State* L, int optsIdx, const char* key, const
     {
         return fallback;
     }
+
     lua_getfield(L, optsIdx, key);
     const std::string value = lua_isstring(L, -1) ? lua_tostring(L, -1) : fallback;
     lua_pop(L, 1);
@@ -1393,6 +1445,7 @@ bool HttpApp::optBool(lua_State* L, int optsIdx, const char* key, bool fallback)
     {
         return fallback;
     }
+
     lua_getfield(L, optsIdx, key);
     const bool value = lua_isboolean(L, -1) ? (lua_toboolean(L, -1) != 0) : fallback;
     lua_pop(L, 1);
@@ -1405,6 +1458,7 @@ long long HttpApp::optInt(lua_State* L, int optsIdx, const char* key, long long 
     {
         return fallback;
     }
+
     lua_getfield(L, optsIdx, key);
     const long long value = lua_isnumber(L, -1) ? static_cast<long long>(lua_tointeger(L, -1)) : fallback;
     lua_pop(L, 1);
@@ -1432,8 +1486,10 @@ std::string HttpApp::requestHeaderCI(lua_State* L, const std::string& name)
         {
             result = lua_tostring(L, -1);
         }
+
         lua_pop(L, 1);
     }
+
     lua_pop(L, 2);
     return result;
 }
@@ -1485,11 +1541,13 @@ std::string HttpApp::clientIp(lua_State* L, bool trustProxy)
                 numeric = false;
             }
         }
+
         if (numeric)
         {
             address = address.substr(0, colon);
         }
     }
+
     return address;
 }
 
@@ -1529,10 +1587,13 @@ int HttpApp::corsMiddleware(lua_State* L)
                     allowOrigin = requestOrigin;
                     originResolved = true;
                 }
+
                 lua_pop(L, 1);
             }
+
             varyOrigin = true;
         }
+
         lua_pop(L, 1);
 
         // an unmatched allowlist origin leaves the header unset so the browser blocks the response.
@@ -1540,6 +1601,7 @@ int HttpApp::corsMiddleware(lua_State* L)
         {
             context->response->setHeader("Access-Control-Allow-Origin", allowOrigin);
         }
+
         if (varyOrigin || allowOrigin != "*")
         {
             context->response->addHeader("Vary", "Origin");
@@ -1624,6 +1686,7 @@ int HttpApp::apiKeyMiddleware(lua_State* L)
             {
                 authorized = true;
             }
+
             lua_pop(L, 1);
 
             if (!authorized)
@@ -1639,9 +1702,11 @@ int HttpApp::apiKeyMiddleware(lua_State* L)
                         {
                             authorized = true;
                         }
+
                         lua_pop(L, 1);
                     }
                 }
+
                 lua_pop(L, 1);
             }
         }
@@ -1681,6 +1746,7 @@ int HttpApp::rateLimitMiddleware(lua_State* L)
             lua_pushvalue(L, -1);
             lua_setfield(L, state, "buckets");
         }
+
         const int buckets = lua_gettop(L);
 
         // drop expired buckets at most once per window so the per-request cost stays near constant.
@@ -1699,6 +1765,7 @@ int HttpApp::rateLimitMiddleware(lua_State* L)
                     bucketReset = lua_tointeger(L, -1);
                     lua_pop(L, 1);
                 }
+
                 lua_pop(L, 1);
                 if (now >= bucketReset)
                 {
@@ -1724,6 +1791,7 @@ int HttpApp::rateLimitMiddleware(lua_State* L)
             reset = lua_tointeger(L, -1);
             lua_pop(L, 1);
         }
+
         lua_pop(L, 1);
 
         if (now >= reset)
@@ -1731,6 +1799,7 @@ int HttpApp::rateLimitMiddleware(lua_State* L)
             count = 0;
             reset = now + windowMs;
         }
+
         count += 1;
 
         lua_newtable(L);
@@ -1787,6 +1856,7 @@ int HttpApp::luaCors(lua_State* L)
         {
             lua_newtable(L);
         }
+
         lua_pushcclosure(L, &corsMiddleware, 1);
         return 1;
     }
@@ -1806,6 +1876,7 @@ int HttpApp::luaSecurityHeaders(lua_State* L)
     {
         lua_newtable(L);
     }
+
     lua_pushcclosure(L, &securityHeadersMiddleware, 1);
     return 1;
 }
@@ -1828,6 +1899,7 @@ int HttpApp::luaRateLimit(lua_State* L)
     {
         lua_newtable(L);
     }
+
     lua_newtable(L);
     lua_pushcclosure(L, &rateLimitMiddleware, 2);
     return 1;
@@ -1871,11 +1943,13 @@ int HttpApp::luaJwtSign(lua_State* L)
             lua_pushinteger(L, static_cast<lua_Integer>(now));
             lua_setfield(L, claims, "iat");
         }
+
         if (expiresIn > 0)
         {
             lua_pushinteger(L, static_cast<lua_Integer>(now + expiresIn));
             lua_setfield(L, claims, "exp");
         }
+
         if (notBefore > 0)
         {
             lua_pushinteger(L, static_cast<lua_Integer>(now + notBefore));
@@ -1909,6 +1983,7 @@ int HttpApp::luaJwtVerify(lua_State* L)
         lua_pushlstring(L, error.data(), error.size());
         return 2;
     }
+
     return 1;
 }
 
@@ -1995,6 +2070,7 @@ int HttpApp::requireRoleMiddleware(lua_State* L)
         {
             allowed = true;
         }
+
         lua_pop(L, 1);
 
         if (!allowed)
@@ -2010,11 +2086,14 @@ int HttpApp::requireRoleMiddleware(lua_State* L)
                     {
                         allowed = true;
                     }
+
                     lua_pop(L, 1);
                 }
             }
+
             lua_pop(L, 1);
         }
+
         lua_pop(L, 2);
 
         if (!allowed)
@@ -2066,6 +2145,7 @@ int HttpApp::csrfMiddleware(lua_State* L)
             {
                 cookieToken = lua_tostring(L, -1);
             }
+
             lua_pop(L, 3);
 
             const bool safeMethod = method == "GET" || method == "HEAD" || method == "OPTIONS";
@@ -2091,6 +2171,7 @@ int HttpApp::csrfMiddleware(lua_State* L)
                     {
                         csrfCookie += "; Secure";
                     }
+
                     context->response->addHeader("Set-Cookie", csrfCookie);
                 }
 
@@ -2122,6 +2203,7 @@ int HttpApp::csrfMiddleware(lua_State* L)
                     context->response->end("{\"error\":\"invalid csrf token\"}");
                     return 0;
                 }
+
                 shouldContinue = true;
             }
         }
@@ -2130,6 +2212,7 @@ int HttpApp::csrfMiddleware(lua_State* L)
         {
             continueChain(L);
         }
+
         return 0;
     }
     catch (const std::exception& ex)
@@ -2171,6 +2254,7 @@ int HttpApp::luaCsrf(lua_State* L)
     {
         lua_newtable(L);
     }
+
     lua_pushcclosure(L, &csrfMiddleware, 1);
     return 1;
 }
@@ -2328,6 +2412,7 @@ int HttpApp::luaWs(lua_State* L)
         {
             return luaL_ref(L, LUA_REGISTRYINDEX);
         }
+
         lua_pop(L, 1);
         return LUA_NOREF;
     };
@@ -2350,9 +2435,11 @@ int HttpApp::luaWs(lua_State* L)
             {
                 route.allowedOrigins.emplace_back(lua_tostring(L, -1));
             }
+
             lua_pop(L, 1);
         }
     }
+
     lua_pop(L, 1);
 
     app->state->wsRoutes.push_back(std::move(route));
@@ -2372,6 +2459,7 @@ int HttpApp::registerRoute(lua_State* L, const std::string& method, int pathInde
     {
         throw std::runtime_error("[HttpApp] A route handler is required.");
     }
+
     for (int i = firstHandler; i <= top; ++i)
     {
         luaL_checktype(L, i, LUA_TFUNCTION);
@@ -2387,6 +2475,7 @@ int HttpApp::registerRoute(lua_State* L, const std::string& method, int pathInde
         lua_pushvalue(L, i);
         entry.middleware.push_back(luaL_ref(L, LUA_REGISTRYINDEX));
     }
+
     lua_pushvalue(L, top);
     entry.handlerRef = luaL_ref(L, LUA_REGISTRYINDEX);
 
@@ -2506,6 +2595,7 @@ int HttpApp::luaRouteWhere(lua_State* L)
         {
             throw std::runtime_error("[HttpApp] The constraint for '" + param + "' is not a valid pattern.");
         }
+
         lua_pushvalue(L, 1);
         return 1;
     }
@@ -2561,6 +2651,7 @@ int HttpApp::luaUrl(lua_State* L)
                     params[key] = value ? value : "";
                     lua_pop(L, 1);
                 }
+
                 lua_pop(L, 1);
             }
         }
@@ -2646,6 +2737,7 @@ int HttpApp::luaEmit(lua_State* L)
             {
                 lua_pushvalue(L, i);
             }
+
             if (lua_pcall(L, top - 2, 0, 0) != LUA_OK)
             {
                 const char* error = lua_tostring(L, -1);
@@ -2713,6 +2805,7 @@ int HttpApp::luaConfig(lua_State* L)
             lua_settable(L, config);
             lua_pop(L, 1);
         }
+
         lua_pushvalue(L, 1);
         return 1;
     }
@@ -2769,19 +2862,22 @@ int HttpApp::luaAppListen(lua_State* L)
 
     auto handler = [state](const HttpRequest& request, std::shared_ptr<HttpResponse> response)
     {
-        state->runtime->mainLoop().post([state, request, response]()
-                                        {
-            // the dispatch runs on the loop thread outside the transport's per-request try/catch, so contain a native exception here and answer 500 (mirroring the transport handler) since it would otherwise unwind out of the event loop and abort the whole process.
-            try {
-                runDispatch(state, request, response);
-            } catch (const std::exception& ex) {
-                log::Log::error("HttpApp", std::string("A request failed in the dispatcher. ") + ex.what());
-                if (response && !response->ended()) {
-                    response->setStatus(500);
-                    response->setHeader("Content-Type", "text/plain; charset=utf-8");
-                    response->end("Internal server error.");
-                }
-            } });
+        // contain a native exception from the dispatcher here and answer 500, since it would otherwise unwind out of the event loop and abort the whole process.
+        try
+        {
+            runDispatch(state, request, response);
+        }
+        catch (const std::exception& ex)
+        {
+            log::Log::error("HttpApp", std::string("A request failed in the dispatcher. ") + ex.what());
+
+            if (response && !response->ended())
+            {
+                response->setStatus(500);
+                response->setHeader("Content-Type", "text/plain; charset=utf-8");
+                response->end("Internal server error.");
+            }
+        }
     };
 
     const bool tls = options.tls;
@@ -2815,6 +2911,7 @@ int HttpApp::luaAppListen(lua_State* L)
             lua_pop(L, 1);
         }
     }
+
     return 0;
 }
 
@@ -2861,6 +2958,7 @@ void HttpApp::createMetatables(lua_State* L)
         lua_pushcfunction(L, &luaContextIndex);
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 
     if (luaL_newmetatable(L, kWsConnMeta))
@@ -2875,6 +2973,7 @@ void HttpApp::createMetatables(lua_State* L)
         lua_setfield(L, -2, "close");
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 
     if (luaL_newmetatable(L, kRouteMeta))
@@ -2889,6 +2988,7 @@ void HttpApp::createMetatables(lua_State* L)
         lua_setfield(L, -2, "where");
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 
     if (luaL_newmetatable(L, kGroupMeta))
@@ -2904,6 +3004,7 @@ void HttpApp::createMetatables(lua_State* L)
         lua_setfield(L, -2, "group");
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 
     if (luaL_newmetatable(L, kAppMeta))
@@ -2947,6 +3048,7 @@ void HttpApp::createMetatables(lua_State* L)
         lua_setfield(L, -2, "listen");
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 }
 

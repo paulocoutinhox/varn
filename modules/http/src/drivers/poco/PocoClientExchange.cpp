@@ -98,6 +98,7 @@ bool PocoClientExchange::headerControlSafe(const std::string& value)
             return false;
         }
     }
+
     return true;
 }
 
@@ -109,6 +110,7 @@ void PocoClientExchange::applyHeaders(Poco::Net::HTTPRequest& request, const std
         {
             throw std::runtime_error("[PocoClientExchange] A request header name or value contains invalid characters.");
         }
+
         request.set(name, value);
     }
 }
@@ -125,12 +127,15 @@ std::string PocoClientExchange::readResponseBody(std::istream& rs, std::size_t m
         {
             break;
         }
+
         if (out.size() + static_cast<std::size_t>(got) > maxBytes)
         {
             throw std::runtime_error("[PocoClientExchange] The response body exceeds the maximum allowed size.");
         }
+
         out.append(buffer, static_cast<std::size_t>(got));
     }
+
     return out;
 }
 
@@ -145,6 +150,7 @@ Poco::Net::Context::Ptr PocoClientExchange::tlsClientContext(bool verify)
             Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_MY);
         return strict;
     }
+
     static Poco::Net::Context::Ptr insecure = new Poco::Net::Context(
         Poco::Net::Context::TLS_CLIENT_USE, "", Poco::Net::Context::VERIFY_NONE,
         Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_MY);
@@ -157,6 +163,7 @@ Poco::Net::Context::Ptr PocoClientExchange::tlsClientContext(bool verify)
             "DEFAULT@SECLEVEL=2");
         return strict;
     }
+
     static Poco::Net::Context::Ptr insecure = new Poco::Net::Context(
         Poco::Net::Context::TLS_CLIENT_USE, "", "", "", Poco::Net::Context::VERIFY_NONE, 9, false,
         "DEFAULT@SECLEVEL=2");

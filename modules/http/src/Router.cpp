@@ -20,10 +20,12 @@ std::string Router::urlEncodeSegment(const std::string& value)
             out += static_cast<char>(c);
             continue;
         }
+
         out += '%';
         out += hex[c >> 4];
         out += hex[c & 0x0F];
     }
+
     return out;
 }
 
@@ -39,6 +41,7 @@ std::vector<std::string> Router::splitPath(const std::string& path)
             current += c;
             continue;
         }
+
         if (!current.empty())
         {
             parts.push_back(current);
@@ -60,6 +63,7 @@ std::string Router::toUpper(std::string value)
     {
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
+
     return value;
 }
 
@@ -129,6 +133,7 @@ bool Router::pathMatches(const Route& route, const std::vector<std::string>& par
             {
                 return false;
             }
+
             continue;
         }
 
@@ -140,6 +145,7 @@ bool Router::pathMatches(const Route& route, const std::vector<std::string>& par
             {
                 return false;
             }
+
             bool matched = false;
             try
             {
@@ -149,6 +155,7 @@ bool Router::pathMatches(const Route& route, const std::vector<std::string>& par
             {
                 matched = false;
             }
+
             if (!matched)
             {
                 return false;
@@ -263,6 +270,7 @@ std::optional<std::string> Router::buildUrl(const std::string& name, const std::
         {
             return std::nullopt;
         }
+
         url += urlEncodeSegment(value->second);
     }
 

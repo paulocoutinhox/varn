@@ -30,6 +30,7 @@ bool JsonConvert::isSequence(lua_State* L, int index, lua_Integer& length)
             lua_pop(L, 2);
             return false;
         }
+
         lua_pop(L, 1);
     }
 
@@ -57,6 +58,7 @@ void JsonConvert::pushJson(lua_State* L, const nlohmann::json& value, int depth)
             pushJson(L, it.value(), depth + 1);
             lua_rawset(L, -3);
         }
+
         return;
     }
 
@@ -69,6 +71,7 @@ void JsonConvert::pushJson(lua_State* L, const nlohmann::json& value, int depth)
             pushJson(L, element, depth + 1);
             lua_rawseti(L, -2, ++index);
         }
+
         return;
     }
 
@@ -97,6 +100,7 @@ void JsonConvert::pushJson(lua_State* L, const nlohmann::json& value, int depth)
         {
             lua_pushinteger(L, static_cast<lua_Integer>(number));
         }
+
         return;
     }
 

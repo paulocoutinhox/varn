@@ -24,17 +24,20 @@ void JsonSerializer::appendValue(lua_State* L, int index, std::string& out, int 
         out += JsonConvert::dumpString(s ? std::string(s, len) : std::string());
         return;
     }
+
     case LUA_TNUMBER:
         if (lua_isinteger(L, index))
         {
             out += nlohmann::json(lua_tointeger(L, index)).dump();
             return;
         }
+
         // json has no representation for nan or infinity, so emit null instead of throwing.
         {
             const double number = lua_tonumber(L, index);
             out += std::isfinite(number) ? nlohmann::json(number).dump() : std::string("null");
         }
+
         return;
     case LUA_TBOOLEAN:
         out += lua_toboolean(L, index) != 0 ? "true" : "false";
@@ -69,10 +72,12 @@ void JsonSerializer::appendValue(lua_State* L, int index, std::string& out, int 
                 {
                     out += ',';
                 }
+
                 lua_rawgeti(L, index, i);
                 appendValue(L, -1, out, depth + 1);
                 lua_pop(L, 1);
             }
+
             out += ']';
             return;
         }
@@ -101,9 +106,11 @@ void JsonSerializer::appendValue(lua_State* L, int index, std::string& out, int 
 
             lua_pop(L, 1);
         }
+
         out += '}';
         return;
     }
+
     default:
         out += JsonConvert::dumpString("[unsupported]");
         return;
@@ -140,6 +147,7 @@ std::string JsonSerializer::encode(lua_State* L, int index, int indent)
     {
         return compact;
     }
+
     return parsed.dump(indent, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
@@ -166,8 +174,10 @@ bool JsonSerializer::deserialize(lua_State* L, const std::string& text)
             {
                 inString = false;
             }
+
             continue;
         }
+
         if (c == '"')
         {
             inString = true;

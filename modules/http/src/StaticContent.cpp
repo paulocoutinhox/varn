@@ -44,6 +44,7 @@ std::string StaticContent::headerValue(const HttpRequest& request, const std::st
         {
             continue;
         }
+
         bool same = true;
         for (std::size_t i = 0; i < key.size(); ++i)
         {
@@ -53,11 +54,13 @@ std::string StaticContent::headerValue(const HttpRequest& request, const std::st
                 break;
             }
         }
+
         if (same)
         {
             return value;
         }
     }
+
     return "";
 }
 
@@ -88,6 +91,7 @@ std::string StaticContent::htmlEscape(const std::string& value)
             out += c;
         }
     }
+
     return out;
 }
 
@@ -105,10 +109,12 @@ std::string StaticContent::urlEncodePath(const std::string& value)
             out += static_cast<char>(c);
             continue;
         }
+
         out += '%';
         out += hex[c >> 4];
         out += hex[c & 0x0F];
     }
+
     return out;
 }
 
@@ -200,6 +206,7 @@ void StaticContent::serveListing(HttpResponse& response, const std::filesystem::
         {
             continue;
         }
+
         const std::string suffix = entry.is_directory(ec) ? "/" : "";
         // the visible label is html-escaped while the href is url-encoded to survive special chars.
         const std::string label = htmlEscape(name + suffix);

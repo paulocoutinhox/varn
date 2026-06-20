@@ -24,6 +24,7 @@ std::string HttpClientPerform::perform(
     {
         throw std::runtime_error("[PocoHttpClient] The URL scheme must be http or https.");
     }
+
     if (scheme == "https")
     {
 #if defined(VARN_ENABLE_TLS)
@@ -32,6 +33,7 @@ std::string HttpClientPerform::perform(
         throw std::runtime_error("[PocoHttpClient] Secure URLs require a build with TLS support enabled.");
 #endif
     }
+
     return PocoClientExchange::performHttp(method, uri, headers, body, options);
 }
 

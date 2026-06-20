@@ -28,6 +28,7 @@ extern "C"
         {
             return 2;
         }
+
         try
         {
             return reinterpret_cast<varn::runtime::Runtime*>(runtime)->runScript(path);
@@ -44,6 +45,7 @@ extern "C"
         {
             return 2;
         }
+
         try
         {
             return reinterpret_cast<varn::runtime::Runtime*>(runtime)->runString(source, chunk_name ? chunk_name : "=(embedded)");

@@ -148,6 +148,7 @@ int HttpServerLuaBindings::luaServerGc(lua_State* L)
         luaL_unref(L, LUA_REGISTRYINDEX, userdata->handlerRef);
         userdata->handlerRef = LUA_NOREF;
     }
+
     return 0;
 }
 
@@ -178,38 +179,43 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L)
     Runtime* rtPtr = &rt;
     auto handler = [rtPtr, persistedHandlerRef](const HttpRequest& request, std::shared_ptr<HttpResponse> response)
     {
-        rtPtr->mainLoop().post([rtPtr, persistedHandlerRef, request, response = std::move(response)]
-                               {
-            lua_State* mainState = rtPtr->luaState();
-            lua_State* thread = lua_newthread(mainState);
-            int threadRef = luaL_ref(mainState, LUA_REGISTRYINDEX);
+        lua_State* mainState = rtPtr->luaState();
+        lua_State* thread = lua_newthread(mainState);
+        int threadRef = luaL_ref(mainState, LUA_REGISTRYINDEX);
 
-            lua_rawgeti(mainState, LUA_REGISTRYINDEX, persistedHandlerRef);
-            lua_xmove(mainState, thread, 1);
+        lua_rawgeti(mainState, LUA_REGISTRYINDEX, persistedHandlerRef);
+        lua_xmove(mainState, thread, 1);
 
-            HttpServerModule::pushRequestTable(thread, request);
-            HttpServerLuaBindings::pushResponse(thread, response);
+        HttpServerModule::pushRequestTable(thread, request);
+        HttpServerLuaBindings::pushResponse(thread, response);
 
-            int nres = 0;
-            int status = lua_resume(thread, mainState, 2, &nres);
-            if (status != LUA_OK && status != LUA_YIELD) {
-                const char* message = lua_tostring(thread, -1);
-                std::string detail = message ? message : "A request handler failed without a message.";
-                log::Log::error("HttpServerLuaBindings", detail);
-                response->setStatus(500);
-                response->end("Internal server error.");
-                if (nres > 0) {
-                    lua_pop(thread, nres);
-                }
-            } else if (status == LUA_OK) {
-                if (!response->ended()) {
-                    response->setStatus(204);
-                    response->end("");
-                }
+        int nres = 0;
+        int status = lua_resume(thread, mainState, 2, &nres);
+
+        if (status != LUA_OK && status != LUA_YIELD)
+        {
+            const char* message = lua_tostring(thread, -1);
+            std::string detail = message ? message : "A request handler failed without a message.";
+            log::Log::error("HttpServerLuaBindings", detail);
+            response->setStatus(500);
+            response->end("Internal server error.");
+
+            if (nres > 0)
+            {
+                lua_pop(thread, nres);
             }
+        }
+        else if (status == LUA_OK)
+        {
+            if (!response->ended())
+            {
+                response->setStatus(204);
+                response->end("");
+            }
+        }
 
-            // once the handler yields the promise machinery holds its own ref to the coroutine, so release ours in every case.
-            luaL_unref(mainState, LUA_REGISTRYINDEX, threadRef); });
+        // once the handler yields the promise machinery holds its own ref to the coroutine, so release ours in every case.
+        luaL_unref(mainState, LUA_REGISTRYINDEX, threadRef);
     };
 
     auto* engine = new ReactorHttpServer(rt, std::move(options), std::move(handler));
@@ -222,6 +228,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L)
             {
                 luaL_unref(luaMain, LUA_REGISTRYINDEX, persistedHandlerRef);
             }
+
             delete p;
         });
     server->start();
@@ -276,6 +283,7 @@ void HttpServerLuaBindings::createMetatables(lua_State* L)
 #endif
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 
     if (luaL_newmetatable(L, kServerMeta))
@@ -288,6 +296,7 @@ void HttpServerLuaBindings::createMetatables(lua_State* L)
         lua_setfield(L, -2, "listen");
         lua_setfield(L, -2, "__index");
     }
+
     lua_pop(L, 1);
 }
 
@@ -383,6 +392,7 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index)
             options.port = static_cast<int>(portValue);
         }
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, index, "publicDir");
@@ -421,6 +431,7 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index)
             options.maxQueued = std::clamp(value, 1, 65535);
         }
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, index, "maxThreads");
@@ -432,6 +443,7 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index)
             options.maxThreads = std::clamp(value, 1, 1024);
         }
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, index, "requestTimeoutMs");
@@ -443,6 +455,7 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index)
             options.requestTimeoutMs = value;
         }
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, index, "keepAliveTimeoutSeconds");
@@ -454,6 +467,7 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index)
             options.keepAliveTimeoutSeconds = value;
         }
     }
+
     lua_pop(L, 1);
 
     return options;

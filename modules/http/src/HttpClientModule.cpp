@@ -35,6 +35,7 @@ void HttpClientModule::readHeadersTable(lua_State* L, int absIndex, std::map<std
         {
             out.emplace(key, val);
         }
+
         lua_pop(L, 2);
     }
 }
@@ -56,6 +57,7 @@ int HttpClientModule::luaClientRequest(lua_State* L)
     {
         readHeadersTable(L, lua_absindex(L, -1), headers);
     }
+
     lua_pop(L, 1);
 
     std::string body;
@@ -69,6 +71,7 @@ int HttpClientModule::luaClientRequest(lua_State* L)
             body.assign(chunk, len);
         }
     }
+
     lua_pop(L, 1);
 
     varn::http::client::ClientRequestOptions options;
@@ -82,6 +85,7 @@ int HttpClientModule::luaClientRequest(lua_State* L)
             options.timeoutSeconds = value;
         }
     }
+
     lua_pop(L, 1);
 
     // tls verification is on by default, with insecure as an explicit opt-in escape hatch for dev certs.
@@ -90,12 +94,14 @@ int HttpClientModule::luaClientRequest(lua_State* L)
     {
         options.verifyTls = lua_toboolean(L, -1) != 0;
     }
+
     lua_pop(L, 1);
     lua_getfield(L, 1, "insecure");
     if (lua_isboolean(L, -1) && lua_toboolean(L, -1) != 0)
     {
         options.verifyTls = false;
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, 1, "maxResponseBytes");
@@ -107,6 +113,7 @@ int HttpClientModule::luaClientRequest(lua_State* L)
             options.maxResponseBytes = static_cast<std::size_t>(value);
         }
     }
+
     lua_pop(L, 1);
 
     auto& rt = luaRuntime(L);

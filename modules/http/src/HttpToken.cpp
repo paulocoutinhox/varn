@@ -18,11 +18,13 @@ bool HttpToken::constantTimeEqual(const std::string& a, const std::string& b)
     {
         return false;
     }
+
     unsigned char diff = 0;
     for (std::size_t i = 0; i < a.size(); ++i)
     {
         diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
     }
+
     return diff == 0;
 }
 
@@ -42,10 +44,12 @@ std::string HttpToken::base64UrlEncode(const std::string& input)
             bits -= 6;
         }
     }
+
     if (bits > -6)
     {
         out += table[((value << 8) >> (bits + 8)) & 0x3F];
     }
+
     return out;
 }
 
@@ -77,6 +81,7 @@ bool HttpToken::base64UrlDecode(const std::string& input, std::string& out)
             // reject any character outside the base64url alphabet so malformed segments cannot decode.
             return false;
         }
+
         value = (value << 6) + decoded;
         bits += 6;
         if (bits >= 0)
@@ -85,6 +90,7 @@ bool HttpToken::base64UrlDecode(const std::string& input, std::string& out)
             bits -= 8;
         }
     }
+
     return true;
 }
 
@@ -102,6 +108,7 @@ JwtVerifyOptions HttpToken::readJwtVerifyOptions(lua_State* L, int optsIdx)
         opts.hasAudience = true;
         opts.audience = lua_tostring(L, -1);
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, optsIdx, "issuer");
@@ -110,6 +117,7 @@ JwtVerifyOptions HttpToken::readJwtVerifyOptions(lua_State* L, int optsIdx)
         opts.hasIssuer = true;
         opts.issuer = lua_tostring(L, -1);
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, optsIdx, "leeway");
@@ -118,6 +126,7 @@ JwtVerifyOptions HttpToken::readJwtVerifyOptions(lua_State* L, int optsIdx)
         const long long leeway = static_cast<long long>(lua_tointeger(L, -1));
         opts.leewaySeconds = leeway > 0 ? leeway : 0;
     }
+
     lua_pop(L, 1);
 
     return opts;
@@ -142,6 +151,7 @@ bool HttpToken::audienceMatches(lua_State* L, int claimsIdx, const std::string& 
             {
                 matched = true;
             }
+
             lua_pop(L, 1);
         }
     }
@@ -204,8 +214,10 @@ bool HttpToken::verifyJwt(lua_State* L, const std::string& token, const std::str
             hasCrit = !lua_isnil(L, -1);
             lua_pop(L, 1);
         }
+
         lua_pop(L, 1);
     }
+
     if (!algorithmOk)
     {
         error = "unsupported algorithm";
@@ -253,6 +265,7 @@ bool HttpToken::verifyJwt(lua_State* L, const std::string& token, const std::str
         error = ex.what();
         return false;
     }
+
     if (!decoded)
     {
         error = "bad payload";
@@ -289,6 +302,7 @@ bool HttpToken::verifyJwt(lua_State* L, const std::string& token, const std::str
             error = "invalid exp";
             return false;
         }
+
         if (now >= lua_tonumber(L, -1) + leeway)
         {
             lua_pop(L, 2);
@@ -296,6 +310,7 @@ bool HttpToken::verifyJwt(lua_State* L, const std::string& token, const std::str
             return false;
         }
     }
+
     lua_pop(L, 1);
 
     // a present not-before must be numeric and must not be in the future beyond the allowed clock skew.
@@ -309,6 +324,7 @@ bool HttpToken::verifyJwt(lua_State* L, const std::string& token, const std::str
             error = "invalid nbf";
             return false;
         }
+
         if (now < lua_tonumber(L, -1) - leeway)
         {
             lua_pop(L, 2);
@@ -316,6 +332,7 @@ bool HttpToken::verifyJwt(lua_State* L, const std::string& token, const std::str
             return false;
         }
     }
+
     lua_pop(L, 1);
 
     // when an audience is expected the claim must be present and contain it.

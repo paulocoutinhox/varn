@@ -27,6 +27,7 @@ std::string FsStorage::readAll(const std::string& path)
         {
             break;
         }
+
         out.append(chunk, static_cast<std::size_t>(got));
     }
 
@@ -35,6 +36,7 @@ std::string FsStorage::readAll(const std::string& path)
     {
         throw std::runtime_error("[FsStorage] The file could not be read.");
     }
+
     return out;
 }
 

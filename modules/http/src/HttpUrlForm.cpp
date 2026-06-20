@@ -84,6 +84,7 @@ void HttpUrlForm::pushFormUrlEncoded(lua_State* L, const std::string& body)
         {
             break;
         }
+
         pos = amp + 1;
     }
 }

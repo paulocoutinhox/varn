@@ -34,6 +34,7 @@ std::string HttpMultipart::extractBoundary(const std::string& contentType)
     {
         boundary.pop_back();
     }
+
     return boundary;
 }
 
@@ -50,8 +51,10 @@ std::string HttpMultipart::multipartAttribute(const std::string& headers, const 
             const std::size_t end = headers.find('"', start);
             return end == std::string::npos ? "" : headers.substr(start, end - start);
         }
+
         pos += key.size();
     }
+
     return "";
 }
 
@@ -96,6 +99,7 @@ void HttpMultipart::pushMultipart(lua_State* L, const std::string& body, const s
         {
             break;
         }
+
         if (pos + 1 < body.size() && body[pos] == '\r' && body[pos + 1] == '\n')
         {
             pos += 2;
@@ -121,6 +125,7 @@ void HttpMultipart::pushMultipart(lua_State* L, const std::string& body, const s
         {
             dataEnd -= 2;
         }
+
         const std::string data = body.substr(dataStart, dataEnd - dataStart);
 
         const std::string name = multipartAttribute(headers, "name=\"");

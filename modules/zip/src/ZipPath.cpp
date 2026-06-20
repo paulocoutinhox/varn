@@ -11,15 +11,18 @@ bool ZipPath::entryPathSafe(std::string_view entry)
     {
         return false;
     }
+
     // reject posix/unc absolute paths and windows drive-qualified names (e.g. "C:\evil").
     if (entry.front() == '/' || entry.front() == '\\')
     {
         return false;
     }
+
     if (entry.size() >= 2 && entry[1] == ':')
     {
         return false;
     }
+
     // reject ".." only as a whole path component, so legitimate names like "a..b.txt" are kept.
     std::size_t start = 0;
     for (std::size_t i = 0; i <= entry.size(); ++i)
@@ -30,9 +33,11 @@ bool ZipPath::entryPathSafe(std::string_view entry)
             {
                 return false;
             }
+
             start = i + 1;
         }
     }
+
     return true;
 }
 
@@ -54,6 +59,7 @@ bool ZipPath::isSubpath(const fs::path& baseCanon, const fs::path& candidateCano
             return false;
         }
     }
+
     return true;
 }
 

@@ -378,6 +378,7 @@ void EventLoop::post(Job job)
             j();
             ledger->leave(); });
     }
+
     wakeFromAnotherThread();
 }
 
@@ -393,6 +394,7 @@ void EventLoop::postDelayed(long long delayMs, Job job)
             j();
             ledger->leave(); });
     }
+
     wakeFromAnotherThread();
 }
 
@@ -405,6 +407,7 @@ void EventLoop::watchRead(const Poco::Net::Socket& socket, IoHandler handler)
         poller->addReader(socket, std::move(handler));
         return;
     }
+
     Poller* p = poller.get();
     p->submit([p, socket, handler = std::move(handler)]() mutable
               { p->addReader(socket, std::move(handler)); });
@@ -417,6 +420,7 @@ void EventLoop::watchWrite(const Poco::Net::Socket& socket, IoHandler handler)
         poller->addWriter(socket, std::move(handler));
         return;
     }
+
     Poller* p = poller.get();
     p->submit([p, socket, handler = std::move(handler)]() mutable
               { p->addWriter(socket, std::move(handler)); });
@@ -429,6 +433,7 @@ void EventLoop::closeSocket(const Poco::Net::Socket& socket)
         poller->closeNow(socket);
         return;
     }
+
     Poller* p = poller.get();
     p->submit([p, socket]() mutable
               { p->closeNow(socket); });
@@ -590,6 +595,7 @@ bool EventLoop::hasPendingJobs() const
     {
         return true;
     }
+
     // a timer whose deadline has arrived is a job that is ready to run, so it counts as pending for any caller that only ever pumps via drainPostedJobs.
     return !timers.empty() && timers.begin()->first <= std::chrono::steady_clock::now();
 }

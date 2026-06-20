@@ -21,6 +21,9 @@ LuaEngine::LuaEngine(varn::runtime::Runtime& runtime)
     lua_atpanic(L, &LuaEngine::handlePanic);
     luaL_openlibs(L);
 
+    // generational collection suits the per-request pattern of short-lived garbage over a long-lived application heap.
+    lua_gc(L, LUA_GCGEN);
+
     varn::lua::LuaHelpers::pushRuntime(L, &runtime);
     configureArgTable();
     installNativeModules();
@@ -72,6 +75,7 @@ bool LuaEngine::runStringWithoutEventLoop(const std::string& source, const std::
             const char* message = lua_tolstring(L, -1, &len);
             *errorMessage = message ? std::string(message, len) : std::string("Lua load failed.");
         }
+
         lua_pop(L, 2);
         return false;
     }
@@ -89,6 +93,7 @@ bool LuaEngine::runStringWithoutEventLoop(const std::string& source, const std::
             const char* message = lua_tolstring(L, -1, &len);
             *errorMessage = message ? std::string(message, len) : std::string("Lua runtime failed.");
         }
+
         lua_pop(L, 2);
         return false;
     }

@@ -27,14 +27,17 @@ std::string XmlSerializer::sanitizeElementName(const std::string& raw)
             out += '_';
         }
     }
+
     if (out.empty())
     {
         return "item";
     }
+
     if (std::isdigit(static_cast<unsigned char>(out[0])))
     {
         out.insert(out.begin(), 'n');
     }
+
     return out;
 }
 
@@ -116,6 +119,7 @@ std::string XmlSerializer::encodeNode(lua_State* L, int index, int indent)
     {
         doc.save(out, "", pugi::format_raw);
     }
+
     return out.str();
 }
 
@@ -134,6 +138,7 @@ bool XmlSerializer::parse(lua_State* L, const std::string& text)
     {
         root = root.next_sibling();
     }
+
     if (!root)
     {
         return false;

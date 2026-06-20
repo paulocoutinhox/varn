@@ -91,6 +91,7 @@ int PlatformModule::luaLibraryPathByName(lua_State* L)
         {
             out += '/';
         }
+
         out += file;
         lua_pushlstring(L, out.data(), out.size());
         return 1;

@@ -42,6 +42,7 @@ int App::workerCount()
     {
         return 1;
     }
+
     return std::clamp(std::atoi(value), 1, 1024);
 }
 
@@ -118,11 +119,13 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
     {
         ::kill(pid, SIGTERM);
     }
+
     for (const pid_t pid : workers)
     {
         int status = 0;
         ::waitpid(pid, &status, 0);
     }
+
     return 0;
 }
 #endif
@@ -174,6 +177,7 @@ int App::run(int argc, char** argv)
         log::Log::line("App", "Worker processes are not supported on this platform, running a single process.");
 #endif
     }
+
     return runChild();
 }
 

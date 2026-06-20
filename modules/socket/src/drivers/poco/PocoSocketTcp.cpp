@@ -31,6 +31,7 @@ void closeManagedSocket(EventLoop& loop, const Poco::Net::Socket& socket)
         loop.closeSocket(socket);
         return;
     }
+
     // the loop is already stopped at shutdown, so the fd can be closed here with no thread to race.
     try
     {
@@ -187,6 +188,7 @@ void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::s
         callback(nullptr, ex.what());
         return;
     }
+
     socket.setBlocking(false);
 
     loop.watchWrite(socket, [&loop, socket, callback = std::move(callback)]() mutable -> bool

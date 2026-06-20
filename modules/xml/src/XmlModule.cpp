@@ -23,6 +23,7 @@ int XmlModule::readIndent(lua_State* L, int optsIndex)
         const lua_Integer value = lua_tointeger(L, -1);
         indent = value > 0 ? static_cast<int>(value < 16 ? value : 16) : 0;
     }
+
     lua_pop(L, 1);
 
     lua_getfield(L, optsIndex, "pretty");
@@ -30,6 +31,7 @@ int XmlModule::readIndent(lua_State* L, int optsIndex)
     {
         indent = 2;
     }
+
     lua_pop(L, 1);
 
     return indent;
@@ -61,6 +63,7 @@ int XmlModule::luaDecode(lua_State* L)
         {
             return luaL_error(L, "[XmlModule] The input is not valid XML.");
         }
+
         return 1;
     }
     catch (const std::exception& ex)

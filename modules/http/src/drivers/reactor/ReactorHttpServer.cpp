@@ -19,6 +19,25 @@
 #include <Poco/Net/SecureServerSocket.h>
 #endif
 
+#if defined(__linux__)
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/sendfile.h>
+#include <sys/socket.h>
+#endif
+
+#if defined(__APPLE__)
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#endif
+
+#if defined(__linux__) || defined(__APPLE__)
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <climits>
@@ -49,6 +68,67 @@ constexpr long long kSweepIntervalMs = 1000;
 // these mirror Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ and ERR_SSL_WANT_WRITE, so tls i/o needs no ssl header here.
 constexpr int kSslWantRead = -2;
 constexpr int kSslWantWrite = -3;
+
+#if defined(__linux__) || defined(__APPLE__)
+#define VARN_HAS_SENDFILE 1
+#endif
+
+#if defined(VARN_HAS_SENDFILE)
+
+enum class FileSend
+{
+    Progress,
+    WouldBlock,
+    Eof,
+    Error
+};
+
+// hand up to count bytes from the open file straight to the socket without copying through user space, reporting the bytes moved in sent.
+FileSend sendFileToSocket(int socketFd, int fileFd, std::uint64_t offset, std::size_t count, std::size_t& sent)
+{
+    sent = 0;
+
+#if defined(__linux__)
+    off_t cursor = static_cast<off_t>(offset);
+    const ssize_t moved = ::sendfile(socketFd, fileFd, &cursor, count);
+
+    if (moved > 0)
+    {
+        sent = static_cast<std::size_t>(moved);
+        return FileSend::Progress;
+    }
+
+    if (moved == 0)
+    {
+        return FileSend::Eof;
+    }
+
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+    {
+        return FileSend::WouldBlock;
+    }
+
+    return FileSend::Error;
+#else
+    off_t length = static_cast<off_t>(count);
+    const int rc = ::sendfile(fileFd, socketFd, static_cast<off_t>(offset), &length, nullptr, 0);
+    sent = static_cast<std::size_t>(length);
+
+    if (rc == 0)
+    {
+        return length > 0 ? FileSend::Progress : FileSend::Eof;
+    }
+
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+    {
+        return length > 0 ? FileSend::Progress : FileSend::WouldBlock;
+    }
+
+    return FileSend::Error;
+#endif
+}
+
+#endif
 
 long long nowMs()
 {
@@ -123,6 +203,7 @@ std::string sanitizeHeader(const std::string& value)
             out += c;
         }
     }
+
     return out;
 }
 
@@ -195,6 +276,7 @@ WsParse parseWsFrame(const std::string& buffer, WsFrame& frame)
     {
         return WsParse::Error;
     }
+
     if (size < header + 4 + length)
     {
         return WsParse::NeedMore;
@@ -207,6 +289,7 @@ WsParse parseWsFrame(const std::string& buffer, WsFrame& frame)
     {
         frame.payload[i] = static_cast<char>(byteAt(dataOffset + i) ^ byteAt(maskOffset + (i & 3)));
     }
+
     frame.consumed = dataOffset + static_cast<std::size_t>(length);
     return WsParse::Ok;
 }
@@ -355,6 +438,11 @@ public:
 
         requestStartMs = nowMs();
         llhttp_init(&parser, HTTP_REQUEST, requestSettings());
+    }
+
+    ~HttpConnection()
+    {
+        closeFileFd();
     }
 
     void start()
@@ -518,6 +606,7 @@ private:
         }
 
         closed = true;
+        closeFileFd();
 
         if (wsCloseHandler)
         {
@@ -683,14 +772,63 @@ private:
             lastWriteMs = nowMs();
         }
 
-        // a file response streams its next chunk before the connection's keep-alive fate is decided.
+        // a file response sends its body before the connection's keep-alive fate is decided.
         if (fileMode && fileRemaining > 0)
         {
+#if defined(VARN_HAS_SENDFILE)
+            // tls must encrypt in user space, so only a plaintext socket can hand the file straight to the kernel.
+            if (options.tls)
+            {
+                readNextChunk();
+                return Io::Detached;
+            }
+
+            if (fileFd < 0)
+            {
+                fileFd = ::open(filePath.c_str(), O_RDONLY | O_CLOEXEC);
+
+                if (fileFd < 0)
+                {
+                    closeNow();
+                    return Io::Detached;
+                }
+            }
+
+            while (fileRemaining > 0)
+            {
+                const std::size_t count = static_cast<std::size_t>(std::min<std::uint64_t>(fileRemaining, kFileChunkBytes));
+                std::size_t sent = 0;
+                const FileSend result = sendFileToSocket(socket.impl()->sockfd(), fileFd, fileOffset, count, sent);
+
+                if (sent > 0)
+                {
+                    fileOffset += sent;
+                    fileRemaining -= sent;
+                    lastWriteMs = nowMs();
+                }
+
+                if (result == FileSend::Progress)
+                {
+                    continue;
+                }
+
+                if (result == FileSend::WouldBlock)
+                {
+                    return Io::Again;
+                }
+
+                // an early eof or a transfer error ends the body, so the connection cannot be reused.
+                keepAlive = false;
+                break;
+            }
+#else
             readNextChunk();
             return Io::Detached;
+#endif
         }
 
         fileMode = false;
+        closeFileFd();
 
         // the rejection response is flushed, but the connection stays open until the read side has drained the upload.
         if (draining)
@@ -972,6 +1110,7 @@ private:
             {
                 break;
             }
+
             pos = semicolon + 1;
         }
     }
@@ -1046,6 +1185,7 @@ private:
             {
                 break;
             }
+
             pos = ampersand + 1;
         }
     }
@@ -1366,6 +1506,17 @@ private:
         return true;
     }
 
+    void closeFileFd()
+    {
+#if defined(VARN_HAS_SENDFILE)
+        if (fileFd >= 0)
+        {
+            ::close(fileFd);
+            fileFd = -1;
+        }
+#endif
+    }
+
     void readNextChunk()
     {
         const std::uint64_t offset = fileOffset;
@@ -1485,6 +1636,7 @@ private:
         filePath.clear();
         fileOffset = 0;
         fileRemaining = 0;
+        closeFileFd();
         dispatched = false;
         requestStartMs = nowMs();
     }
@@ -1523,6 +1675,7 @@ private:
     std::string filePath;
     std::uint64_t fileOffset = 0;
     std::uint64_t fileRemaining = 0;
+    int fileFd = -1;
 
     bool wsMode = false;
     std::string wsMessage;
@@ -1576,6 +1729,7 @@ std::string ReactorResponse::buildHead(std::size_t contentLength, bool emitConte
             hasContentType = true;
         }
     }
+
     for (const auto& [name, value] : extraHeaders)
     {
         head += name;
@@ -1587,6 +1741,7 @@ std::string ReactorResponse::buildHead(std::size_t contentLength, bool emitConte
             hasContentType = true;
         }
     }
+
     if (!hasContentType)
     {
         head += "Content-Type: text/plain; charset=utf-8\r\n";
@@ -1598,6 +1753,7 @@ std::string ReactorResponse::buildHead(std::size_t contentLength, bool emitConte
         head += std::to_string(contentLength);
         head += "\r\n";
     }
+
     head += keepAlive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
     head += "\r\n";
     return head;
@@ -1609,6 +1765,7 @@ void ReactorResponse::end(const std::string& body)
     {
         return;
     }
+
     finished = true;
     bodyBuffer += body;
 
@@ -1628,6 +1785,7 @@ void ReactorResponse::sendFile(const std::string& path, std::uint64_t start, std
     {
         return;
     }
+
     finished = true;
 
     const bool emitContentLength = statusCode != 204 && statusCode != 304;
@@ -1695,6 +1853,7 @@ void ReactorHttpServer::start()
     {
         return;
     }
+
     started = true;
     stopping->store(false, std::memory_order_release);
 
@@ -1729,6 +1888,14 @@ void ReactorHttpServer::start()
 #endif
 
     listener.setBlocking(false);
+
+#if defined(__linux__)
+    // defer accept until the client's first request bytes arrive, so the first read always has data and connect-only floods never reach the loop.
+    {
+        const int deferSeconds = std::clamp(serverOptions.keepAliveTimeoutSeconds, 1, 600);
+        ::setsockopt(listener.impl()->sockfd(), IPPROTO_TCP, TCP_DEFER_ACCEPT, &deferSeconds, sizeof(deferSeconds));
+    }
+#endif
 
     auto registry = std::make_shared<std::vector<std::weak_ptr<HttpConnection>>>();
     const long long timeoutMs = static_cast<long long>(serverOptions.keepAliveTimeoutSeconds) * 1000;
@@ -1781,6 +1948,7 @@ void ReactorHttpServer::stop()
     {
         return;
     }
+
     started = false;
     stopping->store(true, std::memory_order_release);
     EventLoop& loop = runtime.mainLoop();

@@ -24,6 +24,7 @@ void LogModule::emitAt(lua_State* L, Level level)
         {
             combined += '\t';
         }
+
         appendValue(L, i, combined, 0, false);
     }
 
@@ -89,6 +90,7 @@ void LogModule::appendTable(lua_State* L, int index, std::string& out, int depth
         out += "{...}";
         return;
     }
+
     index = lua_absindex(L, index);
 
     out += '{';
@@ -103,6 +105,7 @@ void LogModule::appendTable(lua_State* L, int index, std::string& out, int depth
             lua_pop(L, 2);
             break;
         }
+
         out += (count == 0) ? " " : ", ";
         ++count;
 

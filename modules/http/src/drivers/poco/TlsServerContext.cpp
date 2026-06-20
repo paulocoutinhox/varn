@@ -46,6 +46,7 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts)
     {
         throw std::runtime_error("[TlsServerContext] On Windows the TLS certificate must be a single bundle file.");
     }
+
     const int winOptions = Poco::Net::Context::OPT_DEFAULTS | Poco::Net::Context::OPT_LOAD_CERT_FROM_FILE;
     Poco::Net::Context::Ptr context = new Poco::Net::Context(
         Poco::Net::Context::TLS_SERVER_USE,
@@ -93,6 +94,7 @@ void TlsServerContext::requireKeyMaterial(const HttpServerOptions& opts)
     {
         throw std::runtime_error("[TlsServerContext] TLS is enabled but the key or certificate path is empty.");
     }
+
     for (const auto& path : {opts.keyFile, opts.certFile})
     {
         if (!std::filesystem::exists(path))
@@ -109,6 +111,7 @@ bool TlsServerContext::endsWithIgnoreCase(std::string_view value, std::string_vi
     {
         return false;
     }
+
     for (std::size_t i = 0; i < suffix.size(); ++i)
     {
         const unsigned char a = static_cast<unsigned char>(value[value.size() - suffix.size() + i]);
@@ -118,6 +121,7 @@ bool TlsServerContext::endsWithIgnoreCase(std::string_view value, std::string_vi
             return false;
         }
     }
+
     return true;
 }
 

@@ -129,6 +129,7 @@ inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info)
         fprintf(stderr, "[CrashHandler] While %s address 0x%llx.\n", verb,
                 static_cast<unsigned long long>(record->ExceptionInformation[1]));
     }
+
     fflush(stderr);
 
     if (code != EXCEPTION_STACK_OVERFLOW)
