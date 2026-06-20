@@ -102,14 +102,6 @@ void Runtime::addServer(std::shared_ptr<varn::http::HttpServer> server) {
     loop.wake();
 }
 
-void Runtime::setIoService(std::shared_ptr<IoService> service) {
-    ioServiceImpl = std::move(service);
-}
-
-IoService* Runtime::ioService() const {
-    return ioServiceImpl.get();
-}
-
 void Runtime::retainBackgroundDriver() {
     backgroundDrivers.fetch_add(1, std::memory_order_relaxed);
 }
@@ -130,11 +122,6 @@ void Runtime::stop() {
         if (server) {
             server->stop();
         }
-    }
-
-    // stop the i/o service so its thread is joined before the loop and pool are torn down.
-    if (ioServiceImpl) {
-        ioServiceImpl->stop();
     }
 
     pool.stop();

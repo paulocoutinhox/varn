@@ -1,4 +1,10 @@
-# core: runtime, lua engine, native module registry, and the shared log pipeline. no external deps.
+# core: runtime, lua engine, native module registry, and the shared log pipeline.
+
+# the event loop waits on libuv (epoll/kqueue/iocp) so it can host socket readiness inline; wasm pumps the loop manually instead.
+if(NOT VARN_BUILDING_FOR_EMSCRIPTEN)
+    set(VARN_NEEDS_POCO ON)
+    set(VARN_NEEDS_LIBUV ON)
+endif()
 
 list(APPEND VARN_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 

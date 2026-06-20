@@ -1,6 +1,7 @@
 #include "varn/socket/SocketTransport.h"
 
-#include "PocoSocketReactor.h"
+#include "varn/runtime/EventLoop.h"
+#include "varn/runtime/Runtime.h"
 
 #include <Poco/Net/DatagramSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -12,14 +13,15 @@
 
 namespace varn::socket {
 
+using varn::runtime::EventLoop;
+
 namespace {
 
 constexpr int kMaxDatagramBytes = 65536;
 
 class PocoUdpSocket : public UdpSocket, public std::enable_shared_from_this<PocoUdpSocket> {
 public:
-    PocoUdpSocket(Poco::Net::DatagramSocket socket, std::shared_ptr<PocoSocketReactor> reactor)
-        : socket(std::move(socket)), reactor(std::move(reactor)) {
+    PocoUdpSocket(Poco::Net::DatagramSocket socket, EventLoop& loop) : socket(std::move(socket)), loop(loop) {
         this->socket.setBlocking(false);
     }
 
@@ -38,7 +40,7 @@ public:
 
         auto self = shared_from_this();
         auto payload = std::make_shared<std::string>(std::move(data));
-        reactor->watchWrite(socket, [self, payload, destination, callback = std::move(callback)]() -> bool {
+        loop.watchWrite(socket, [self, payload, destination, callback = std::move(callback)]() -> bool {
             try {
                 const int wrote = self->socket.sendTo(payload->data(), static_cast<int>(payload->size()), *destination);
                 if (wrote < 0) {
@@ -64,7 +66,7 @@ public:
         }
         const int capacity = maxBytes > kMaxDatagramBytes ? kMaxDatagramBytes : maxBytes;
         auto self = shared_from_this();
-        reactor->watchRead(socket, [self, capacity, callback = std::move(callback)]() -> bool {
+        loop.watchRead(socket, [self, capacity, callback = std::move(callback)]() -> bool {
             try {
                 std::vector<char> buffer(static_cast<std::size_t>(capacity));
                 Poco::Net::SocketAddress sender;
@@ -90,8 +92,8 @@ public:
 
     void close() override {
         closed = true;
-        if (reactor->running()) {
-            reactor->closeSocket(socket);
+        if (loop.isRunning()) {
+            loop.closeSocket(socket);
             return;
         }
         try {
@@ -102,16 +104,15 @@ public:
 
 private:
     Poco::Net::DatagramSocket socket;
-    std::shared_ptr<PocoSocketReactor> reactor;
+    EventLoop& loop;
     bool closed = false;
 };
 
 } // namespace
 
 std::shared_ptr<UdpSocket> SocketTransport::bindUdp(varn::runtime::Runtime& runtime, const std::string& host, int port) {
-    auto reactor = PocoSocketReactor::forRuntime(runtime);
     Poco::Net::DatagramSocket socket(Poco::Net::SocketAddress(host, static_cast<Poco::UInt16>(port)), false);
-    return std::make_shared<PocoUdpSocket>(std::move(socket), std::move(reactor));
+    return std::make_shared<PocoUdpSocket>(std::move(socket), runtime.mainLoop());
 }
 
 } // namespace varn::socket

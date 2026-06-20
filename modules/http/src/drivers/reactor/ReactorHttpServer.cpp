@@ -1,0 +1,895 @@
+#include "varn/http/drivers/reactor/ReactorHttpServer.h"
+
+#include "varn/http/StaticFileHandler.h"
+#include "varn/log/Log.h"
+#include "varn/runtime/EventLoop.h"
+#include "varn/runtime/Runtime.h"
+
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/NameValueCollection.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
+#include <Poco/String.h>
+#include <Poco/URI.h>
+
+#ifdef VARN_ENABLE_TLS
+#include "../poco/TlsServerContext.h"
+#include <Poco/Net/SecureServerSocket.h>
+#endif
+
+#include <algorithm>
+#include <chrono>
+#include <climits>
+#include <cstdint>
+#include <fstream>
+#include <map>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace varn::http {
+
+using varn::runtime::EventLoop;
+using varn::runtime::Runtime;
+
+namespace {
+
+constexpr std::size_t kMaxHeaderBytes = 64 * 1024;
+constexpr std::size_t kMaxChunkLineBytes = 8 * 1024;
+constexpr int kReadChunk = 65536;
+constexpr std::size_t kFileChunkBytes = 64 * 1024;
+constexpr long long kSweepIntervalMs = 1000;
+
+// these mirror Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ and ERR_SSL_WANT_WRITE, so tls i/o needs no ssl header here.
+constexpr int kSslWantRead = -2;
+constexpr int kSslWantWrite = -3;
+
+long long nowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+const char* reasonPhrase(int code) {
+    switch (code) {
+        case 200: return "OK";
+        case 201: return "Created";
+        case 202: return "Accepted";
+        case 204: return "No Content";
+        case 206: return "Partial Content";
+        case 301: return "Moved Permanently";
+        case 302: return "Found";
+        case 303: return "See Other";
+        case 304: return "Not Modified";
+        case 307: return "Temporary Redirect";
+        case 308: return "Permanent Redirect";
+        case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 403: return "Forbidden";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 408: return "Request Timeout";
+        case 413: return "Payload Too Large";
+        case 429: return "Too Many Requests";
+        case 500: return "Internal Server Error";
+        case 502: return "Bad Gateway";
+        case 503: return "Service Unavailable";
+        case 504: return "Gateway Timeout";
+        default: return "OK";
+    }
+}
+
+std::string sanitizeHeader(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char c : value) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        if (u >= 0x20 && u != 0x7f) {
+            out += c;
+        }
+    }
+    return out;
+}
+
+class HttpConnection;
+
+// the response is filled by the lua handler on the loop thread and handed to the connection's i/o thread when end runs.
+class ReactorResponse final : public HttpResponse {
+public:
+    ReactorResponse(std::shared_ptr<HttpConnection> conn, bool keepAlive)
+        : connection(std::move(conn)), keepAlive(keepAlive) {}
+
+    void setStatus(int code) override {
+        if (!finished) {
+            statusCode = code;
+        }
+    }
+
+    void setHeader(const std::string& name, const std::string& value) override {
+        if (!finished) {
+            headerMap[sanitizeHeader(name)] = sanitizeHeader(value);
+        }
+    }
+
+    void addHeader(const std::string& name, const std::string& value) override {
+        if (!finished) {
+            extraHeaders.emplace_back(sanitizeHeader(name), sanitizeHeader(value));
+        }
+    }
+
+    void write(const std::string& chunk) override {
+        if (!finished) {
+            bodyBuffer += chunk;
+        }
+    }
+
+    void end(const std::string& body) override;
+    void sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly) override;
+
+    bool ended() const override {
+        return finished;
+    }
+
+private:
+    std::string buildHead(std::size_t contentLength, bool emitContentLength);
+
+    std::shared_ptr<HttpConnection> connection;
+    bool keepAlive;
+    bool finished = false;
+    int statusCode = 200;
+    std::map<std::string, std::string> headerMap;
+    std::vector<std::pair<std::string, std::string>> extraHeaders;
+    std::string bodyBuffer;
+};
+
+// one connection state machine, multiplexed on the reactor i/o thread and kept alive by the handlers and the response that reference it.
+class HttpConnection final : public std::enable_shared_from_this<HttpConnection> {
+public:
+    HttpConnection(Poco::Net::StreamSocket socket, EventLoop& loop, Runtime& runtime, HttpServerOptions opts,
+                   HttpHandler handler, std::shared_ptr<StaticFileHandler> staticFiles,
+                   std::shared_ptr<std::atomic<bool>> stopping)
+        : socket(std::move(socket)), loop(loop), runtime(runtime), options(std::move(opts)),
+          handler(std::move(handler)), staticFiles(std::move(staticFiles)), stopping(std::move(stopping)) {
+        this->socket.setBlocking(false);
+        try {
+            this->socket.setNoDelay(true);
+        } catch (...) {
+        }
+        try {
+            remoteAddress = this->socket.peerAddress().toString();
+        } catch (...) {
+        }
+        requestStartMs = nowMs();
+    }
+
+    void start() {
+        armRead();
+    }
+
+    bool isClosed() const {
+        return closed;
+    }
+
+    // a connection counts as stale only while it is idle-receiving a request, so an in-flight handler or an in-progress write is never swept.
+    bool isStale(long long now, long long timeoutMs) const {
+        return !dispatched && writeBuffer.empty() && (now - requestStartMs) > timeoutMs;
+    }
+
+    void forceClose() {
+        closeNow();
+    }
+
+    void submitResponse(std::string data, bool keepAliveAfter) {
+        writeBuffer = std::move(data);
+        writeOffset = 0;
+        keepAlive = keepAliveAfter;
+        auto self = shared_from_this();
+        loop.watchWrite(socket, [self]() -> bool { return self->onWritable(); });
+    }
+
+    void streamFile(std::string head, std::string path, std::uint64_t start, std::uint64_t length, bool headersOnly,
+                    bool keepAliveAfter) {
+        writeBuffer = std::move(head);
+        writeOffset = 0;
+        keepAlive = keepAliveAfter;
+
+        // a head-only response or an empty range has no body to stream after the headers.
+        fileMode = !headersOnly && length > 0;
+        if (fileMode) {
+            filePath = std::move(path);
+            fileOffset = start;
+            fileRemaining = length;
+        }
+
+        auto self = shared_from_this();
+        loop.watchWrite(socket, [self]() -> bool { return self->onWritable(); });
+    }
+
+private:
+    enum class Progress { NeedMore, Detached };
+    enum class ChunkResult { Done, NeedMore, Error };
+
+    // an i/o attempt either wants the same direction again, wants the opposite direction (tls renegotiation or handshake), or is done with the connection.
+    enum class Io { Again, Switch, Detached };
+
+    void armRead() {
+        auto self = shared_from_this();
+        loop.watchRead(socket, [self]() -> bool { return self->onReadable(); });
+    }
+
+    void armWrite() {
+        auto self = shared_from_this();
+        loop.watchWrite(socket, [self]() -> bool { return self->onWritable(); });
+    }
+
+    void closeNow() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        if (loop.isRunning()) {
+            loop.closeSocket(socket);
+            return;
+        }
+        try {
+            socket.impl()->close();
+        } catch (...) {
+        }
+    }
+
+    bool onReadable() {
+        const Io result = tryRead();
+        if (result == Io::Again) {
+            return false;
+        }
+        if (result == Io::Switch) {
+            // the tls layer needs the socket writable before this read can progress.
+            auto self = shared_from_this();
+            loop.watchWrite(socket, [self]() -> bool {
+                const Io retry = self->tryRead();
+                if (retry == Io::Switch) {
+                    return false;
+                }
+                if (retry == Io::Again) {
+                    self->armRead();
+                }
+                return true;
+            });
+        }
+        return true;
+    }
+
+    Io tryRead() {
+        char buffer[kReadChunk];
+        int received;
+        try {
+            received = socket.receiveBytes(buffer, sizeof(buffer));
+        } catch (...) {
+            closeNow();
+            return Io::Detached;
+        }
+        if (received == kSslWantWrite) {
+            return Io::Switch;
+        }
+        if (received < 0) {
+            return Io::Again;
+        }
+        if (received == 0) {
+            closeNow();
+            return Io::Detached;
+        }
+
+        readBuffer.append(buffer, static_cast<std::size_t>(received));
+        return process() == Progress::Detached ? Io::Detached : Io::Again;
+    }
+
+    bool onWritable() {
+        const Io result = tryWrite();
+        if (result == Io::Again) {
+            return false;
+        }
+        if (result == Io::Switch) {
+            // the tls layer needs the socket readable before this write can progress.
+            auto self = shared_from_this();
+            loop.watchRead(socket, [self]() -> bool {
+                const Io retry = self->tryWrite();
+                if (retry == Io::Switch) {
+                    return false;
+                }
+                if (retry == Io::Again) {
+                    self->armWrite();
+                }
+                return true;
+            });
+        }
+        return true;
+    }
+
+    Io tryWrite() {
+        while (writeOffset < writeBuffer.size()) {
+            const std::size_t remaining = writeBuffer.size() - writeOffset;
+            const int chunk = static_cast<int>(std::min(remaining, static_cast<std::size_t>(INT_MAX)));
+            int wrote;
+            try {
+                wrote = socket.sendBytes(writeBuffer.data() + writeOffset, chunk);
+            } catch (...) {
+                closeNow();
+                return Io::Detached;
+            }
+            if (wrote == kSslWantRead) {
+                return Io::Switch;
+            }
+            if (wrote < 0) {
+                return Io::Again;
+            }
+            if (wrote == 0) {
+                closeNow();
+                return Io::Detached;
+            }
+            writeOffset += static_cast<std::size_t>(wrote);
+        }
+
+        // a file response streams its next chunk before the connection's keep-alive fate is decided.
+        if (fileMode && fileRemaining > 0) {
+            readNextChunk();
+            return Io::Detached;
+        }
+        fileMode = false;
+
+        if (!keepAlive || stopping->load(std::memory_order_acquire)) {
+            closeNow();
+            return Io::Detached;
+        }
+
+        // a kept-alive connection preserves any pipelined bytes and either parses the next request now or waits for more.
+        resetForNextRequest();
+        if (readBuffer.empty()) {
+            armRead();
+        } else if (process() == Progress::NeedMore) {
+            armRead();
+        }
+        return Io::Detached;
+    }
+
+    Progress process() {
+        if (headersEnd == std::string::npos) {
+            headersEnd = readBuffer.find("\r\n\r\n");
+            if (headersEnd == std::string::npos) {
+                if (readBuffer.size() > kMaxHeaderBytes) {
+                    sendSimpleAndClose(400);
+                    return Progress::Detached;
+                }
+                return Progress::NeedMore;
+            }
+            if (!parseHeaders()) {
+                return Progress::Detached;
+            }
+        }
+
+        if (chunked) {
+            const ChunkResult decoded = decodeChunks();
+            if (decoded == ChunkResult::NeedMore) {
+                return Progress::NeedMore;
+            }
+            if (decoded == ChunkResult::Error) {
+                sendSimpleAndClose(400);
+                return Progress::Detached;
+            }
+            requestBody = std::move(chunkedBody);
+        } else {
+            if (readBuffer.size() < bodyStart + contentLength) {
+                return Progress::NeedMore;
+            }
+            requestBody = readBuffer.substr(bodyStart, contentLength);
+            requestEnd = bodyStart + contentLength;
+        }
+
+        dispatch();
+        return Progress::Detached;
+    }
+
+    ChunkResult decodeChunks() {
+        for (;;) {
+            const std::size_t lineEnd = readBuffer.find("\r\n", chunkPos);
+            if (lineEnd == std::string::npos) {
+                // an unterminated chunk-size line past the cap is a framing attack rather than a slow client.
+                return readBuffer.size() - chunkPos > kMaxChunkLineBytes ? ChunkResult::Error : ChunkResult::NeedMore;
+            }
+
+            std::string sizeField = readBuffer.substr(chunkPos, lineEnd - chunkPos);
+            const std::size_t extension = sizeField.find(';');
+            if (extension != std::string::npos) {
+                sizeField.erase(extension);
+            }
+
+            std::size_t chunkSize = 0;
+            if (!parseChunkSize(sizeField, chunkSize)) {
+                return ChunkResult::Error;
+            }
+
+            const std::size_t dataStart = lineEnd + 2;
+            if (chunkSize == 0) {
+                return consumeTrailers(dataStart);
+            }
+
+            // a chunk needs its declared bytes plus the trailing crlf before it can be consumed.
+            if (readBuffer.size() < dataStart + chunkSize + 2) {
+                return ChunkResult::NeedMore;
+            }
+
+            chunkedBody.append(readBuffer, dataStart, chunkSize);
+            if (options.maxRequestBodyBytes > 0 && chunkedBody.size() > static_cast<std::size_t>(options.maxRequestBodyBytes)) {
+                return ChunkResult::Error;
+            }
+            chunkPos = dataStart + chunkSize + 2;
+        }
+    }
+
+    ChunkResult consumeTrailers(std::size_t position) {
+        for (;;) {
+            const std::size_t crlf = readBuffer.find("\r\n", position);
+            if (crlf == std::string::npos) {
+                return readBuffer.size() - position > kMaxChunkLineBytes ? ChunkResult::Error : ChunkResult::NeedMore;
+            }
+            if (crlf == position) {
+                requestEnd = crlf + 2;
+                return ChunkResult::Done;
+            }
+            position = crlf + 2;
+        }
+    }
+
+    static bool parseChunkSize(const std::string& field, std::size_t& out) {
+        const std::size_t begin = field.find_first_not_of(" \t");
+        if (begin == std::string::npos) {
+            return false;
+        }
+        const std::size_t end = field.find_last_not_of(" \t");
+        const std::string digits = field.substr(begin, end - begin + 1);
+        if (digits.empty() || digits.size() > 16) {
+            return false;
+        }
+
+        out = 0;
+        for (char c : digits) {
+            out <<= 4;
+            if (c >= '0' && c <= '9') {
+                out |= static_cast<std::size_t>(c - '0');
+            } else if (c >= 'a' && c <= 'f') {
+                out |= static_cast<std::size_t>(c - 'a' + 10);
+            } else if (c >= 'A' && c <= 'F') {
+                out |= static_cast<std::size_t>(c - 'A' + 10);
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool parseHeaders() {
+        Poco::Net::HTTPRequest request;
+        try {
+            std::istringstream stream(readBuffer.substr(0, headersEnd + 4));
+            request.read(stream);
+        } catch (...) {
+            sendSimpleAndClose(400);
+            return false;
+        }
+
+        bodyStart = headersEnd + 4;
+        chunked = false;
+        contentLength = 0;
+
+        if (request.has("Transfer-Encoding")) {
+            // only chunked is supported, and it must not be combined with a content-length.
+            if (Poco::icompare(request.get("Transfer-Encoding"), "chunked") != 0 || request.has("Content-Length")) {
+                sendSimpleAndClose(400);
+                return false;
+            }
+            chunked = true;
+            chunkPos = bodyStart;
+            chunkedBody.clear();
+        } else if (request.has("Content-Length")) {
+            const std::string value = request.get("Content-Length");
+            if (value.empty() || value.find_first_not_of("0123456789") != std::string::npos) {
+                sendSimpleAndClose(400);
+                return false;
+            }
+            try {
+                contentLength = std::stoull(value);
+            } catch (...) {
+                sendSimpleAndClose(413);
+                return false;
+            }
+            if (options.maxRequestBodyBytes > 0 && contentLength > static_cast<std::size_t>(options.maxRequestBodyBytes)) {
+                sendSimpleAndClose(413);
+                return false;
+            }
+        }
+
+        keepAlive = request.getKeepAlive();
+
+        pendingMethod = request.getMethod();
+        pendingTarget = request.getURI();
+        try {
+            Poco::URI uri(pendingTarget);
+            pendingPath = uri.getPath().empty() ? "/" : uri.getPath();
+            pendingQueryString = uri.getRawQuery();
+            pendingQuery.clear();
+            for (const auto& param : uri.getQueryParameters()) {
+                pendingQuery[param.first] = param.second;
+            }
+        } catch (...) {
+            sendSimpleAndClose(400);
+            return false;
+        }
+
+        pendingHost = request.get("Host", "");
+        pendingHeaders.clear();
+        for (auto it = request.begin(); it != request.end(); ++it) {
+            pendingHeaders[it->first] = it->second;
+        }
+        pendingCookies.clear();
+        try {
+            Poco::Net::NameValueCollection values;
+            request.getCookies(values);
+            for (auto it = values.begin(); it != values.end(); ++it) {
+                pendingCookies[it->first] = it->second;
+            }
+        } catch (...) {
+        }
+        return true;
+    }
+
+    void dispatch() {
+        HttpRequest request;
+        request.host = pendingHost;
+        request.method = pendingMethod;
+        request.target = pendingTarget;
+        request.path = pendingPath;
+        request.queryString = pendingQueryString;
+        request.headers = pendingHeaders;
+        request.cookies = pendingCookies;
+        request.query = pendingQuery;
+        request.remoteAddress = remoteAddress;
+        request.body = std::move(requestBody);
+
+        dispatched = true;
+        auto response = std::make_shared<ReactorResponse>(shared_from_this(), keepAlive);
+
+        // a matching public file is served ahead of the user handler and streamed off the loop.
+        if (staticFiles && staticFiles->tryServe(request, *response)) {
+            return;
+        }
+        handler(request, response);
+    }
+
+    void readNextChunk() {
+        const std::uint64_t offset = fileOffset;
+        const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(fileRemaining, kFileChunkBytes));
+        auto self = shared_from_this();
+        runtime.ioPool().post([self, path = filePath, offset, want]() {
+            std::string chunk = readFileRange(path, offset, want);
+            self->loop.post([self, chunk = std::move(chunk), want]() mutable { self->onFileChunk(std::move(chunk), want); });
+        });
+    }
+
+    void onFileChunk(std::string chunk, std::size_t want) {
+        if (closed) {
+            return;
+        }
+
+        const std::size_t got = chunk.size();
+        fileOffset += got;
+
+        // a short read means the file ended before its declared length, so the stream stops and the connection closes.
+        if (got < want) {
+            fileRemaining = 0;
+            keepAlive = false;
+        } else {
+            fileRemaining -= got;
+        }
+
+        if (chunk.empty()) {
+            fileMode = false;
+            closeNow();
+            return;
+        }
+
+        writeBuffer = std::move(chunk);
+        writeOffset = 0;
+        auto self = shared_from_this();
+        loop.watchWrite(socket, [self]() -> bool { return self->onWritable(); });
+    }
+
+    static std::string readFileRange(const std::string& path, std::uint64_t offset, std::size_t want) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) {
+            return std::string();
+        }
+
+        file.seekg(static_cast<std::streamoff>(offset));
+        std::string buffer(want, '\0');
+        file.read(buffer.data(), static_cast<std::streamsize>(want));
+        buffer.resize(static_cast<std::size_t>(file.gcount()));
+        return buffer;
+    }
+
+    void sendSimpleAndClose(int code) {
+        const std::string body = std::string(reasonPhrase(code)) + ".";
+        std::string head = "HTTP/1.1 " + std::to_string(code) + " " + reasonPhrase(code) + "\r\n";
+        head += "Content-Type: text/plain; charset=utf-8\r\n";
+        head += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+        head += "Connection: close\r\n\r\n";
+        head += body;
+        submitResponse(std::move(head), false);
+    }
+
+    void resetForNextRequest() {
+        std::string leftover = readBuffer.substr(requestEnd);
+        readBuffer = std::move(leftover);
+        headersEnd = std::string::npos;
+        bodyStart = 0;
+        contentLength = 0;
+        chunked = false;
+        chunkPos = 0;
+        requestEnd = 0;
+        chunkedBody.clear();
+        requestBody.clear();
+        writeBuffer.clear();
+        writeOffset = 0;
+        fileMode = false;
+        filePath.clear();
+        fileOffset = 0;
+        fileRemaining = 0;
+        dispatched = false;
+        requestStartMs = nowMs();
+    }
+
+    Poco::Net::StreamSocket socket;
+    EventLoop& loop;
+    Runtime& runtime;
+    HttpServerOptions options;
+    HttpHandler handler;
+    std::shared_ptr<StaticFileHandler> staticFiles;
+    std::shared_ptr<std::atomic<bool>> stopping;
+    std::string remoteAddress;
+
+    std::string readBuffer;
+    std::size_t headersEnd = std::string::npos;
+    std::size_t bodyStart = 0;
+    std::size_t contentLength = 0;
+    std::size_t requestEnd = 0;
+    bool chunked = false;
+    std::size_t chunkPos = 0;
+    std::string chunkedBody;
+    std::string requestBody;
+    bool keepAlive = false;
+    bool closed = false;
+    bool dispatched = false;
+    long long requestStartMs = 0;
+
+    std::string writeBuffer;
+    std::size_t writeOffset = 0;
+
+    bool fileMode = false;
+    std::string filePath;
+    std::uint64_t fileOffset = 0;
+    std::uint64_t fileRemaining = 0;
+
+    std::string pendingMethod;
+    std::string pendingTarget;
+    std::string pendingPath;
+    std::string pendingQueryString;
+    std::string pendingHost;
+    std::map<std::string, std::string> pendingHeaders;
+    std::map<std::string, std::string> pendingCookies;
+    std::map<std::string, std::string> pendingQuery;
+};
+
+std::string ReactorResponse::buildHead(std::size_t contentLength, bool emitContentLength) {
+    if (statusCode < 100 || statusCode > 599) {
+        statusCode = 500;
+    }
+
+    std::string head;
+    head.reserve(256);
+    head += "HTTP/1.1 ";
+    head += std::to_string(statusCode);
+    head += ' ';
+    head += reasonPhrase(statusCode);
+    head += "\r\n";
+
+    bool hasContentType = false;
+    for (const auto& [name, value] : headerMap) {
+        head += name;
+        head += ": ";
+        head += value;
+        head += "\r\n";
+        if (Poco::icompare(name, "content-type") == 0) {
+            hasContentType = true;
+        }
+    }
+    for (const auto& [name, value] : extraHeaders) {
+        head += name;
+        head += ": ";
+        head += value;
+        head += "\r\n";
+        if (Poco::icompare(name, "content-type") == 0) {
+            hasContentType = true;
+        }
+    }
+    if (!hasContentType) {
+        head += "Content-Type: text/plain; charset=utf-8\r\n";
+    }
+
+    if (emitContentLength) {
+        head += "Content-Length: ";
+        head += std::to_string(contentLength);
+        head += "\r\n";
+    }
+    head += keepAlive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
+    head += "\r\n";
+    return head;
+}
+
+void ReactorResponse::end(const std::string& body) {
+    if (finished) {
+        return;
+    }
+    finished = true;
+    bodyBuffer += body;
+
+    const bool bodyless = statusCode == 204 || statusCode == 304;
+    std::string head = buildHead(bodyBuffer.size(), !bodyless);
+    if (!bodyless) {
+        head += bodyBuffer;
+    }
+
+    connection->submitResponse(std::move(head), keepAlive);
+}
+
+void ReactorResponse::sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly) {
+    if (finished) {
+        return;
+    }
+    finished = true;
+
+    const bool emitContentLength = statusCode != 204 && statusCode != 304;
+    std::string head = buildHead(static_cast<std::size_t>(length), emitContentLength);
+    connection->streamFile(std::move(head), path, start, length, headersOnly, keepAlive);
+}
+
+void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<HttpConnection>>> registry,
+                   std::shared_ptr<std::atomic<bool>> stopping, long long timeoutMs) {
+    loop.postDelayed(kSweepIntervalMs, [&loop, registry, stopping, timeoutMs]() {
+        if (stopping->load(std::memory_order_acquire)) {
+            return;
+        }
+
+        // close connections still idle-receiving past the deadline and compact the registry in place.
+        const long long now = nowMs();
+        auto& connections = *registry;
+        std::size_t kept = 0;
+        for (std::size_t i = 0; i < connections.size(); ++i) {
+            auto connection = connections[i].lock();
+            if (!connection || connection->isClosed()) {
+                continue;
+            }
+            if (connection->isStale(now, timeoutMs)) {
+                connection->forceClose();
+                continue;
+            }
+            connections[kept++] = connections[i];
+        }
+        connections.resize(kept);
+
+        scheduleSweep(loop, registry, stopping, timeoutMs);
+    });
+}
+
+} // namespace
+
+ReactorHttpServer::ReactorHttpServer(Runtime& rt, HttpServerOptions opts, HttpHandler onRequest)
+    : runtime(rt), serverOptions(std::move(opts)), httpHandler(std::move(onRequest)) {}
+
+ReactorHttpServer::~ReactorHttpServer() {
+    stop();
+}
+
+void ReactorHttpServer::start() {
+    if (started) {
+        return;
+    }
+    started = true;
+    stopping->store(false, std::memory_order_release);
+
+    EventLoop& loop = runtime.mainLoop();
+
+    const Poco::Net::SocketAddress address(serverOptions.host, static_cast<Poco::UInt16>(serverOptions.port));
+    const int backlog = std::clamp(serverOptions.maxQueued, 1, 65535);
+
+    // bind with so_reuseport so every worker process shares the same listening port and the kernel load-balances accepts.
+#ifdef VARN_ENABLE_TLS
+    if (serverOptions.tls) {
+        Poco::Net::Context::Ptr context = TlsServerContext::create(serverOptions);
+        TlsServerContext::initializeSslManager(context);
+        Poco::Net::SecureServerSocket secure(context);
+        secure.bind(address, true, true);
+        secure.listen(backlog);
+        listener = secure;
+    } else {
+        Poco::Net::ServerSocket plain;
+        plain.bind(address, true, true);
+        plain.listen(backlog);
+        listener = plain;
+    }
+#else
+    Poco::Net::ServerSocket plain;
+    plain.bind(address, true, true);
+    plain.listen(backlog);
+    listener = plain;
+#endif
+
+    listener.setBlocking(false);
+
+    auto registry = std::make_shared<std::vector<std::weak_ptr<HttpConnection>>>();
+    const long long timeoutMs = static_cast<long long>(serverOptions.keepAliveTimeoutSeconds) * 1000;
+
+    std::shared_ptr<StaticFileHandler> staticFiles;
+    if (serverOptions.servePublic) {
+        staticFiles = std::make_shared<StaticFileHandler>(serverOptions.publicDir, serverOptions.directoryListing);
+    }
+
+    Runtime& rt = runtime;
+    HttpServerOptions opts = serverOptions;
+    HttpHandler onRequest = httpHandler;
+    auto stop = stopping;
+    Poco::Net::ServerSocket server = listener;
+
+    loop.watchRead(listener, [&loop, &rt, opts, onRequest, staticFiles, stop, server, registry]() mutable -> bool {
+        if (stop->load(std::memory_order_acquire)) {
+            return true;
+        }
+
+        // drain every pending connection so a single readiness event accepts the full backlog.
+        for (;;) {
+            Poco::Net::StreamSocket accepted;
+            try {
+                accepted = server.acceptConnection();
+            } catch (...) {
+                break;
+            }
+            auto connection =
+                std::make_shared<HttpConnection>(std::move(accepted), loop, rt, opts, onRequest, staticFiles, stop);
+            registry->push_back(connection);
+            connection->start();
+        }
+        return false;
+    });
+
+    // a non-positive keep-alive timeout disables the idle and slowloris sweep entirely.
+    if (timeoutMs > 0) {
+        scheduleSweep(loop, registry, stopping, timeoutMs);
+    }
+}
+
+void ReactorHttpServer::stop() {
+    if (!started) {
+        return;
+    }
+    started = false;
+    stopping->store(true, std::memory_order_release);
+    EventLoop& loop = runtime.mainLoop();
+    if (loop.isRunning()) {
+        loop.closeSocket(listener);
+    } else {
+        try {
+            listener.impl()->close();
+        } catch (...) {
+        }
+    }
+}
+
+} // namespace varn::http

@@ -1,6 +1,7 @@
 #include "varn/socket/SocketTransport.h"
 
-#include "PocoSocketReactor.h"
+#include "varn/runtime/EventLoop.h"
+#include "varn/runtime/Runtime.h"
 
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -15,14 +16,16 @@
 
 namespace varn::socket {
 
+using varn::runtime::EventLoop;
+
 namespace {
 
-void closeManagedSocket(const std::shared_ptr<PocoSocketReactor>& reactor, const Poco::Net::Socket& socket) {
-    if (reactor->running()) {
-        reactor->closeSocket(socket);
+void closeManagedSocket(EventLoop& loop, const Poco::Net::Socket& socket) {
+    if (loop.isRunning()) {
+        loop.closeSocket(socket);
         return;
     }
-    // the reactor is already stopped at shutdown, so the fd can be closed here with no thread to race.
+    // the loop is already stopped at shutdown, so the fd can be closed here with no thread to race.
     try {
         socket.impl()->close();
     } catch (...) {
@@ -31,8 +34,7 @@ void closeManagedSocket(const std::shared_ptr<PocoSocketReactor>& reactor, const
 
 class PocoTcpConnection : public TcpConnection, public std::enable_shared_from_this<PocoTcpConnection> {
 public:
-    PocoTcpConnection(Poco::Net::StreamSocket socket, std::shared_ptr<PocoSocketReactor> reactor)
-        : socket(std::move(socket)), reactor(std::move(reactor)) {
+    PocoTcpConnection(Poco::Net::StreamSocket socket, EventLoop& loop) : socket(std::move(socket)), loop(loop) {
         this->socket.setBlocking(false);
     }
 
@@ -42,7 +44,7 @@ public:
             return;
         }
         auto self = shared_from_this();
-        reactor->watchRead(socket, [self, maxBytes, callback = std::move(callback)]() -> bool {
+        loop.watchRead(socket, [self, maxBytes, callback = std::move(callback)]() -> bool {
             try {
                 std::vector<char> buffer(static_cast<std::size_t>(maxBytes));
                 const int received = self->socket.receiveBytes(buffer.data(), maxBytes);
@@ -66,7 +68,7 @@ public:
         auto self = shared_from_this();
         auto payload = std::make_shared<std::string>(std::move(data));
         auto sent = std::make_shared<std::size_t>(0);
-        reactor->watchWrite(socket, [self, payload, sent, callback = std::move(callback)]() -> bool {
+        loop.watchWrite(socket, [self, payload, sent, callback = std::move(callback)]() -> bool {
             try {
                 while (*sent < payload->size()) {
                     const std::size_t remaining = payload->size() - *sent;
@@ -92,19 +94,18 @@ public:
 
     void close() override {
         closed = true;
-        closeManagedSocket(reactor, socket);
+        closeManagedSocket(loop, socket);
     }
 
 private:
     Poco::Net::StreamSocket socket;
-    std::shared_ptr<PocoSocketReactor> reactor;
+    EventLoop& loop;
     bool closed = false;
 };
 
 class PocoTcpListener : public TcpListener, public std::enable_shared_from_this<PocoTcpListener> {
 public:
-    PocoTcpListener(Poco::Net::ServerSocket server, std::shared_ptr<PocoSocketReactor> reactor)
-        : server(std::move(server)), reactor(std::move(reactor)) {
+    PocoTcpListener(Poco::Net::ServerSocket server, EventLoop& loop) : server(std::move(server)), loop(loop) {
         this->server.setBlocking(false);
     }
 
@@ -114,10 +115,10 @@ public:
             return;
         }
         auto self = shared_from_this();
-        reactor->watchRead(server, [self, callback = std::move(callback)]() -> bool {
+        loop.watchRead(server, [self, callback = std::move(callback)]() -> bool {
             try {
                 Poco::Net::StreamSocket accepted = self->server.acceptConnection();
-                callback(std::make_shared<PocoTcpConnection>(std::move(accepted), self->reactor), "");
+                callback(std::make_shared<PocoTcpConnection>(std::move(accepted), self->loop), "");
                 return true;
             } catch (const std::exception& ex) {
                 callback(nullptr, ex.what());
@@ -128,19 +129,19 @@ public:
 
     void close() override {
         closed = true;
-        closeManagedSocket(reactor, server);
+        closeManagedSocket(loop, server);
     }
 
 private:
     Poco::Net::ServerSocket server;
-    std::shared_ptr<PocoSocketReactor> reactor;
+    EventLoop& loop;
     bool closed = false;
 };
 
 } // namespace
 
 void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, ConnectCallback callback) {
-    auto reactor = PocoSocketReactor::forRuntime(runtime);
+    EventLoop& loop = runtime.mainLoop();
 
     Poco::Net::StreamSocket socket;
     try {
@@ -151,7 +152,7 @@ void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::s
     }
     socket.setBlocking(false);
 
-    reactor->watchWrite(socket, [reactor, socket, callback = std::move(callback)]() mutable -> bool {
+    loop.watchWrite(socket, [&loop, socket, callback = std::move(callback)]() mutable -> bool {
         int error = 0;
         try {
             error = socket.impl()->socketError();
@@ -162,15 +163,14 @@ void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::s
             callback(nullptr, "[SocketTransport] The connection could not be established.");
             return true;
         }
-        callback(std::make_shared<PocoTcpConnection>(socket, reactor), "");
+        callback(std::make_shared<PocoTcpConnection>(socket, loop), "");
         return true;
     });
 }
 
 std::shared_ptr<TcpListener> SocketTransport::listen(varn::runtime::Runtime& runtime, const std::string& host, int port, int backlog) {
-    auto reactor = PocoSocketReactor::forRuntime(runtime);
     Poco::Net::ServerSocket server(Poco::Net::SocketAddress(host, static_cast<Poco::UInt16>(port)), backlog);
-    return std::make_shared<PocoTcpListener>(std::move(server), std::move(reactor));
+    return std::make_shared<PocoTcpListener>(std::move(server), runtime.mainLoop());
 }
 
 } // namespace varn::socket

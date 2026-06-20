@@ -122,6 +122,20 @@ if(VARN_NEEDS_POCO)
     )
 endif()
 
+# libuv is the cross-platform event loop poller (epoll/kqueue/iocp) the runtime waits on natively.
+if(VARN_NEEDS_LIBUV)
+    CPMAddPackage(
+        NAME libuv
+        VERSION 1.49.2
+        GITHUB_REPOSITORY libuv/libuv
+        GIT_TAG v1.49.2
+        OPTIONS
+            "LIBUV_BUILD_TESTS OFF"
+            "LIBUV_BUILD_BENCH OFF"
+            "LIBUV_BUILD_SHARED OFF"
+    )
+endif()
+
 # spdlog backs the log SPDLOG driver.
 if(VARN_NEEDS_SPDLOG)
     CPMAddPackage(

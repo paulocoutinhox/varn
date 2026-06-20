@@ -1,7 +1,6 @@
 #pragma once
 
 #include "varn/runtime/EventLoop.h"
-#include "varn/runtime/IoService.h"
 #include "varn/runtime/TaskPool.h"
 #include "varn/runtime/WorkLedger.h"
 
@@ -38,8 +37,6 @@ public:
     lua_State* luaState();
 
     void addServer(std::shared_ptr<varn::http::HttpServer> server);
-    void setIoService(std::shared_ptr<IoService> service);
-    IoService* ioService() const;
     void stop();
     bool stopped() const { return stopFlag.load(std::memory_order_acquire); }
 
@@ -61,7 +58,6 @@ private:
     std::atomic<int> backgroundDrivers{0};
     std::unique_ptr<varn::lua::LuaEngine> engine;
     std::vector<std::shared_ptr<varn::http::HttpServer>> servers;
-    std::shared_ptr<IoService> ioServiceImpl;
     std::atomic<bool> stopFlag{false};
     bool unhandledError = false;
     bool entryRequestedStop = false;

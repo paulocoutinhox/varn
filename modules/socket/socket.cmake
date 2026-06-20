@@ -11,7 +11,6 @@ list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/SocketModule.cpp")
 
 if(VARN_SOCKET_DRIVER STREQUAL "POCO")
     list(APPEND VARN_SOURCES
-        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketReactor.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketTcp.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketUdp.cpp"
     )
