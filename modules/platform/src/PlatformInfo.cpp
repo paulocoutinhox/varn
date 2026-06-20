@@ -10,20 +10,25 @@
 #include <TargetConditionals.h>
 #endif
 
-namespace varn::platform {
+namespace varn::platform
+{
 
-bool PlatformInfo::startsWith(std::string_view s, std::string_view p) {
+bool PlatformInfo::startsWith(std::string_view s, std::string_view p)
+{
     return s.size() >= p.size() && s.compare(0, p.size(), p) == 0;
 }
 
-std::string PlatformInfo::toLower(std::string s) {
-    for (char& c : s) {
+std::string PlatformInfo::toLower(std::string s)
+{
+    for (char& c : s)
+    {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
     return s;
 }
 
-std::string PlatformInfo::osId() {
+std::string PlatformInfo::osId()
+{
 #if defined(__EMSCRIPTEN__)
     return "wasm";
 #elif defined(__ANDROID__)
@@ -67,7 +72,8 @@ std::string PlatformInfo::osId() {
 #endif
 }
 
-std::string PlatformInfo::archId() {
+std::string PlatformInfo::archId()
+{
 #if defined(__EMSCRIPTEN__)
 #if defined(__wasm64__)
     return "wasm64";
@@ -87,26 +93,32 @@ std::string PlatformInfo::archId() {
 #endif
 }
 
-unsigned PlatformInfo::cpuCount() {
+unsigned PlatformInfo::cpuCount()
+{
     const unsigned count = std::thread::hardware_concurrency();
     return count == 0 ? 1u : count;
 }
 
-std::size_t PlatformInfo::pointerSize() {
+std::size_t PlatformInfo::pointerSize()
+{
     return sizeof(void*);
 }
 
-std::string PlatformInfo::endianness() {
-    if constexpr (std::endian::native == std::endian::little) {
+std::string PlatformInfo::endianness()
+{
+    if constexpr (std::endian::native == std::endian::little)
+    {
         return "little";
     }
-    if constexpr (std::endian::native == std::endian::big) {
+    if constexpr (std::endian::native == std::endian::big)
+    {
         return "big";
     }
     return "mixed";
 }
 
-std::string PlatformInfo::libPrefix() {
+std::string PlatformInfo::libPrefix()
+{
 #if defined(_WIN32)
     return "";
 #else
@@ -114,7 +126,8 @@ std::string PlatformInfo::libPrefix() {
 #endif
 }
 
-std::string PlatformInfo::shlibSuffix() {
+std::string PlatformInfo::shlibSuffix()
+{
 #if defined(_WIN32)
     return ".dll";
 #elif defined(__APPLE__)
@@ -124,29 +137,36 @@ std::string PlatformInfo::shlibSuffix() {
 #endif
 }
 
-std::string PlatformInfo::libraryFilenameForName(std::string_view logicalName) {
-    if (logicalName.empty()) {
+std::string PlatformInfo::libraryFilenameForName(std::string_view logicalName)
+{
+    if (logicalName.empty())
+    {
         throw std::invalid_argument("[PlatformInfo] The library name must not be empty.");
     }
 
     std::string s(logicalName);
     const std::string os = osId();
 
-    if (os == "windows") {
-        if (s.find('.') != std::string::npos) {
+    if (os == "windows")
+    {
+        if (s.find('.') != std::string::npos)
+        {
             return s;
         }
         return toLower(std::move(s)) + ".dll";
     }
 
     std::string stem = s;
-    if (startsWith(stem, "lib")) {
+    if (startsWith(stem, "lib"))
+    {
         stem = stem.substr(3);
     }
     const auto dot = stem.rfind('.');
-    if (dot != std::string::npos) {
+    if (dot != std::string::npos)
+    {
         const std::string ext = toLower(stem.substr(dot));
-        if (ext == ".so" || ext == ".dylib" || ext == ".dll") {
+        if (ext == ".so" || ext == ".dylib" || ext == ".dll")
+        {
             stem = stem.substr(0, dot);
         }
     }

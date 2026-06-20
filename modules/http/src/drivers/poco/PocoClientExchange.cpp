@@ -18,14 +18,16 @@
 #include <mutex>
 #endif
 
-namespace varn::http::client {
+namespace varn::http::client
+{
 
 std::string PocoClientExchange::performHttp(
     const std::string& method,
     const Poco::URI& uri,
     const std::map<std::string, std::string>& headers,
     const std::string& body,
-    const ClientRequestOptions& options) {
+    const ClientRequestOptions& options)
+{
     const std::string path = uri.getPathAndQuery().empty() ? "/" : uri.getPathAndQuery();
     const std::string host = uri.getHost();
     const Poco::UInt16 port = static_cast<Poco::UInt16>(
@@ -38,7 +40,8 @@ std::string PocoClientExchange::performHttp(
     applyHeaders(request, headers);
 
     std::ostream& os = session.sendRequest(request);
-    if (!body.empty()) {
+    if (!body.empty())
+    {
         os << body;
     }
 
@@ -54,7 +57,8 @@ std::string PocoClientExchange::performHttps(
     const Poco::URI& uri,
     const std::map<std::string, std::string>& headers,
     const std::string& body,
-    const ClientRequestOptions& options) {
+    const ClientRequestOptions& options)
+{
     ensureTlsClientInitialized();
 
     const std::string path = uri.getPathAndQuery().empty() ? "/" : uri.getPathAndQuery();
@@ -68,7 +72,8 @@ std::string PocoClientExchange::performHttps(
     applyHeaders(request, headers);
 
     std::ostream& os = session.sendRequest(request);
-    if (!body.empty()) {
+    if (!body.empty())
+    {
         os << body;
     }
 
@@ -79,40 +84,49 @@ std::string PocoClientExchange::performHttps(
 }
 #endif
 
-std::string PocoClientExchange::buildWire(int status, const std::string& body) {
+std::string PocoClientExchange::buildWire(int status, const std::string& body)
+{
     return "VARN/1 " + std::to_string(status) + " " + std::to_string(body.size()) + "\n" + body;
 }
 
-// a header injected with a control octet could split the request line, so reject it outright.
-bool PocoClientExchange::headerControlSafe(const std::string& value) {
-    for (unsigned char c : value) {
-        if (c < 0x20 || c == 0x7f) {
+bool PocoClientExchange::headerControlSafe(const std::string& value)
+{
+    for (unsigned char c : value)
+    {
+        if (c < 0x20 || c == 0x7f)
+        {
             return false;
         }
     }
     return true;
 }
 
-void PocoClientExchange::applyHeaders(Poco::Net::HTTPRequest& request, const std::map<std::string, std::string>& headers) {
-    for (const auto& [name, value] : headers) {
-        if (name.empty() || !headerControlSafe(name) || !headerControlSafe(value)) {
+void PocoClientExchange::applyHeaders(Poco::Net::HTTPRequest& request, const std::map<std::string, std::string>& headers)
+{
+    for (const auto& [name, value] : headers)
+    {
+        if (name.empty() || !headerControlSafe(name) || !headerControlSafe(value))
+        {
             throw std::runtime_error("[PocoClientExchange] A request header name or value contains invalid characters.");
         }
         request.set(name, value);
     }
 }
 
-// reads the response body in bounded blocks so a hostile server cannot drive unbounded memory use.
-std::string PocoClientExchange::readResponseBody(std::istream& rs, std::size_t maxBytes) {
+std::string PocoClientExchange::readResponseBody(std::istream& rs, std::size_t maxBytes)
+{
     std::string out;
     char buffer[65536];
-    while (rs) {
+    while (rs)
+    {
         rs.read(buffer, sizeof(buffer));
         const std::streamsize got = rs.gcount();
-        if (got <= 0) {
+        if (got <= 0)
+        {
             break;
         }
-        if (out.size() + static_cast<std::size_t>(got) > maxBytes) {
+        if (out.size() + static_cast<std::size_t>(got) > maxBytes)
+        {
             throw std::runtime_error("[PocoClientExchange] The response body exceeds the maximum allowed size.");
         }
         out.append(buffer, static_cast<std::size_t>(got));
@@ -121,10 +135,11 @@ std::string PocoClientExchange::readResponseBody(std::istream& rs, std::size_t m
 }
 
 #if defined(VARN_ENABLE_TLS)
-// the strict context validates the chain against the system CAs, while the insecure one is an explicit opt-out.
-Poco::Net::Context::Ptr PocoClientExchange::tlsClientContext(bool verify) {
+Poco::Net::Context::Ptr PocoClientExchange::tlsClientContext(bool verify)
+{
 #if defined(_WIN32)
-    if (verify) {
+    if (verify)
+    {
         static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
             Poco::Net::Context::TLS_CLIENT_USE, "", Poco::Net::Context::VERIFY_STRICT,
             Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_MY);
@@ -135,7 +150,8 @@ Poco::Net::Context::Ptr PocoClientExchange::tlsClientContext(bool verify) {
         Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_MY);
     return insecure;
 #else
-    if (verify) {
+    if (verify)
+    {
         static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
             Poco::Net::Context::TLS_CLIENT_USE, "", "", "", Poco::Net::Context::VERIFY_STRICT, 9, true,
             "DEFAULT@SECLEVEL=2");
@@ -148,14 +164,15 @@ Poco::Net::Context::Ptr PocoClientExchange::tlsClientContext(bool verify) {
 #endif
 }
 
-void PocoClientExchange::ensureTlsClientInitialized() {
+void PocoClientExchange::ensureTlsClientInitialized()
+{
     static Poco::Crypto::OpenSSLInitializer sslInitializer;
     static std::once_flag sslOnce;
-    std::call_once(sslOnce, [] {
+    std::call_once(sslOnce, []
+                   {
         // the default handler rejects invalid certificates so strict sessions actually fail closed.
         Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> handler(new Poco::Net::RejectCertificateHandler(false));
-        Poco::Net::SSLManager::instance().initializeClient(nullptr, handler, tlsClientContext(true));
-    });
+        Poco::Net::SSLManager::instance().initializeClient(nullptr, handler, tlsClientContext(true)); });
 }
 #endif
 

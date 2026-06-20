@@ -2,9 +2,11 @@
 
 #include <string>
 
-namespace varn::http {
+namespace varn::http
+{
 
-class MimeTypes {
+class MimeTypes
+{
 public:
     MimeTypes() = delete;
 

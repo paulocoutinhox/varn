@@ -11,27 +11,31 @@
 #include <string>
 #include <utility>
 
-namespace varn::socket {
+namespace varn::socket
+{
 
-using varn::runtime::Runtime;
 using varn::async::Promise;
+using varn::runtime::Runtime;
 
 constexpr const char* kTcpSocketMeta = "varn.TcpSocket";
 constexpr const char* kTcpListenerMeta = "varn.TcpListener";
 constexpr const char* kUdpSocketMeta = "varn.UdpSocket";
 
-Runtime& SocketModule::luaRuntime(lua_State* L) {
+Runtime& SocketModule::luaRuntime(lua_State* L)
+{
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
 }
 
-void SocketModule::pushTcpSocket(lua_State* L, std::shared_ptr<TcpConnection> conn) {
+void SocketModule::pushTcpSocket(lua_State* L, std::shared_ptr<TcpConnection> conn)
+{
     void* memory = lua_newuserdatauv(L, sizeof(std::shared_ptr<TcpConnection>), 0);
     new (memory) std::shared_ptr<TcpConnection>(std::move(conn));
     luaL_getmetatable(L, kTcpSocketMeta);
     lua_setmetatable(L, -2);
 }
 
-void SocketModule::pushTcpListener(lua_State* L, std::shared_ptr<TcpListener> listener) {
+void SocketModule::pushTcpListener(lua_State* L, std::shared_ptr<TcpListener> listener)
+{
     void* memory = lua_newuserdatauv(L, sizeof(std::shared_ptr<TcpListener>), 0);
     new (memory) std::shared_ptr<TcpListener>(std::move(listener));
     luaL_getmetatable(L, kTcpListenerMeta);
@@ -39,7 +43,8 @@ void SocketModule::pushTcpListener(lua_State* L, std::shared_ptr<TcpListener> li
     luaRuntime(L).retainBackgroundDriver();
 }
 
-void SocketModule::pushUdpSocket(lua_State* L, std::shared_ptr<UdpSocket> socket) {
+void SocketModule::pushUdpSocket(lua_State* L, std::shared_ptr<UdpSocket> socket)
+{
     void* memory = lua_newuserdatauv(L, sizeof(std::shared_ptr<UdpSocket>), 0);
     new (memory) std::shared_ptr<UdpSocket>(std::move(socket));
     luaL_getmetatable(L, kUdpSocketMeta);
@@ -47,22 +52,28 @@ void SocketModule::pushUdpSocket(lua_State* L, std::shared_ptr<UdpSocket> socket
     luaRuntime(L).retainBackgroundDriver();
 }
 
-std::shared_ptr<TcpConnection>* SocketModule::checkTcpSocket(lua_State* L, int index) {
+std::shared_ptr<TcpConnection>* SocketModule::checkTcpSocket(lua_State* L, int index)
+{
     return static_cast<std::shared_ptr<TcpConnection>*>(luaL_checkudata(L, index, kTcpSocketMeta));
 }
 
-std::shared_ptr<TcpListener>* SocketModule::checkTcpListener(lua_State* L, int index) {
+std::shared_ptr<TcpListener>* SocketModule::checkTcpListener(lua_State* L, int index)
+{
     return static_cast<std::shared_ptr<TcpListener>*>(luaL_checkudata(L, index, kTcpListenerMeta));
 }
 
-std::shared_ptr<UdpSocket>* SocketModule::checkUdpSocket(lua_State* L, int index) {
+std::shared_ptr<UdpSocket>* SocketModule::checkUdpSocket(lua_State* L, int index)
+{
     return static_cast<std::shared_ptr<UdpSocket>*>(luaL_checkudata(L, index, kUdpSocketMeta));
 }
 
-int SocketModule::luaTcpSocketGc(lua_State* L) {
+int SocketModule::luaTcpSocketGc(lua_State* L)
+{
     auto* holder = static_cast<std::shared_ptr<TcpConnection>*>(lua_touserdata(L, 1));
-    if (holder != nullptr) {
-        if (*holder) {
+    if (holder != nullptr)
+    {
+        if (*holder)
+        {
             (*holder)->close();
         }
         std::destroy_at(holder);
@@ -70,10 +81,13 @@ int SocketModule::luaTcpSocketGc(lua_State* L) {
     return 0;
 }
 
-int SocketModule::luaTcpListenerGc(lua_State* L) {
+int SocketModule::luaTcpListenerGc(lua_State* L)
+{
     auto* holder = static_cast<std::shared_ptr<TcpListener>*>(lua_touserdata(L, 1));
-    if (holder != nullptr) {
-        if (*holder) {
+    if (holder != nullptr)
+    {
+        if (*holder)
+        {
             (*holder)->close();
         }
         std::destroy_at(holder);
@@ -82,10 +96,13 @@ int SocketModule::luaTcpListenerGc(lua_State* L) {
     return 0;
 }
 
-int SocketModule::luaUdpSocketGc(lua_State* L) {
+int SocketModule::luaUdpSocketGc(lua_State* L)
+{
     auto* holder = static_cast<std::shared_ptr<UdpSocket>*>(lua_touserdata(L, 1));
-    if (holder != nullptr) {
-        if (*holder) {
+    if (holder != nullptr)
+    {
+        if (*holder)
+        {
             (*holder)->close();
         }
         std::destroy_at(holder);
@@ -94,10 +111,12 @@ int SocketModule::luaUdpSocketGc(lua_State* L) {
     return 0;
 }
 
-int SocketModule::luaTcpConnect(lua_State* L) {
+int SocketModule::luaTcpConnect(lua_State* L)
+{
     const char* host = luaL_checkstring(L, 1);
     const lua_Integer portArg = luaL_checkinteger(L, 2);
-    if (portArg < 1 || portArg > 65535) {
+    if (portArg < 1 || portArg > 65535)
+    {
         return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
     const int port = static_cast<int>(portArg);
@@ -108,37 +127,49 @@ int SocketModule::luaTcpConnect(lua_State* L) {
 
     runtime->retainBackgroundDriver();
     SocketTransport::connectAsync(*runtime, hostStr, port,
-        [promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error) {
-            if (conn) {
-                promise->resolveCustom([conn](lua_State* lua) { pushTcpSocket(lua, conn); });
-            } else {
-                promise->reject(error);
-            }
-            runtime->releaseBackgroundDriver();
-        });
+                                  [promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error)
+                                  {
+                                      if (conn)
+                                      {
+                                          promise->resolveCustom([conn](lua_State* lua)
+                                                                 { pushTcpSocket(lua, conn); });
+                                      }
+                                      else
+                                      {
+                                          promise->reject(error);
+                                      }
+                                      runtime->releaseBackgroundDriver();
+                                  });
 
     Promise::push(L, promise);
     return 1;
 }
 
-int SocketModule::luaTcpListen(lua_State* L) {
+int SocketModule::luaTcpListen(lua_State* L)
+{
     const char* host = luaL_checkstring(L, 1);
     const lua_Integer portArg = luaL_checkinteger(L, 2);
     const lua_Integer backlogArg = luaL_optinteger(L, 3, 64);
-    if (portArg < 1 || portArg > 65535) {
+    if (portArg < 1 || portArg > 65535)
+    {
         return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
-    if (backlogArg < 1 || backlogArg > 4096) {
+    if (backlogArg < 1 || backlogArg > 4096)
+    {
         return luaL_error(L, "[SocketModule] Backlog must be between 1 and 4096.");
     }
 
     auto& rt = luaRuntime(L);
     auto promise = std::make_shared<Promise>(rt);
 
-    try {
+    try
+    {
         auto listener = SocketTransport::listen(rt, host, static_cast<int>(portArg), static_cast<int>(backlogArg));
-        promise->resolveCustom([listener](lua_State* lua) { pushTcpListener(lua, listener); });
-    } catch (const std::exception& ex) {
+        promise->resolveCustom([listener](lua_State* lua)
+                               { pushTcpListener(lua, listener); });
+    }
+    catch (const std::exception& ex)
+    {
         promise->reject(ex.what());
     }
 
@@ -146,7 +177,8 @@ int SocketModule::luaTcpListen(lua_State* L) {
     return 1;
 }
 
-int SocketModule::luaTcpSocketSend(lua_State* L) {
+int SocketModule::luaTcpSocketSend(lua_State* L)
+{
     auto* holder = checkTcpSocket(L, 1);
     size_t len = 0;
     const char* data = luaL_checklstring(L, 2, &len);
@@ -156,23 +188,25 @@ int SocketModule::luaTcpSocketSend(lua_State* L) {
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
-    conn->sendAsync(std::string(data, len), [promise, runtime](bool ok, const std::string& error) {
+    conn->sendAsync(std::string(data, len), [promise, runtime](bool ok, const std::string& error)
+                    {
         if (ok) {
             promise->resolve("ok");
         } else {
             promise->reject(error);
         }
-        runtime->releaseBackgroundDriver();
-    });
+        runtime->releaseBackgroundDriver(); });
 
     Promise::push(L, promise);
     return 1;
 }
 
-int SocketModule::luaTcpSocketReceive(lua_State* L) {
+int SocketModule::luaTcpSocketReceive(lua_State* L)
+{
     auto* holder = checkTcpSocket(L, 1);
     const int maxBytes = static_cast<int>(luaL_optinteger(L, 2, 65536));
-    if (maxBytes <= 0) {
+    if (maxBytes <= 0)
+    {
         return luaL_error(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
     }
 
@@ -181,20 +215,21 @@ int SocketModule::luaTcpSocketReceive(lua_State* L) {
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
-    conn->receiveAsync(maxBytes, [promise, runtime](bool ok, const std::string& data) {
+    conn->receiveAsync(maxBytes, [promise, runtime](bool ok, const std::string& data)
+                       {
         if (ok) {
             promise->resolve(data);
         } else {
             promise->reject(data);
         }
-        runtime->releaseBackgroundDriver();
-    });
+        runtime->releaseBackgroundDriver(); });
 
     Promise::push(L, promise);
     return 1;
 }
 
-int SocketModule::luaTcpSocketClose(lua_State* L) {
+int SocketModule::luaTcpSocketClose(lua_State* L)
+{
     auto* holder = checkTcpSocket(L, 1);
     auto conn = *holder;
     auto promise = std::make_shared<Promise>(luaRuntime(L));
@@ -206,27 +241,29 @@ int SocketModule::luaTcpSocketClose(lua_State* L) {
     return 1;
 }
 
-int SocketModule::luaTcpListenerAccept(lua_State* L) {
+int SocketModule::luaTcpListenerAccept(lua_State* L)
+{
     auto* holder = checkTcpListener(L, 1);
     auto* runtime = &luaRuntime(L);
     auto listener = *holder;
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
-    listener->acceptAsync([promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error) {
+    listener->acceptAsync([promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error)
+                          {
         if (conn) {
             promise->resolveCustom([conn](lua_State* lua) { pushTcpSocket(lua, conn); });
         } else {
             promise->reject(error);
         }
-        runtime->releaseBackgroundDriver();
-    });
+        runtime->releaseBackgroundDriver(); });
 
     Promise::push(L, promise);
     return 1;
 }
 
-int SocketModule::luaTcpListenerClose(lua_State* L) {
+int SocketModule::luaTcpListenerClose(lua_State* L)
+{
     auto* holder = checkTcpListener(L, 1);
     auto listener = *holder;
     auto promise = std::make_shared<Promise>(luaRuntime(L));
@@ -238,20 +275,26 @@ int SocketModule::luaTcpListenerClose(lua_State* L) {
     return 1;
 }
 
-int SocketModule::luaUdpBind(lua_State* L) {
+int SocketModule::luaUdpBind(lua_State* L)
+{
     const char* host = luaL_checkstring(L, 1);
     const lua_Integer portArg = luaL_checkinteger(L, 2);
-    if (portArg < 1 || portArg > 65535) {
+    if (portArg < 1 || portArg > 65535)
+    {
         return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
 
     auto& rt = luaRuntime(L);
     auto promise = std::make_shared<Promise>(rt);
 
-    try {
+    try
+    {
         auto socket = SocketTransport::bindUdp(rt, host, static_cast<int>(portArg));
-        promise->resolveCustom([socket](lua_State* lua) { pushUdpSocket(lua, socket); });
-    } catch (const std::exception& ex) {
+        promise->resolveCustom([socket](lua_State* lua)
+                               { pushUdpSocket(lua, socket); });
+    }
+    catch (const std::exception& ex)
+    {
         promise->reject(ex.what());
     }
 
@@ -259,11 +302,13 @@ int SocketModule::luaUdpBind(lua_State* L) {
     return 1;
 }
 
-int SocketModule::luaUdpSocketSendTo(lua_State* L) {
+int SocketModule::luaUdpSocketSendTo(lua_State* L)
+{
     auto* holder = checkUdpSocket(L, 1);
     const char* host = luaL_checkstring(L, 2);
     const lua_Integer portArg = luaL_checkinteger(L, 3);
-    if (portArg < 1 || portArg > 65535) {
+    if (portArg < 1 || portArg > 65535)
+    {
         return luaL_error(L, "[SocketModule] Port must be between 1 and 65535.");
     }
     size_t len = 0;
@@ -275,23 +320,29 @@ int SocketModule::luaUdpSocketSendTo(lua_State* L) {
 
     runtime->retainBackgroundDriver();
     socket->sendToAsync(host, static_cast<int>(portArg), std::string(data, len),
-        [promise, runtime](bool ok, const std::string& error) {
-            if (ok) {
-                promise->resolve("ok");
-            } else {
-                promise->reject(error);
-            }
-            runtime->releaseBackgroundDriver();
-        });
+                        [promise, runtime](bool ok, const std::string& error)
+                        {
+                            if (ok)
+                            {
+                                promise->resolve("ok");
+                            }
+                            else
+                            {
+                                promise->reject(error);
+                            }
+                            runtime->releaseBackgroundDriver();
+                        });
 
     Promise::push(L, promise);
     return 1;
 }
 
-int SocketModule::luaUdpSocketRecvFrom(lua_State* L) {
+int SocketModule::luaUdpSocketRecvFrom(lua_State* L)
+{
     auto* holder = checkUdpSocket(L, 1);
     const int maxBytes = static_cast<int>(luaL_optinteger(L, 2, 65536));
-    if (maxBytes <= 0) {
+    if (maxBytes <= 0)
+    {
         return luaL_error(L, "[SocketModule] The maximum number of bytes to receive must be positive.");
     }
 
@@ -300,7 +351,8 @@ int SocketModule::luaUdpSocketRecvFrom(lua_State* L) {
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
-    socket->receiveFromAsync(maxBytes, [promise, runtime](bool ok, const UdpDatagram& datagram, const std::string& error) {
+    socket->receiveFromAsync(maxBytes, [promise, runtime](bool ok, const UdpDatagram& datagram, const std::string& error)
+                             {
         if (ok) {
             UdpDatagram received = datagram;
             promise->resolveCustom([received](lua_State* lua) {
@@ -315,14 +367,14 @@ int SocketModule::luaUdpSocketRecvFrom(lua_State* L) {
         } else {
             promise->reject(error);
         }
-        runtime->releaseBackgroundDriver();
-    });
+        runtime->releaseBackgroundDriver(); });
 
     Promise::push(L, promise);
     return 1;
 }
 
-int SocketModule::luaUdpSocketClose(lua_State* L) {
+int SocketModule::luaUdpSocketClose(lua_State* L)
+{
     auto* holder = checkUdpSocket(L, 1);
     auto socket = *holder;
     auto promise = std::make_shared<Promise>(luaRuntime(L));
@@ -334,8 +386,10 @@ int SocketModule::luaUdpSocketClose(lua_State* L) {
     return 1;
 }
 
-void SocketModule::createMetatables(lua_State* L) {
-    if (luaL_newmetatable(L, kTcpSocketMeta)) {
+void SocketModule::createMetatables(lua_State* L)
+{
+    if (luaL_newmetatable(L, kTcpSocketMeta))
+    {
         lua_pushcfunction(L, &SocketModule::luaTcpSocketGc);
         lua_setfield(L, -2, "__gc");
 
@@ -350,7 +404,8 @@ void SocketModule::createMetatables(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    if (luaL_newmetatable(L, kTcpListenerMeta)) {
+    if (luaL_newmetatable(L, kTcpListenerMeta))
+    {
         lua_pushcfunction(L, &SocketModule::luaTcpListenerGc);
         lua_setfield(L, -2, "__gc");
 
@@ -363,7 +418,8 @@ void SocketModule::createMetatables(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    if (luaL_newmetatable(L, kUdpSocketMeta)) {
+    if (luaL_newmetatable(L, kUdpSocketMeta))
+    {
         lua_pushcfunction(L, &SocketModule::luaUdpSocketGc);
         lua_setfield(L, -2, "__gc");
 
@@ -379,7 +435,8 @@ void SocketModule::createMetatables(lua_State* L) {
     lua_pop(L, 1);
 }
 
-int SocketModule::luaOpen(lua_State* L) {
+int SocketModule::luaOpen(lua_State* L)
+{
     createMetatables(L);
 
     lua_newtable(L);
@@ -399,7 +456,8 @@ int SocketModule::luaOpen(lua_State* L) {
     return 1;
 }
 
-void SocketModule::install(lua_State* L) {
+void SocketModule::install(lua_State* L)
+{
     luaL_requiref(L, "socket", &SocketModule::luaOpen, 1);
     lua_pop(L, 1);
 }

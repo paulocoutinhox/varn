@@ -3,9 +3,11 @@
 #include <functional>
 #include <string_view>
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 
-class App {
+class App
+{
 public:
     int run(int argc, char** argv);
 

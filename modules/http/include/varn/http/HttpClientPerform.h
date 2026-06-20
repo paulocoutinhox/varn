@@ -5,13 +5,16 @@
 #include <memory>
 #include <string>
 
-namespace varn::async {
+namespace varn::async
+{
 class Promise;
 }
 
-namespace varn::http::client {
+namespace varn::http::client
+{
 
-struct ClientRequestOptions {
+struct ClientRequestOptions
+{
     int timeoutSeconds = 60;
     bool verifyTls = true;
     std::size_t maxResponseBytes = 64u * 1024u * 1024u;
@@ -23,7 +26,8 @@ struct ClientRequestOptions {
 #define VARN_HTTP_CLIENT_EMSCRIPTEN_FETCH_ASYNC 0
 #endif
 
-class HttpClientPerform {
+class HttpClientPerform
+{
 public:
     HttpClientPerform() = delete;
 

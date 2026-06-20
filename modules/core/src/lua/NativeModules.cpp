@@ -4,18 +4,20 @@
 #include "varn/async/Promise.h"
 #include "varn/crypto/CryptoModule.h"
 #include "varn/ffi/FfiModule.h"
-#include "varn/json/JsonModule.h"
-#include "varn/platform/PlatformModule.h"
-#include "varn/xml/XmlModule.h"
-#include "varn/zip/ZipModule.h"
 #include "varn/fs/FsModule.h"
 #include "varn/http/HttpServerModule.h"
+#include "varn/json/JsonModule.h"
 #include "varn/log/LogModule.h"
+#include "varn/platform/PlatformModule.h"
 #include "varn/socket/SocketModule.h"
+#include "varn/xml/XmlModule.h"
+#include "varn/zip/ZipModule.h"
 
-namespace varn::lua {
+namespace varn::lua
+{
 
-void NativeModuleRegistry::installAll(lua_State* L) {
+void NativeModuleRegistry::installAll(lua_State* L)
+{
     async::Promise::installMetatable(L);
     async::AsyncModule::install(L);
     fs::FsModule::install(L);

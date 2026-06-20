@@ -4,9 +4,11 @@
 #include <filesystem>
 #include <map>
 
-namespace varn::http {
+namespace varn::http
+{
 
-std::string MimeTypes::forPath(const std::string& path) {
+std::string MimeTypes::forPath(const std::string& path)
+{
     static const std::map<std::string, std::string> types = {
         {".html", "text/html; charset=utf-8"},
         {".htm", "text/html; charset=utf-8"},
@@ -30,16 +32,15 @@ std::string MimeTypes::forPath(const std::string& path) {
         {".mp4", "video/mp4"},
         {".woff", "font/woff"},
         {".woff2", "font/woff2"},
-        {".ttf", "font/ttf"}
-    };
+        {".ttf", "font/ttf"}};
 
     std::string ext = std::filesystem::path(path).extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c)
+                   { return static_cast<char>(std::tolower(c)); });
 
     auto it = types.find(ext);
-    if (it != types.end()) {
+    if (it != types.end())
+    {
         return it->second;
     }
 

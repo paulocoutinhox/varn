@@ -3,9 +3,11 @@
 #include <lua.hpp>
 #include <string>
 
-namespace varn::xml {
+namespace varn::xml
+{
 
-class XmlSerializer {
+class XmlSerializer
+{
 public:
     XmlSerializer() = delete;
 

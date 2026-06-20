@@ -2,9 +2,11 @@
 
 struct lua_State;
 
-namespace varn::xml {
+namespace varn::xml
+{
 
-class XmlModule {
+class XmlModule
+{
 public:
     XmlModule() = delete;
 

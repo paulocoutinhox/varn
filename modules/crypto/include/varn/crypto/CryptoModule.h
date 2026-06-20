@@ -2,9 +2,11 @@
 
 struct lua_State;
 
-namespace varn::crypto {
+namespace varn::crypto
+{
 
-class CryptoModule {
+class CryptoModule
+{
 public:
     CryptoModule() = delete;
 

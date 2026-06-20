@@ -4,9 +4,11 @@
 #include <string>
 #include <string_view>
 
-namespace varn::platform {
+namespace varn::platform
+{
 
-class PlatformInfo final {
+class PlatformInfo final
+{
 public:
     PlatformInfo() = delete;
 

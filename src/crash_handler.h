@@ -6,16 +6,18 @@
 
 #if defined(_WIN32)
 
-#include <windows.h>
 #include <dbghelp.h>
+#include <windows.h>
 
 #include <cstdint>
 
 #endif
 
-namespace varn::diagnostics {
+namespace varn::diagnostics
+{
 
-class CrashHandler {
+class CrashHandler
+{
 public:
     CrashHandler() = delete;
 
@@ -34,35 +36,39 @@ private:
 
 #if defined(_WIN32)
 
-inline const char* CrashHandler::exceptionName(DWORD code) {
-    switch (code) {
-        case EXCEPTION_ACCESS_VIOLATION:
-            return "access violation";
-        case EXCEPTION_STACK_OVERFLOW:
-            return "stack overflow";
-        case EXCEPTION_ILLEGAL_INSTRUCTION:
-            return "illegal instruction";
-        case EXCEPTION_INT_DIVIDE_BY_ZERO:
-            return "integer divide by zero";
-        case EXCEPTION_PRIV_INSTRUCTION:
-            return "privileged instruction";
-        case EXCEPTION_IN_PAGE_ERROR:
-            return "in-page i/o error";
-        case EXCEPTION_DATATYPE_MISALIGNMENT:
-            return "datatype misalignment";
-        case 0xC0000374:
-            return "heap corruption";
-        case 0xC0000409:
-            return "stack buffer overrun or fast-fail";
-        default:
-            return "unknown exception";
+inline const char* CrashHandler::exceptionName(DWORD code)
+{
+    switch (code)
+    {
+    case EXCEPTION_ACCESS_VIOLATION:
+        return "access violation";
+    case EXCEPTION_STACK_OVERFLOW:
+        return "stack overflow";
+    case EXCEPTION_ILLEGAL_INSTRUCTION:
+        return "illegal instruction";
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        return "integer divide by zero";
+    case EXCEPTION_PRIV_INSTRUCTION:
+        return "privileged instruction";
+    case EXCEPTION_IN_PAGE_ERROR:
+        return "in-page i/o error";
+    case EXCEPTION_DATATYPE_MISALIGNMENT:
+        return "datatype misalignment";
+    case 0xC0000374:
+        return "heap corruption";
+    case 0xC0000409:
+        return "stack buffer overrun or fast-fail";
+    default:
+        return "unknown exception";
     }
 }
 
-inline void CrashHandler::printBacktrace() {
+inline void CrashHandler::printBacktrace()
+{
     HANDLE process = GetCurrentProcess();
     SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
-    if (!SymInitialize(process, nullptr, TRUE)) {
+    if (!SymInitialize(process, nullptr, TRUE))
+    {
         return;
     }
 
@@ -74,24 +80,31 @@ inline void CrashHandler::printBacktrace() {
     symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
     symbol->MaxNameLen = 255;
 
-    for (USHORT i = 0; i < count; ++i) {
+    for (USHORT i = 0; i < count; ++i)
+    {
         const DWORD64 address = static_cast<DWORD64>(reinterpret_cast<uintptr_t>(frames[i]));
         DWORD64 symbolOffset = 0;
 
-        if (SymFromAddr(process, address, &symbolOffset, symbol)) {
+        if (SymFromAddr(process, address, &symbolOffset, symbol))
+        {
             IMAGEHLP_LINE64 line = {0};
             line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
             DWORD lineOffset = 0;
 
-            if (SymGetLineFromAddr64(process, address, &lineOffset, &line)) {
+            if (SymGetLineFromAddr64(process, address, &lineOffset, &line))
+            {
                 fprintf(stderr, "  #%2u %s + 0x%llx  (%s:%lu)\n", i, symbol->Name,
                         static_cast<unsigned long long>(symbolOffset), line.FileName,
                         static_cast<unsigned long>(line.LineNumber));
-            } else {
+            }
+            else
+            {
                 fprintf(stderr, "  #%2u %s + 0x%llx\n", i, symbol->Name,
                         static_cast<unsigned long long>(symbolOffset));
             }
-        } else {
+        }
+        else
+        {
             fprintf(stderr, "  #%2u %p\n", i, frames[i]);
         }
     }
@@ -99,14 +112,16 @@ inline void CrashHandler::printBacktrace() {
     SymCleanup(process);
 }
 
-inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info) {
+inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info)
+{
     const EXCEPTION_RECORD* record = info->ExceptionRecord;
     const DWORD code = record->ExceptionCode;
 
     fprintf(stderr, "\n[CrashHandler] Unhandled exception 0x%08lX (%s) at %p.\n", static_cast<unsigned long>(code),
             exceptionName(code), record->ExceptionAddress);
 
-    if (code == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2) {
+    if (code == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2)
+    {
         const ULONG_PTR operation = record->ExceptionInformation[0];
         const char* verb = operation == 0 ? "reading" : (operation == 1 ? "writing" : "executing");
         fprintf(stderr, "[CrashHandler] While %s address 0x%llx.\n", verb,
@@ -114,7 +129,8 @@ inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info) {
     }
     fflush(stderr);
 
-    if (code != EXCEPTION_STACK_OVERFLOW) {
+    if (code != EXCEPTION_STACK_OVERFLOW)
+    {
         printBacktrace();
         fflush(stderr);
     }
@@ -124,21 +140,31 @@ inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info) {
 
 #endif // _WIN32
 
-inline void CrashHandler::printActiveException() {
-    if (std::exception_ptr current = std::current_exception()) {
-        try {
+inline void CrashHandler::printActiveException()
+{
+    if (std::exception_ptr current = std::current_exception())
+    {
+        try
+        {
             std::rethrow_exception(current);
-        } catch (const std::exception& ex) {
+        }
+        catch (const std::exception& ex)
+        {
             fprintf(stderr, "[CrashHandler] Unhandled C++ exception: %s.\n", ex.what());
-        } catch (...) {
+        }
+        catch (...)
+        {
             fprintf(stderr, "[CrashHandler] Unhandled non-standard C++ exception.\n");
         }
-    } else {
+    }
+    else
+    {
         fprintf(stderr, "[CrashHandler] Terminate with no active exception (often a longjmp across C++ frames).\n");
     }
 }
 
-inline void CrashHandler::terminateHandler() {
+inline void CrashHandler::terminateHandler()
+{
     fprintf(stderr, "\n[CrashHandler] Triggered by std::terminate.\n");
     printActiveException();
     fflush(stderr);
@@ -151,7 +177,8 @@ inline void CrashHandler::terminateHandler() {
     std::abort();
 }
 
-inline void CrashHandler::install() {
+inline void CrashHandler::install()
+{
     std::set_terminate(&CrashHandler::terminateHandler);
 
 #if defined(_WIN32)

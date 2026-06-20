@@ -3,16 +3,20 @@
 #include <algorithm>
 #include <cctype>
 
-namespace varn::http {
+namespace varn::http
+{
 
-std::string Router::urlEncodeSegment(const std::string& value) {
+std::string Router::urlEncodeSegment(const std::string& value)
+{
     static const char* hex = "0123456789ABCDEF";
     std::string out;
     out.reserve(value.size());
-    for (unsigned char c : value) {
+    for (unsigned char c : value)
+    {
         const bool unreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
                                 c == '-' || c == '_' || c == '.' || c == '~';
-        if (unreserved) {
+        if (unreserved)
+        {
             out += static_cast<char>(c);
             continue;
         }
@@ -23,49 +27,64 @@ std::string Router::urlEncodeSegment(const std::string& value) {
     return out;
 }
 
-std::vector<std::string> Router::splitPath(const std::string& path) {
+std::vector<std::string> Router::splitPath(const std::string& path)
+{
     std::vector<std::string> parts;
     std::string current;
 
-    for (char c : path) {
-        if (c != '/') {
+    for (char c : path)
+    {
+        if (c != '/')
+        {
             current += c;
             continue;
         }
-        if (!current.empty()) {
+        if (!current.empty())
+        {
             parts.push_back(current);
             current.clear();
         }
     }
 
-    if (!current.empty()) {
+    if (!current.empty())
+    {
         parts.push_back(current);
     }
 
     return parts;
 }
 
-std::string Router::toUpper(std::string value) {
-    for (char& c : value) {
+std::string Router::toUpper(std::string value)
+{
+    for (char& c : value)
+    {
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
     return value;
 }
 
-std::regex Router::compileConstraint(const std::string& spec) {
-    if (spec == "int") return std::regex("[0-9]+");
-    if (spec == "alpha") return std::regex("[A-Za-z]+");
-    if (spec == "alnum") return std::regex("[A-Za-z0-9]+");
-    if (spec == "slug") return std::regex("[A-Za-z0-9_-]+");
-    if (spec == "uuid") return std::regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+std::regex Router::compileConstraint(const std::string& spec)
+{
+    if (spec == "int")
+        return std::regex("[0-9]+");
+    if (spec == "alpha")
+        return std::regex("[A-Za-z]+");
+    if (spec == "alnum")
+        return std::regex("[A-Za-z0-9]+");
+    if (spec == "slug")
+        return std::regex("[A-Za-z0-9_-]+");
+    if (spec == "uuid")
+        return std::regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
     return std::regex(spec);
 }
 
-int Router::add(const std::string& method, const std::string& pattern) {
+int Router::add(const std::string& method, const std::string& pattern)
+{
     Route route;
     route.method = toUpper(method);
 
-    for (const std::string& token : splitPath(pattern)) {
+    for (const std::string& token : splitPath(pattern))
+    {
         Segment segment;
         segment.isParam = token.front() == ':';
         segment.text = segment.isParam ? token.substr(1) : token;
@@ -76,13 +95,16 @@ int Router::add(const std::string& method, const std::string& pattern) {
     return static_cast<int>(routes.size()) - 1;
 }
 
-void Router::setConstraint(int routeId, const std::string& param, const std::string& constraint) {
+void Router::setConstraint(int routeId, const std::string& param, const std::string& constraint)
+{
     routes.at(routeId).constraints[param] = compileConstraint(constraint);
 }
 
-void Router::setName(int routeId, const std::string& name) {
+void Router::setName(int routeId, const std::string& name)
+{
     const auto existing = namedRoutes.find(name);
-    if (existing != namedRoutes.end()) {
+    if (existing != namedRoutes.end())
+    {
         throw std::runtime_error("[Router] The route name '" + name + "' is already in use.");
     }
 
@@ -90,34 +112,45 @@ void Router::setName(int routeId, const std::string& name) {
     namedRoutes[name] = routeId;
 }
 
-bool Router::pathMatches(const Route& route, const std::vector<std::string>& parts, std::vector<RouteParam>& outParams) const {
-    if (route.segments.size() != parts.size()) {
+bool Router::pathMatches(const Route& route, const std::vector<std::string>& parts, std::vector<RouteParam>& outParams) const
+{
+    if (route.segments.size() != parts.size())
+    {
         return false;
     }
 
-    for (std::size_t i = 0; i < parts.size(); ++i) {
+    for (std::size_t i = 0; i < parts.size(); ++i)
+    {
         const Segment& segment = route.segments[i];
 
-        if (!segment.isParam) {
-            if (segment.text != parts[i]) {
+        if (!segment.isParam)
+        {
+            if (segment.text != parts[i])
+            {
                 return false;
             }
             continue;
         }
 
         const auto constraint = route.constraints.find(segment.text);
-        if (constraint != route.constraints.end()) {
+        if (constraint != route.constraints.end())
+        {
             // cap the matched length so a crafted segment cannot trigger catastrophic backtracking.
-            if (parts[i].size() > kMaxSegmentLength) {
+            if (parts[i].size() > kMaxSegmentLength)
+            {
                 return false;
             }
             bool matched = false;
-            try {
+            try
+            {
                 matched = std::regex_match(parts[i], constraint->second);
-            } catch (const std::exception&) {
+            }
+            catch (const std::exception&)
+            {
                 matched = false;
             }
-            if (!matched) {
+            if (!matched)
+            {
                 return false;
             }
         }
@@ -128,20 +161,24 @@ bool Router::pathMatches(const Route& route, const std::vector<std::string>& par
     return true;
 }
 
-MatchResult Router::match(const std::string& method, const std::string& path) const {
+MatchResult Router::match(const std::string& method, const std::string& path) const
+{
     const std::string wanted = toUpper(method);
 
     MatchResult result;
 
     // bound the total path length before any matching so constraint regexes stay cheap.
-    if (path.size() > kMaxPathLength) {
+    if (path.size() > kMaxPathLength)
+    {
         result.status = MatchStatus::NotFound;
         return result;
     }
 
     // reject control characters that desync segment matching and leak into params, logs and headers.
-    for (char c : path) {
-        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7f) {
+    for (char c : path)
+    {
+        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7f)
+        {
             result.status = MatchStatus::NotFound;
             return result;
         }
@@ -152,15 +189,18 @@ MatchResult Router::match(const std::string& method, const std::string& path) co
     int headFallback = -1;
     std::vector<RouteParam> headParams;
 
-    for (std::size_t i = 0; i < routes.size(); ++i) {
+    for (std::size_t i = 0; i < routes.size(); ++i)
+    {
         const Route& route = routes[i];
 
         std::vector<RouteParam> params;
-        if (!pathMatches(route, parts, params)) {
+        if (!pathMatches(route, parts, params))
+        {
             continue;
         }
 
-        if (route.method == wanted || route.method == "ALL") {
+        if (route.method == wanted || route.method == "ALL")
+        {
             result.status = MatchStatus::Found;
             result.routeId = static_cast<int>(i);
             result.params = std::move(params);
@@ -168,24 +208,28 @@ MatchResult Router::match(const std::string& method, const std::string& path) co
         }
 
         // a HEAD request falls back to the first matching GET handler, whose body the transport drops.
-        if (wanted == "HEAD" && route.method == "GET" && headFallback < 0) {
+        if (wanted == "HEAD" && route.method == "GET" && headFallback < 0)
+        {
             headFallback = static_cast<int>(i);
             headParams = params;
         }
 
-        if (std::find(allowed.begin(), allowed.end(), route.method) == allowed.end()) {
+        if (std::find(allowed.begin(), allowed.end(), route.method) == allowed.end())
+        {
             allowed.push_back(route.method);
         }
     }
 
-    if (headFallback >= 0) {
+    if (headFallback >= 0)
+    {
         result.status = MatchStatus::Found;
         result.routeId = headFallback;
         result.params = std::move(headParams);
         return result;
     }
 
-    if (!allowed.empty()) {
+    if (!allowed.empty())
+    {
         result.status = MatchStatus::MethodNotAllowed;
         result.allowedMethods = std::move(allowed);
         return result;
@@ -195,24 +239,28 @@ MatchResult Router::match(const std::string& method, const std::string& path) co
     return result;
 }
 
-std::optional<std::string> Router::buildUrl(const std::string& name,
-                                            const std::unordered_map<std::string, std::string>& params) const {
+std::optional<std::string> Router::buildUrl(const std::string& name, const std::unordered_map<std::string, std::string>& params) const
+{
     const auto entry = namedRoutes.find(name);
-    if (entry == namedRoutes.end()) {
+    if (entry == namedRoutes.end())
+    {
         return std::nullopt;
     }
 
     std::string url;
-    for (const Segment& segment : routes[entry->second].segments) {
+    for (const Segment& segment : routes[entry->second].segments)
+    {
         url += '/';
 
-        if (!segment.isParam) {
+        if (!segment.isParam)
+        {
             url += segment.text;
             continue;
         }
 
         const auto value = params.find(segment.text);
-        if (value == params.end()) {
+        if (value == params.end())
+        {
             return std::nullopt;
         }
         url += urlEncodeSegment(value->second);

@@ -13,15 +13,18 @@
 #include <emscripten/emscripten.h>
 #endif
 
-namespace varn::wasm {
+namespace varn::wasm
+{
 
-struct RunResult {
+struct RunResult
+{
     bool ok = false;
     std::string output;
     std::string error;
 };
 
-class WasmHost {
+class WasmHost
+{
 public:
     WasmHost() = delete;
 
@@ -30,7 +33,8 @@ public:
     static void resetRuntime();
 
 private:
-    struct PrintSinkScope {
+    struct PrintSinkScope
+    {
         explicit PrintSinkScope(std::string* sink) { printSink = sink; }
         PrintSinkScope(const PrintSinkScope&) = delete;
         PrintSinkScope& operator=(const PrintSinkScope&) = delete;
@@ -53,16 +57,20 @@ private:
 #endif
 };
 
-int WasmHost::luaPrintCapture(lua_State* L) {
-    if (!printSink) {
+int WasmHost::luaPrintCapture(lua_State* L)
+{
+    if (!printSink)
+    {
         return 0;
     }
 
     const int n = lua_gettop(L);
     std::string line;
 
-    for (int i = 1; i <= n; ++i) {
-        if (i > 1) {
+    for (int i = 1; i <= n; ++i)
+    {
+        if (i > 1)
+        {
             line += '\t';
         }
         size_t len = 0;
@@ -77,29 +85,37 @@ int WasmHost::luaPrintCapture(lua_State* L) {
 }
 
 #if defined(__EMSCRIPTEN__)
-void WasmHost::lineHook(lua_State* /*L*/, lua_Debug* /*ar*/) {
+void WasmHost::lineHook(lua_State* /*L*/, lua_Debug* /*ar*/)
+{
     ++hookTick;
-    if ((hookTick % 32) == 0) {
+    if ((hookTick % 32) == 0)
+    {
         emscripten_sleep(0);
     }
 }
 
-void WasmHost::attachLineHook(lua_State* L, void*) {
+void WasmHost::attachLineHook(lua_State* L, void*)
+{
     hookTick = 0;
     lua_sethook(L, &WasmHost::lineHook, LUA_MASKCOUNT, 500);
 }
 
-void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt) {
+void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt)
+{
     const double deadlineMs = emscripten_get_now() + 120000.0;
-    while (emscripten_get_now() < deadlineMs) {
+    while (emscripten_get_now() < deadlineMs)
+    {
         bool progressed;
-        do {
+        do
+        {
             progressed = false;
-            if (rt.taskPool().hasPostedJobs()) {
+            if (rt.taskPool().hasPostedJobs())
+            {
                 rt.taskPool().drainPostedJobs();
                 progressed = true;
             }
-            if (rt.mainLoop().hasPendingJobs()) {
+            if (rt.mainLoop().hasPendingJobs())
+            {
                 rt.mainLoop().drainPostedJobs();
                 progressed = true;
             }
@@ -108,7 +124,8 @@ void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt) {
         // a pending fetch resumes via a JS callback, and an undue timer matures on the next pump, so either condition means more work is expected even though no job ran this iteration.
         const bool fetchPending = varn::wasm::WasmAsyncHost::fetchInflight().load(std::memory_order_acquire) > 0;
         const bool timerPending = rt.mainLoop().hasPendingTimers();
-        if (fetchPending || timerPending) {
+        if (fetchPending || timerPending)
+        {
             emscripten_sleep(0);
             continue;
         }
@@ -117,24 +134,29 @@ void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt) {
 }
 #endif
 
-std::unique_ptr<varn::runtime::Runtime>& WasmHost::runtime() {
+std::unique_ptr<varn::runtime::Runtime>& WasmHost::runtime()
+{
     static std::unique_ptr<varn::runtime::Runtime> instance;
     return instance;
 }
 
-void WasmHost::resetRuntime() {
+void WasmHost::resetRuntime()
+{
     auto& rtPtr = runtime();
-    if (rtPtr) {
+    if (rtPtr)
+    {
         rtPtr->stop();
         rtPtr.reset();
     }
 }
 
-RunResult WasmHost::runChunk(const std::string& source) {
+RunResult WasmHost::runChunk(const std::string& source)
+{
     RunResult result;
 
     auto& rtPtr = runtime();
-    if (!rtPtr) {
+    if (!rtPtr)
+    {
         rtPtr = std::make_unique<varn::runtime::Runtime>(std::vector<std::string>{});
         lua_State* Lsetup = rtPtr->luaState();
         lua_pushcfunction(Lsetup, &WasmHost::luaPrintCapture);
@@ -162,7 +184,8 @@ RunResult WasmHost::runChunk(const std::string& source) {
 
     result.output = std::move(collected);
     result.ok = ok;
-    if (!ok) {
+    if (!ok)
+    {
         result.error = std::move(err);
     }
     return result;
@@ -171,7 +194,8 @@ RunResult WasmHost::runChunk(const std::string& source) {
 } // namespace varn::wasm
 
 #if defined(__EMSCRIPTEN__)
-EMSCRIPTEN_BINDINGS(varn_wasm) {
+EMSCRIPTEN_BINDINGS(varn_wasm)
+{
     emscripten::value_object<varn::wasm::RunResult>("RunResult")
         .field("ok", &varn::wasm::RunResult::ok)
         .field("output", &varn::wasm::RunResult::output)

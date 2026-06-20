@@ -6,13 +6,16 @@
 
 struct lua_State;
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 class Runtime;
 }
 
-namespace varn::zip {
+namespace varn::zip
+{
 
-class ZipModule {
+class ZipModule
+{
 public:
     ZipModule() = delete;
     static void install(lua_State* L);

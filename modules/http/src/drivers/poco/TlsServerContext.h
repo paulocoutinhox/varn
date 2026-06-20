@@ -9,9 +9,11 @@
 #include <string>
 #include <string_view>
 
-namespace varn::http {
+namespace varn::http
+{
 
-class TlsServerContext {
+class TlsServerContext
+{
 public:
     static Poco::Net::Context::Ptr create(const HttpServerOptions& opts);
     static void initializeSslManager(Poco::Net::Context::Ptr context);

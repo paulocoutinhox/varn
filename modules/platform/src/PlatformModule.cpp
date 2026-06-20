@@ -8,82 +8,101 @@
 #include <exception>
 #include <string>
 
-namespace varn::platform {
+namespace varn::platform
+{
 
-int PlatformModule::luaOs(lua_State* L) {
+int PlatformModule::luaOs(lua_State* L)
+{
     const std::string v = PlatformInfo::osId();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
 
-int PlatformModule::luaArch(lua_State* L) {
+int PlatformModule::luaArch(lua_State* L)
+{
     const std::string v = PlatformInfo::archId();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
 
-int PlatformModule::luaLibPrefix(lua_State* L) {
+int PlatformModule::luaLibPrefix(lua_State* L)
+{
     const std::string v = PlatformInfo::libPrefix();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
 
-int PlatformModule::luaShlibSuffix(lua_State* L) {
+int PlatformModule::luaShlibSuffix(lua_State* L)
+{
     const std::string v = PlatformInfo::shlibSuffix();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
 
-int PlatformModule::luaLibraryFilename(lua_State* L) {
+int PlatformModule::luaLibraryFilename(lua_State* L)
+{
     const char* name = luaL_checkstring(L, 1);
-    try {
+    try
+    {
         const std::string path = PlatformInfo::libraryFilenameForName(name);
         lua_pushlstring(L, path.data(), path.size());
         return 1;
-    } catch (const std::exception& ex) {
+    }
+    catch (const std::exception& ex)
+    {
         return luaL_error(L, "%s", ex.what());
     }
 }
 
-int PlatformModule::luaHostVersion(lua_State* L) {
+int PlatformModule::luaHostVersion(lua_State* L)
+{
     lua_pushstring(L, VARN_VERSION_STRING);
     return 1;
 }
 
-int PlatformModule::luaCpuCount(lua_State* L) {
+int PlatformModule::luaCpuCount(lua_State* L)
+{
     lua_pushinteger(L, static_cast<lua_Integer>(PlatformInfo::cpuCount()));
     return 1;
 }
 
-int PlatformModule::luaPointerSize(lua_State* L) {
+int PlatformModule::luaPointerSize(lua_State* L)
+{
     lua_pushinteger(L, static_cast<lua_Integer>(PlatformInfo::pointerSize()));
     return 1;
 }
 
-int PlatformModule::luaEndianness(lua_State* L) {
+int PlatformModule::luaEndianness(lua_State* L)
+{
     const std::string v = PlatformInfo::endianness();
     lua_pushlstring(L, v.data(), v.size());
     return 1;
 }
 
-int PlatformModule::luaLibraryPathByName(lua_State* L) {
+int PlatformModule::luaLibraryPathByName(lua_State* L)
+{
     const char* name = luaL_checkstring(L, 1);
     const char* subdirRaw = luaL_optstring(L, 2, ".");
-    try {
+    try
+    {
         std::string out = subdirRaw;
         const std::string file = PlatformInfo::libraryFilenameForName(name);
-        if (!out.empty() && out.back() != '/' && out.back() != '\\') {
+        if (!out.empty() && out.back() != '/' && out.back() != '\\')
+        {
             out += '/';
         }
         out += file;
         lua_pushlstring(L, out.data(), out.size());
         return 1;
-    } catch (const std::exception& ex) {
+    }
+    catch (const std::exception& ex)
+    {
         return luaL_error(L, "%s", ex.what());
     }
 }
 
-int PlatformModule::luaOpen(lua_State* L) {
+int PlatformModule::luaOpen(lua_State* L)
+{
     lua_newtable(L);
 
     lua_pushcfunction(L, &PlatformModule::luaOs);
@@ -119,7 +138,8 @@ int PlatformModule::luaOpen(lua_State* L) {
     return 1;
 }
 
-void PlatformModule::install(lua_State* L) {
+void PlatformModule::install(lua_State* L)
+{
     luaL_requiref(L, "platform", &PlatformModule::luaOpen, 1);
     lua_pop(L, 1);
 }

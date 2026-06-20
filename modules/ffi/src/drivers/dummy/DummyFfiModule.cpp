@@ -1,10 +1,13 @@
 #include <lua.hpp>
 
-namespace varn::ffi {
+namespace varn::ffi
+{
 
-class DummyFfi {
+class DummyFfi
+{
 public:
-    static int disabled(lua_State* L) {
+    static int disabled(lua_State* L)
+    {
         return luaL_error(L, "[DummyFfi] The FFI module is not available in this build.");
     }
 
@@ -31,7 +34,8 @@ public:
 
 } // namespace varn::ffi
 
-extern "C" int luaopen_ffi_dummy(lua_State* L) {
+extern "C" int luaopen_ffi_dummy(lua_State* L)
+{
     luaL_newlib(L, varn::ffi::DummyFfi::lib);
     lua_pushliteral(L, "0-dummy");
     lua_setfield(L, -2, "VERSION");

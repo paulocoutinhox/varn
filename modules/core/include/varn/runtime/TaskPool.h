@@ -11,9 +11,11 @@
 #include <thread>
 #include <vector>
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 
-class TaskPool {
+class TaskPool
+{
 public:
     using Job = std::function<void()>;
 

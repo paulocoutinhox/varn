@@ -2,9 +2,11 @@
 
 #include <string>
 
-namespace varn::http {
+namespace varn::http
+{
 
-class HttpText {
+class HttpText
+{
 public:
     static std::string toLower(std::string value);
     static bool iequals(const std::string& a, const std::string& b);

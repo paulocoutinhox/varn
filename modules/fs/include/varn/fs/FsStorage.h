@@ -2,9 +2,11 @@
 
 #include <string>
 
-namespace varn::fs {
+namespace varn::fs
+{
 
-class FsStorage {
+class FsStorage
+{
 public:
     FsStorage() = delete;
 

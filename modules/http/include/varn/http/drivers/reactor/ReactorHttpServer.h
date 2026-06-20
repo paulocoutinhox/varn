@@ -7,16 +7,18 @@
 #include <atomic>
 #include <memory>
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 class Runtime;
 }
 
-namespace varn::http {
+namespace varn::http
+{
 
-class ReactorHttpServer final : public HttpServer {
+class ReactorHttpServer final : public HttpServer
+{
 public:
-    ReactorHttpServer(varn::runtime::Runtime& rt, HttpServerOptions opts, HttpHandler onRequest,
-                      WebSocketHandler onWebSocket = {});
+    ReactorHttpServer(varn::runtime::Runtime& rt, HttpServerOptions opts, HttpHandler onRequest, WebSocketHandler onWebSocket = {});
     ~ReactorHttpServer() override;
 
     void start() override;

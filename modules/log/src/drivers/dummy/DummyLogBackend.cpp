@@ -1,8 +1,10 @@
 #include "varn/log/Log.h"
 
-namespace varn::log {
+namespace varn::log
+{
 
-void Log::emit(Level /*level*/, std::string_view /*message*/) {
+void Log::emit(Level /*level*/, std::string_view /*message*/)
+{
 }
 
 } // namespace varn::log

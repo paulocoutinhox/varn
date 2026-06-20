@@ -4,9 +4,11 @@
 #include <map>
 #include <string>
 
-namespace varn::lua {
+namespace varn::lua
+{
 
-class LuaHelpers {
+class LuaHelpers
+{
 public:
     LuaHelpers() = delete;
 

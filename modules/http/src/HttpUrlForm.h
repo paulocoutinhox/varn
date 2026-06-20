@@ -4,9 +4,11 @@
 
 struct lua_State;
 
-namespace varn::http {
+namespace varn::http
+{
 
-class HttpUrlForm {
+class HttpUrlForm
+{
 public:
     static std::string urlDecode(const std::string& input);
     static void pushFormUrlEncoded(lua_State* L, const std::string& body);

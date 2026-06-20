@@ -2,6 +2,7 @@
 
 #if !defined(__EMSCRIPTEN__)
 #include <Poco/Net/Socket.h>
+#include <atomic>
 #include <deque>
 #include <uv.h>
 #include <vector>
@@ -9,12 +10,15 @@
 
 #include <algorithm>
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 
 #if !defined(__EMSCRIPTEN__)
 
-struct EventLoop::Poller {
-    struct SocketState {
+struct EventLoop::Poller
+{
+    struct SocketState
+    {
         uv_poll_t handle;
         Poco::Net::Socket socket;
         std::deque<IoHandler> readers;
@@ -29,9 +33,10 @@ struct EventLoop::Poller {
     std::map<Poco::Net::Socket, SocketState*> entries;
     std::mutex commandMutex;
     std::vector<std::function<void()>> commands;
-    bool closed = false;
+    std::atomic<bool> closed{false};
 
-    Poller() {
+    Poller()
+    {
         uv_loop_init(&loop);
         uv_async_init(&loop, &async, nullptr);
         uv_timer_init(&loop, &timer);
@@ -39,21 +44,27 @@ struct EventLoop::Poller {
         timer.data = this;
     }
 
-    ~Poller() {
-        if (!closed) {
+    ~Poller()
+    {
+        if (!closed)
+        {
             clear();
         }
     }
 
-    static void onPoll(uv_poll_t* handle, int status, int events) {
+    static void onPoll(uv_poll_t* handle, int status, int events)
+    {
         static_cast<SocketState*>(handle->data)->owner->serve(static_cast<SocketState*>(handle->data), status, events);
     }
 
-    SocketState* ensure(const Poco::Net::Socket& socket) {
+    SocketState* ensure(const Poco::Net::Socket& socket)
+    {
         auto it = entries.find(socket);
-        if (it != entries.end()) {
+        if (it != entries.end())
+        {
             return it->second;
         }
+
         auto* state = new SocketState{};
         state->socket = socket;
         state->owner = this;
@@ -63,104 +74,146 @@ struct EventLoop::Poller {
         return state;
     }
 
-    void addReader(const Poco::Net::Socket& socket, IoHandler handler) {
+    void addReader(const Poco::Net::Socket& socket, IoHandler handler)
+    {
         SocketState* state = ensure(socket);
         state->readers.push_back(std::move(handler));
         refreshMode(state);
     }
 
-    void addWriter(const Poco::Net::Socket& socket, IoHandler handler) {
+    void addWriter(const Poco::Net::Socket& socket, IoHandler handler)
+    {
         SocketState* state = ensure(socket);
         state->writers.push_back(std::move(handler));
         refreshMode(state);
     }
 
-    void refreshMode(SocketState* state) {
-        if (state->retiring) {
+    void refreshMode(SocketState* state)
+    {
+        if (state->retiring)
+        {
             return;
         }
+
         int mask = 0;
-        if (!state->readers.empty()) {
+        if (!state->readers.empty())
+        {
             mask |= UV_READABLE;
         }
-        if (!state->writers.empty()) {
+
+        if (!state->writers.empty())
+        {
             mask |= UV_WRITABLE;
         }
-        if (mask == 0) {
+
+        if (mask == 0)
+        {
             retire(state);
             return;
         }
+
         uv_poll_start(&state->handle, mask, onPoll);
     }
 
-    void retire(SocketState* state) {
-        if (state->retiring) {
+    void retire(SocketState* state)
+    {
+        if (state->retiring)
+        {
             return;
         }
+
         // the handle is freed in its close callback, so the state outlives this call until libuv runs that callback.
         state->retiring = true;
         entries.erase(state->socket);
         uv_poll_stop(&state->handle);
         uv_close(reinterpret_cast<uv_handle_t*>(&state->handle),
-                 [](uv_handle_t* handle) { delete static_cast<SocketState*>(handle->data); });
+                 [](uv_handle_t* handle)
+                 { delete static_cast<SocketState*>(handle->data); });
     }
 
-    void serve(SocketState* state, int status, int events) {
+    void serve(SocketState* state, int status, int events)
+    {
         const bool errored = status < 0;
 
-        if ((events & UV_READABLE) || errored) {
-            if (!state->readers.empty()) {
+        if ((events & UV_READABLE) || errored)
+        {
+            if (!state->readers.empty())
+            {
                 // pop the handler before invoking it so a close triggered inside the handler cannot rerun it.
                 IoHandler handler = std::move(state->readers.front());
                 state->readers.pop_front();
                 bool done = true;
-                try {
+                try
+                {
                     done = handler();
-                } catch (...) {
                 }
-                if (state->retiring) {
+                catch (...)
+                {
+                }
+
+                if (state->retiring)
+                {
                     return;
                 }
-                if (!done) {
+
+                if (!done)
+                {
                     state->readers.push_front(std::move(handler));
                 }
             }
         }
 
-        if (state->retiring) {
+        if (state->retiring)
+        {
             return;
         }
 
-        if ((events & UV_WRITABLE) || errored) {
-            if (!state->writers.empty()) {
+        if ((events & UV_WRITABLE) || errored)
+        {
+            if (!state->writers.empty())
+            {
                 IoHandler handler = std::move(state->writers.front());
                 state->writers.pop_front();
                 bool done = true;
-                try {
+                try
+                {
                     done = handler();
-                } catch (...) {
                 }
-                if (state->retiring) {
+                catch (...)
+                {
+                }
+
+                if (state->retiring)
+                {
                     return;
                 }
-                if (!done) {
+
+                if (!done)
+                {
                     state->writers.push_front(std::move(handler));
                 }
             }
         }
 
-        if (!state->retiring) {
+        if (!state->retiring)
+        {
             refreshMode(state);
         }
     }
 
-    void closeNow(const Poco::Net::Socket& socket) {
+    void closeNow(const Poco::Net::Socket& socket)
+    {
         auto it = entries.find(socket);
-        if (it == entries.end()) {
-            try {
+        if (it == entries.end())
+        {
+            try
+            {
                 socket.impl()->close();
-            } catch (...) {
             }
+            catch (...)
+            {
+            }
+
             return;
         }
 
@@ -169,72 +222,103 @@ struct EventLoop::Poller {
         std::deque<IoHandler> writers = std::move(state->writers);
 
         // close the fd so each pending handler's next i/o call fails, then retire the handle and run them so promises reject.
-        try {
+        try
+        {
             state->socket.impl()->close();
-        } catch (...) {
         }
+        catch (...)
+        {
+        }
+
         retire(state);
-        for (auto& reader : readers) {
-            try {
+        for (auto& reader : readers)
+        {
+            try
+            {
                 reader();
-            } catch (...) {
+            }
+            catch (...)
+            {
             }
         }
-        for (auto& writer : writers) {
-            try {
+
+        for (auto& writer : writers)
+        {
+            try
+            {
                 writer();
-            } catch (...) {
+            }
+            catch (...)
+            {
             }
         }
     }
 
-    void submit(std::function<void()> command) {
+    void submit(std::function<void()> command)
+    {
         {
             std::lock_guard<std::mutex> lock(commandMutex);
             commands.push_back(std::move(command));
         }
+
         uv_async_send(&async);
     }
 
-    void drainCommands() {
+    void drainCommands()
+    {
         std::vector<std::function<void()>> pending;
         {
             std::lock_guard<std::mutex> lock(commandMutex);
             pending.swap(commands);
         }
-        for (auto& command : pending) {
-            try {
+
+        for (auto& command : pending)
+        {
+            try
+            {
                 command();
-            } catch (...) {
+            }
+            catch (...)
+            {
             }
         }
     }
 
-    bool hasSockets() const {
+    bool hasSockets() const
+    {
         return !entries.empty();
     }
 
-    void clear() {
-        if (closed) {
+    void clear()
+    {
+        if (closed)
+        {
             return;
         }
+
         closed = true;
         {
             std::lock_guard<std::mutex> lock(commandMutex);
             commands.clear();
         }
+
         std::vector<SocketState*> all;
         all.reserve(entries.size());
-        for (auto& entry : entries) {
+        for (auto& entry : entries)
+        {
             all.push_back(entry.second);
         }
+
         entries.clear();
-        for (auto* state : all) {
+        for (auto* state : all)
+        {
             state->retiring = true;
             uv_poll_stop(&state->handle);
             uv_close(reinterpret_cast<uv_handle_t*>(&state->handle),
-                     [](uv_handle_t* handle) { delete static_cast<SocketState*>(handle->data); });
+                     [](uv_handle_t* handle)
+                     { delete static_cast<SocketState*>(handle->data); });
         }
+
         uv_close(reinterpret_cast<uv_handle_t*>(&async), nullptr);
         uv_close(reinterpret_cast<uv_handle_t*>(&timer), nullptr);
         // run the loop until every close callback has fired so the handles are freed before the loop is closed.
@@ -243,17 +327,22 @@ struct EventLoop::Poller {
     }
 };
 
-namespace {
+namespace
+{
 void boundingTimerNoop(uv_timer_t*) {}
 } // namespace
 
 #else
 
-struct EventLoop::Poller {};
+struct EventLoop::Poller
+{
+};
 
 #endif
 
-EventLoop::EventLoop(std::shared_ptr<WorkLedger> ledger) : ledger(std::move(ledger)) {
+EventLoop::EventLoop(std::shared_ptr<WorkLedger> ledger)
+    : ledger(std::move(ledger))
+{
 #if !defined(__EMSCRIPTEN__)
     poller = std::make_unique<Poller>();
 #endif
@@ -262,86 +351,103 @@ EventLoop::EventLoop(std::shared_ptr<WorkLedger> ledger) : ledger(std::move(ledg
 EventLoop::~EventLoop() = default;
 
 #if !defined(__EMSCRIPTEN__)
-bool EventLoop::onLoopThread() const {
+bool EventLoop::onLoopThread() const
+{
     return std::this_thread::get_id() == loopThread.load(std::memory_order_acquire);
 }
 #endif
 
-void EventLoop::wakeFromAnotherThread() {
+void EventLoop::wakeFromAnotherThread()
+{
 #if !defined(__EMSCRIPTEN__)
     // only a cross-thread post must interrupt the wait, since the loop re-checks its job queue before every poll.
-    if (poller && !poller->closed && !onLoopThread()) {
+    if (poller && !poller->closed && !onLoopThread())
+    {
         uv_async_send(&poller->async);
     }
 #endif
 }
 
-void EventLoop::post(Job job) {
+void EventLoop::post(Job job)
+{
     ledger->enter();
     {
         std::lock_guard<std::mutex> lock(mutex);
-        jobs.push([ledger = ledger, j = std::move(job)]() mutable {
+        jobs.push([ledger = ledger, j = std::move(job)]() mutable
+                  {
             j();
-            ledger->leave();
-        });
+            ledger->leave(); });
     }
     wakeFromAnotherThread();
 }
 
-void EventLoop::postDelayed(long long delayMs, Job job) {
+void EventLoop::postDelayed(long long delayMs, Job job)
+{
     // a timer fires on the loop thread after the delay, so it never occupies a worker thread while it waits.
     ledger->enter();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMs);
     {
         std::lock_guard<std::mutex> lock(mutex);
-        timers.emplace(deadline, [ledger = ledger, j = std::move(job)]() mutable {
+        timers.emplace(deadline, [ledger = ledger, j = std::move(job)]() mutable
+                       {
             j();
-            ledger->leave();
-        });
+            ledger->leave(); });
     }
     wakeFromAnotherThread();
 }
 
 #if !defined(__EMSCRIPTEN__)
 
-void EventLoop::watchRead(const Poco::Net::Socket& socket, IoHandler handler) {
-    if (onLoopThread()) {
+void EventLoop::watchRead(const Poco::Net::Socket& socket, IoHandler handler)
+{
+    if (onLoopThread())
+    {
         poller->addReader(socket, std::move(handler));
         return;
     }
     Poller* p = poller.get();
-    p->submit([p, socket, handler = std::move(handler)]() mutable { p->addReader(socket, std::move(handler)); });
+    p->submit([p, socket, handler = std::move(handler)]() mutable
+              { p->addReader(socket, std::move(handler)); });
 }
 
-void EventLoop::watchWrite(const Poco::Net::Socket& socket, IoHandler handler) {
-    if (onLoopThread()) {
+void EventLoop::watchWrite(const Poco::Net::Socket& socket, IoHandler handler)
+{
+    if (onLoopThread())
+    {
         poller->addWriter(socket, std::move(handler));
         return;
     }
     Poller* p = poller.get();
-    p->submit([p, socket, handler = std::move(handler)]() mutable { p->addWriter(socket, std::move(handler)); });
+    p->submit([p, socket, handler = std::move(handler)]() mutable
+              { p->addWriter(socket, std::move(handler)); });
 }
 
-void EventLoop::closeSocket(const Poco::Net::Socket& socket) {
-    if (onLoopThread()) {
+void EventLoop::closeSocket(const Poco::Net::Socket& socket)
+{
+    if (onLoopThread())
+    {
         poller->closeNow(socket);
         return;
     }
     Poller* p = poller.get();
-    p->submit([p, socket]() mutable { p->closeNow(socket); });
+    p->submit([p, socket]() mutable
+              { p->closeNow(socket); });
 }
 
-bool EventLoop::isRunning() const {
+bool EventLoop::isRunning() const
+{
     return running.load(std::memory_order_acquire);
 }
 
-void EventLoop::shutdownIo() {
+void EventLoop::shutdownIo()
+{
     poller->clear();
 }
 
 #endif
 
-void EventLoop::run() {
+void EventLoop::run()
+{
 #if defined(__EMSCRIPTEN__)
     // wasm drives the loop by pumping drainPostedJobs from the host main loop, so run is never entered there.
     return;
@@ -349,32 +455,43 @@ void EventLoop::run() {
     running.store(true, std::memory_order_release);
     loopThread.store(std::this_thread::get_id(), std::memory_order_release);
 
-    while (running.load(std::memory_order_acquire)) {
+    while (running.load(std::memory_order_acquire))
+    {
         // run every ready job and due timer, any of which may post more work, arm sockets, or stop the loop.
-        for (;;) {
-            if (!running.load(std::memory_order_acquire)) {
+        for (;;)
+        {
+            if (!running.load(std::memory_order_acquire))
+            {
                 break;
             }
+
             Job job;
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 const auto now = std::chrono::steady_clock::now();
-                while (!timers.empty() && timers.begin()->first <= now) {
+                while (!timers.empty() && timers.begin()->first <= now)
+                {
                     jobs.push(std::move(timers.begin()->second));
                     timers.erase(timers.begin());
                 }
-                if (jobs.empty()) {
+
+                if (jobs.empty())
+                {
                     break;
                 }
+
                 job = std::move(jobs.front());
                 jobs.pop();
             }
-            if (job) {
+
+            if (job)
+            {
                 job();
             }
         }
 
-        if (!running.load(std::memory_order_acquire)) {
+        if (!running.load(std::memory_order_acquire))
+        {
             break;
         }
 
@@ -384,17 +501,23 @@ void EventLoop::run() {
         long long timeoutMs = 1000;
         {
             std::lock_guard<std::mutex> lock(mutex);
-            if (!jobs.empty()) {
+            if (!jobs.empty())
+            {
                 continue;
             }
+
             const bool haveTimers = !timers.empty();
             const bool haveSockets = poller->hasSockets();
-            if (!haveTimers && !haveSockets) {
-                if (idleExitEligible && idleExitEligible()) {
+            if (!haveTimers && !haveSockets)
+            {
+                if (idleExitEligible && idleExitEligible())
+                {
                     running.store(false, std::memory_order_release);
                     break;
                 }
-            } else if (haveTimers) {
+            }
+            else if (haveTimers)
+            {
                 const auto now = std::chrono::steady_clock::now();
                 const auto next = timers.begin()->first;
                 const long long ms =
@@ -415,16 +538,19 @@ void EventLoop::run() {
 #endif
 }
 
-void EventLoop::stop() {
+void EventLoop::stop()
+{
     running.store(false, std::memory_order_release);
 #if !defined(__EMSCRIPTEN__)
-    if (poller && !poller->closed) {
+    if (poller && !poller->closed)
+    {
         uv_async_send(&poller->async);
     }
 #endif
 }
 
-void EventLoop::clearPendingJobs() {
+void EventLoop::clearPendingJobs()
+{
     // each queued job and timer entered the work ledger at post time, so drop them without invoking and release the matching ledger entries outside the lock so leave's notify path stays unlocked.
     std::queue<Job> drainedJobs;
     std::multimap<std::chrono::steady_clock::time_point, Job> drainedTimers;
@@ -435,57 +561,72 @@ void EventLoop::clearPendingJobs() {
     }
 
     const std::size_t dropped = drainedJobs.size() + drainedTimers.size();
-    for (std::size_t i = 0; i < dropped; ++i) {
+    for (std::size_t i = 0; i < dropped; ++i)
+    {
         ledger->leave();
     }
 }
 
-void EventLoop::wake() {
+void EventLoop::wake()
+{
 #if !defined(__EMSCRIPTEN__)
-    if (poller && !poller->closed) {
+    if (poller && !poller->closed)
+    {
         uv_async_send(&poller->async);
     }
 #endif
 }
 
-void EventLoop::setIdleExitPredicate(IdleExitPredicate predicate) {
+void EventLoop::setIdleExitPredicate(IdleExitPredicate predicate)
+{
     std::lock_guard<std::mutex> lock(mutex);
     idleExitEligible = std::move(predicate);
 }
 
-bool EventLoop::hasPendingJobs() const {
+bool EventLoop::hasPendingJobs() const
+{
     std::lock_guard<std::mutex> lock(mutex);
-    if (!jobs.empty()) {
+    if (!jobs.empty())
+    {
         return true;
     }
     // a timer whose deadline has arrived is a job that is ready to run, so it counts as pending for any caller that only ever pumps via drainPostedJobs.
     return !timers.empty() && timers.begin()->first <= std::chrono::steady_clock::now();
 }
 
-bool EventLoop::hasPendingTimers() const {
+bool EventLoop::hasPendingTimers() const
+{
     std::lock_guard<std::mutex> lock(mutex);
     return !timers.empty();
 }
 
 #if defined(__EMSCRIPTEN__)
-void EventLoop::drainPostedJobs() {
-    for (;;) {
+void EventLoop::drainPostedJobs()
+{
+    for (;;)
+    {
         Job job;
         {
             std::lock_guard<std::mutex> lock(mutex);
             // move any timer whose deadline has passed into the ready queue, so a wasm pump that never calls run() still gets postDelayed jobs to fire eventually.
             const auto now = std::chrono::steady_clock::now();
-            while (!timers.empty() && timers.begin()->first <= now) {
+            while (!timers.empty() && timers.begin()->first <= now)
+            {
                 jobs.push(std::move(timers.begin()->second));
                 timers.erase(timers.begin());
             }
-            if (jobs.empty()) {
+
+            if (jobs.empty())
+            {
                 break;
             }
+
             job = std::move(jobs.front());
             jobs.pop();
         }
-        if (job) {
+
+        if (job)
+        {
             job();
         }
     }

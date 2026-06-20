@@ -3,9 +3,11 @@
 #include <lua.hpp>
 #include <string>
 
-namespace varn::json {
+namespace varn::json
+{
 
-class JsonSerializer {
+class JsonSerializer
+{
 public:
     JsonSerializer() = delete;
 

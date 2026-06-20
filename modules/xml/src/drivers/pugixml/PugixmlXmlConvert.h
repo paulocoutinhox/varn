@@ -3,9 +3,11 @@
 #include <lua.hpp>
 #include <pugixml.hpp>
 
-namespace varn::xml {
+namespace varn::xml
+{
 
-class XmlConvert {
+class XmlConvert
+{
 public:
     static void pushElement(lua_State* L, const pugi::xml_node& node, int depth);
     static void buildElement(pugi::xml_node parent, lua_State* L, int nodeIndex, int depth);

@@ -11,25 +11,28 @@
 
 struct lua_State;
 
-namespace varn::http {
+namespace varn::http
+{
 class HttpServer;
 }
 
-namespace varn::lua {
+namespace varn::lua
+{
 class LuaEngine;
 }
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 
-class Runtime {
+class Runtime
+{
 public:
     explicit Runtime(std::vector<std::string> args, std::size_t scriptArgIndex = 1);
     ~Runtime();
 
     int runScript(const std::string& scriptPath);
     int runString(const std::string& source, const std::string& chunkName);
-    bool runStringWithoutEventLoop(const std::string& source, const std::string& chunkName, std::string* errorMessage,
-                                   void (*prePcallHook)(lua_State*, void*) = nullptr, void* prePcallUserdata = nullptr);
+    bool runStringWithoutEventLoop(const std::string& source, const std::string& chunkName, std::string* errorMessage, void (*prePcallHook)(lua_State*, void*) = nullptr, void* prePcallUserdata = nullptr);
 
     EventLoop& mainLoop();
     TaskPool& taskPool();

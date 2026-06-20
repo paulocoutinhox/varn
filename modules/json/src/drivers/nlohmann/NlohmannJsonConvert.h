@@ -5,9 +5,11 @@
 
 #include <string>
 
-namespace varn::json {
+namespace varn::json
+{
 
-class JsonConvert {
+class JsonConvert
+{
 public:
     static std::string dumpString(const std::string& value);
     static bool isSequence(lua_State* L, int index, lua_Integer& length);

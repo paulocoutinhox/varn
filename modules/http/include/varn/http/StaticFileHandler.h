@@ -4,9 +4,11 @@
 
 #include <string>
 
-namespace varn::http {
+namespace varn::http
+{
 
-class StaticFileHandler {
+class StaticFileHandler
+{
 public:
     StaticFileHandler(std::string publicDir, bool directoryListing);
     bool tryServe(const HttpRequest& request, HttpResponse& response) const;

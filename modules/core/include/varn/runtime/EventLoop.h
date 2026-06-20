@@ -12,16 +12,20 @@
 #include <thread>
 
 #if !defined(__EMSCRIPTEN__)
-namespace Poco {
-namespace Net {
+namespace Poco
+{
+namespace Net
+{
 class Socket;
 }
 } // namespace Poco
 #endif
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 
-class EventLoop {
+class EventLoop
+{
 public:
     using Job = std::function<void()>;
     using IdleExitPredicate = std::function<bool()>;

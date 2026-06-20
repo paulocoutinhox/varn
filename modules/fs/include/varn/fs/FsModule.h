@@ -2,13 +2,16 @@
 
 struct lua_State;
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 class Runtime;
 }
 
-namespace varn::fs {
+namespace varn::fs
+{
 
-class FsModule {
+class FsModule
+{
 public:
     FsModule() = delete;
 

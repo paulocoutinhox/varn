@@ -2,13 +2,16 @@
 
 #include <lua.hpp>
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 class Runtime;
 }
 
-namespace varn::async {
+namespace varn::async
+{
 
-class AsyncModule {
+class AsyncModule
+{
 public:
     AsyncModule() = delete;
 

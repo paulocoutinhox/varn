@@ -13,17 +13,15 @@
 #include <Poco/Net/Context.h>
 #endif
 
-namespace varn::http::client {
+namespace varn::http::client
+{
 
-class PocoClientExchange {
+class PocoClientExchange
+{
 public:
-    static std::string performHttp(const std::string& method, const Poco::URI& uri,
-                                   const std::map<std::string, std::string>& headers, const std::string& body,
-                                   const ClientRequestOptions& options);
+    static std::string performHttp(const std::string& method, const Poco::URI& uri, const std::map<std::string, std::string>& headers, const std::string& body, const ClientRequestOptions& options);
 #if defined(VARN_ENABLE_TLS)
-    static std::string performHttps(const std::string& method, const Poco::URI& uri,
-                                    const std::map<std::string, std::string>& headers, const std::string& body,
-                                    const ClientRequestOptions& options);
+    static std::string performHttps(const std::string& method, const Poco::URI& uri, const std::map<std::string, std::string>& headers, const std::string& body, const ClientRequestOptions& options);
 #endif
 
 private:

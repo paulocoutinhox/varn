@@ -2,9 +2,11 @@
 
 struct lua_State;
 
-namespace varn::http {
+namespace varn::http
+{
 
-class HttpAppModule {
+class HttpAppModule
+{
 public:
     HttpAppModule() = delete;
 

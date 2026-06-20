@@ -5,13 +5,16 @@
 
 struct lua_State;
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 class Runtime;
 }
 
-namespace varn::http {
+namespace varn::http
+{
 
-class HttpClientModule {
+class HttpClientModule
+{
 public:
     HttpClientModule() = delete;
 

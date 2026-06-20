@@ -9,28 +9,37 @@
 #include <sstream>
 #include <string>
 
-namespace varn::xml {
+namespace varn::xml
+{
 
-std::string XmlSerializer::sanitizeElementName(const std::string& raw) {
+std::string XmlSerializer::sanitizeElementName(const std::string& raw)
+{
     std::string out;
     out.reserve(raw.size());
-    for (char c : raw) {
-        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.') {
+    for (char c : raw)
+    {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.')
+        {
             out += c;
-        } else {
+        }
+        else
+        {
             out += '_';
         }
     }
-    if (out.empty()) {
+    if (out.empty())
+    {
         return "item";
     }
-    if (std::isdigit(static_cast<unsigned char>(out[0]))) {
+    if (std::isdigit(static_cast<unsigned char>(out[0])))
+    {
         out.insert(out.begin(), 'n');
     }
     return out;
 }
 
-std::string XmlSerializer::serialize(lua_State* L, int index) {
+std::string XmlSerializer::serialize(lua_State* L, int index)
+{
     index = lua_absindex(L, index);
     pugi::xml_document doc;
     pugi::xml_node decl = doc.prepend_child(pugi::node_declaration);
@@ -38,14 +47,16 @@ std::string XmlSerializer::serialize(lua_State* L, int index) {
     decl.append_attribute("encoding") = "UTF-8";
     pugi::xml_node root = doc.append_child("root");
 
-    if (!lua_istable(L, index)) {
+    if (!lua_istable(L, index))
+    {
         std::ostringstream o;
         doc.save(o, "  ", pugi::format_indent);
         return o.str();
     }
 
     lua_pushnil(L);
-    while (lua_next(L, index) != 0) {
+    while (lua_next(L, index) != 0)
+    {
         // luaL_tolstring pushes a copy of the key, so drop it before touching the value at -1 where lua_next still sees the original key on the next iteration.
         const char* keyRaw = luaL_tolstring(L, -2, nullptr);
         const std::string key = keyRaw ? keyRaw : "";
@@ -54,15 +65,22 @@ std::string XmlSerializer::serialize(lua_State* L, int index) {
         const std::string tag = sanitizeElementName(key);
         pugi::xml_node el = root.append_child(tag.c_str());
 
-        if (lua_isstring(L, -1)) {
+        if (lua_isstring(L, -1))
+        {
             size_t len = 0;
             const char* s = lua_tolstring(L, -1, &len);
             el.text().set(s, len);
-        } else if (lua_isboolean(L, -1)) {
+        }
+        else if (lua_isboolean(L, -1))
+        {
             el.append_child(pugi::node_pcdata).set_value(lua_toboolean(L, -1) ? "true" : "false");
-        } else if (lua_isnil(L, -1)) {
+        }
+        else if (lua_isnil(L, -1))
+        {
             el.append_child(pugi::node_pcdata).set_value("null");
-        } else {
+        }
+        else
+        {
             el.append_child(pugi::node_pcdata).set_value("[unsupported]");
         }
 
@@ -74,7 +92,8 @@ std::string XmlSerializer::serialize(lua_State* L, int index) {
     return out.str();
 }
 
-std::string XmlSerializer::encodeNode(lua_State* L, int index, int indent) {
+std::string XmlSerializer::encodeNode(lua_State* L, int index, int indent)
+{
     index = lua_absindex(L, index);
 
     pugi::xml_document doc;
@@ -82,33 +101,41 @@ std::string XmlSerializer::encodeNode(lua_State* L, int index, int indent) {
     decl.append_attribute("version") = "1.0";
     decl.append_attribute("encoding") = "UTF-8";
 
-    if (lua_istable(L, index)) {
+    if (lua_istable(L, index))
+    {
         XmlConvert::buildElement(doc, L, index, 0);
     }
 
     std::ostringstream out;
-    if (indent > 0) {
+    if (indent > 0)
+    {
         const std::string pad(static_cast<std::size_t>(indent), ' ');
         doc.save(out, pad.c_str(), pugi::format_indent);
-    } else {
+    }
+    else
+    {
         doc.save(out, "", pugi::format_raw);
     }
     return out.str();
 }
 
-bool XmlSerializer::parse(lua_State* L, const std::string& text) {
+bool XmlSerializer::parse(lua_State* L, const std::string& text)
+{
     pugi::xml_document doc;
     // pugixml does not load external entities or expand DTD entities, so xxe and entity bombs do not apply.
     const pugi::xml_parse_result result = doc.load_buffer(text.data(), text.size(), pugi::parse_default);
-    if (!result) {
+    if (!result)
+    {
         return false;
     }
 
     pugi::xml_node root = doc.first_child();
-    while (root && root.type() != pugi::node_element) {
+    while (root && root.type() != pugi::node_element)
+    {
         root = root.next_sibling();
     }
-    if (!root) {
+    if (!root)
+    {
         return false;
     }
 

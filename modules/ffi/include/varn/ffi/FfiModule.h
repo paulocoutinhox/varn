@@ -2,9 +2,11 @@
 
 struct lua_State;
 
-namespace varn::ffi {
+namespace varn::ffi
+{
 
-class FfiModule {
+class FfiModule
+{
 public:
     FfiModule() = delete;
 

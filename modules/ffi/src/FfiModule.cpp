@@ -3,8 +3,9 @@
 #include <lua.hpp>
 
 #if defined(VARN_FFI_DRIVER_LIBFFI)
-extern "C" {
-int luaopen_ffi(lua_State* L);
+extern "C"
+{
+    int luaopen_ffi(lua_State* L);
 }
 #endif
 
@@ -12,9 +13,11 @@ int luaopen_ffi(lua_State* L);
 extern "C" int luaopen_ffi_dummy(lua_State* L);
 #endif
 
-namespace varn::ffi {
+namespace varn::ffi
+{
 
-void FfiModule::install(lua_State* L) {
+void FfiModule::install(lua_State* L)
+{
 #if defined(VARN_FFI_DRIVER_LIBFFI)
     luaL_requiref(L, "ffi", luaopen_ffi, 1);
 #elif defined(VARN_FFI_DRIVER_DUMMY)

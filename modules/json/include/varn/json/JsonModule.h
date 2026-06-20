@@ -2,9 +2,11 @@
 
 struct lua_State;
 
-namespace varn::json {
+namespace varn::json
+{
 
-class JsonModule {
+class JsonModule
+{
 public:
     JsonModule() = delete;
 

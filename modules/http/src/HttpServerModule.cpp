@@ -1,9 +1,9 @@
-#include "varn/log/Log.h"
+#include "varn/http/HttpServerModule.h"
 #include "varn/http/HttpAppModule.h"
 #include "varn/http/HttpClientModule.h"
-#include "varn/http/HttpServerModule.h"
 #include "varn/http/HttpTypes.h"
 #include "varn/http/drivers/reactor/ReactorHttpServer.h"
+#include "varn/log/Log.h"
 #if VARN_JSON_DRIVER_NLOHMANN
 #include "varn/json/JsonSerializer.h"
 #endif
@@ -20,11 +20,13 @@
 #include <sstream>
 #include <string>
 
-namespace varn::http {
+namespace varn::http
+{
 
 using varn::runtime::Runtime;
 
-class HttpServerLuaBindings {
+class HttpServerLuaBindings
+{
 public:
     static int luaOpen(lua_State* L);
 
@@ -32,12 +34,14 @@ private:
     static constexpr const char* kServerMeta = "varn.HttpServerBuilder";
     static constexpr const char* kResponseMeta = "varn.HttpResponse";
 
-    struct ServerBuilderUserdata {
+    struct ServerBuilderUserdata
+    {
         Runtime* runtime = nullptr;
         int handlerRef = LUA_NOREF;
     };
 
-    struct ResponseUserdata {
+    struct ResponseUserdata
+    {
         std::shared_ptr<HttpResponse> response;
     };
 
@@ -61,11 +65,13 @@ private:
     static void createMetatables(lua_State* L);
 };
 
-Runtime& HttpServerLuaBindings::luaRuntime(lua_State* L) {
+Runtime& HttpServerLuaBindings::luaRuntime(lua_State* L)
+{
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
 }
 
-void HttpServerLuaBindings::pushResponse(lua_State* L, std::shared_ptr<HttpResponse> response) {
+void HttpServerLuaBindings::pushResponse(lua_State* L, std::shared_ptr<HttpResponse> response)
+{
     void* memory = lua_newuserdatauv(L, sizeof(ResponseUserdata), 0);
     new (memory) ResponseUserdata{std::move(response)};
 
@@ -73,23 +79,27 @@ void HttpServerLuaBindings::pushResponse(lua_State* L, std::shared_ptr<HttpRespo
     lua_setmetatable(L, -2);
 }
 
-HttpServerLuaBindings::ResponseUserdata* HttpServerLuaBindings::checkResponse(lua_State* L) {
+HttpServerLuaBindings::ResponseUserdata* HttpServerLuaBindings::checkResponse(lua_State* L)
+{
     return static_cast<ResponseUserdata*>(luaL_checkudata(L, 1, kResponseMeta));
 }
 
-int HttpServerLuaBindings::luaResponseGc(lua_State* L) {
+int HttpServerLuaBindings::luaResponseGc(lua_State* L)
+{
     auto* userdata = checkResponse(L);
     userdata->response.~shared_ptr<HttpResponse>();
     return 0;
 }
 
-int HttpServerLuaBindings::luaResponseStatus(lua_State* L) {
+int HttpServerLuaBindings::luaResponseStatus(lua_State* L)
+{
     auto* userdata = checkResponse(L);
     userdata->response->setStatus(static_cast<int>(luaL_checkinteger(L, 2)));
     return 0;
 }
 
-int HttpServerLuaBindings::luaResponseSetHeader(lua_State* L) {
+int HttpServerLuaBindings::luaResponseSetHeader(lua_State* L)
+{
     auto* userdata = checkResponse(L);
     std::string name = varn::lua::LuaHelpers::checkString(L, 2);
     std::string value = varn::lua::LuaHelpers::checkString(L, 3);
@@ -97,7 +107,8 @@ int HttpServerLuaBindings::luaResponseSetHeader(lua_State* L) {
     return 0;
 }
 
-int HttpServerLuaBindings::luaResponseFinish(lua_State* L) {
+int HttpServerLuaBindings::luaResponseFinish(lua_State* L)
+{
     auto* userdata = checkResponse(L);
     std::string body = varn::lua::LuaHelpers::optionalString(L, 2, "");
     userdata->response->end(body);
@@ -105,7 +116,8 @@ int HttpServerLuaBindings::luaResponseFinish(lua_State* L) {
 }
 
 #if VARN_JSON_DRIVER_NLOHMANN
-int HttpServerLuaBindings::luaResponseJson(lua_State* L) {
+int HttpServerLuaBindings::luaResponseJson(lua_State* L)
+{
     auto* userdata = checkResponse(L);
     const std::string body = lua_istable(L, 2) ? json::JsonSerializer::serialize(L, 2) : "{}";
 
@@ -116,7 +128,8 @@ int HttpServerLuaBindings::luaResponseJson(lua_State* L) {
 #endif
 
 #if VARN_XML_DRIVER_PUGIXML
-int HttpServerLuaBindings::luaResponseXml(lua_State* L) {
+int HttpServerLuaBindings::luaResponseXml(lua_State* L)
+{
     auto* userdata = checkResponse(L);
     const std::string body =
         lua_istable(L, 2) ? xml::XmlSerializer::serialize(L, 2) : std::string("<?xml version=\"1.0\" encoding=\"UTF-8\"?><root/>\n");
@@ -127,24 +140,32 @@ int HttpServerLuaBindings::luaResponseXml(lua_State* L) {
 }
 #endif
 
-int HttpServerLuaBindings::luaServerGc(lua_State* L) {
+int HttpServerLuaBindings::luaServerGc(lua_State* L)
+{
     auto* userdata = static_cast<ServerBuilderUserdata*>(luaL_checkudata(L, 1, kServerMeta));
-    if (userdata->runtime && userdata->handlerRef != LUA_NOREF) {
+    if (userdata->runtime && userdata->handlerRef != LUA_NOREF)
+    {
         luaL_unref(L, LUA_REGISTRYINDEX, userdata->handlerRef);
         userdata->handlerRef = LUA_NOREF;
     }
     return 0;
 }
 
-int HttpServerLuaBindings::luaServerListen(lua_State* L) {
+int HttpServerLuaBindings::luaServerListen(lua_State* L)
+{
     auto* builder = static_cast<ServerBuilderUserdata*>(luaL_checkudata(L, 1, kServerMeta));
 
     HttpServerOptions options;
-    if (lua_isinteger(L, 2)) {
+    if (lua_isinteger(L, 2))
+    {
         options.port = lua_tointeger(L, 2);
-    } else if (lua_istable(L, 2)) {
+    }
+    else if (lua_istable(L, 2))
+    {
         options = HttpServerModule::readListenOptions(L, 2);
-    } else {
+    }
+    else
+    {
         options = HttpServerModule::readListenOptions(L, 3);
     }
 
@@ -155,8 +176,10 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
     const int persistedHandlerRef = luaL_ref(L, LUA_REGISTRYINDEX);
 
     Runtime* rtPtr = &rt;
-    auto handler = [rtPtr, persistedHandlerRef](const HttpRequest& request, std::shared_ptr<HttpResponse> response) {
-        rtPtr->mainLoop().post([rtPtr, persistedHandlerRef, request, response = std::move(response)] {
+    auto handler = [rtPtr, persistedHandlerRef](const HttpRequest& request, std::shared_ptr<HttpResponse> response)
+    {
+        rtPtr->mainLoop().post([rtPtr, persistedHandlerRef, request, response = std::move(response)]
+                               {
             lua_State* mainState = rtPtr->luaState();
             lua_State* thread = lua_newthread(mainState);
             int threadRef = luaL_ref(mainState, LUA_REGISTRYINDEX);
@@ -186,16 +209,17 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
             }
 
             // once the handler yields the promise machinery holds its own ref to the coroutine, so release ours in every case.
-            luaL_unref(mainState, LUA_REGISTRYINDEX, threadRef);
-        });
+            luaL_unref(mainState, LUA_REGISTRYINDEX, threadRef); });
     };
 
     auto* engine = new ReactorHttpServer(rt, std::move(options), std::move(handler));
 
     auto server = std::shared_ptr<HttpServer>(
         engine,
-        [luaMain = rt.luaState(), persistedHandlerRef](HttpServer* p) {
-            if (persistedHandlerRef != LUA_NOREF) {
+        [luaMain = rt.luaState(), persistedHandlerRef](HttpServer* p)
+        {
+            if (persistedHandlerRef != LUA_NOREF)
+            {
                 luaL_unref(luaMain, LUA_REGISTRYINDEX, persistedHandlerRef);
             }
             delete p;
@@ -210,7 +234,8 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
     return 0;
 }
 
-int HttpServerLuaBindings::luaCreateServer(lua_State* L) {
+int HttpServerLuaBindings::luaCreateServer(lua_State* L)
+{
     luaL_checktype(L, 1, LUA_TFUNCTION);
 
     auto& rt = luaRuntime(L);
@@ -227,8 +252,10 @@ int HttpServerLuaBindings::luaCreateServer(lua_State* L) {
     return 1;
 }
 
-void HttpServerLuaBindings::createMetatables(lua_State* L) {
-    if (luaL_newmetatable(L, kResponseMeta)) {
+void HttpServerLuaBindings::createMetatables(lua_State* L)
+{
+    if (luaL_newmetatable(L, kResponseMeta))
+    {
         lua_pushcfunction(L, &HttpServerLuaBindings::luaResponseGc);
         lua_setfield(L, -2, "__gc");
 
@@ -251,7 +278,8 @@ void HttpServerLuaBindings::createMetatables(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    if (luaL_newmetatable(L, kServerMeta)) {
+    if (luaL_newmetatable(L, kServerMeta))
+    {
         lua_pushcfunction(L, &HttpServerLuaBindings::luaServerGc);
         lua_setfield(L, -2, "__gc");
 
@@ -263,7 +291,8 @@ void HttpServerLuaBindings::createMetatables(lua_State* L) {
     lua_pop(L, 1);
 }
 
-int HttpServerLuaBindings::luaOpen(lua_State* L) {
+int HttpServerLuaBindings::luaOpen(lua_State* L)
+{
     createMetatables(L);
 
     lua_newtable(L);
@@ -274,7 +303,8 @@ int HttpServerLuaBindings::luaOpen(lua_State* L) {
     return 1;
 }
 
-void HttpServerModule::pushRequestTable(lua_State* L, const HttpRequest& request) {
+void HttpServerModule::pushRequestTable(lua_State* L, const HttpRequest& request)
+{
     lua_newtable(L);
 
     lua_pushlstring(L, request.host.data(), request.host.size());
@@ -308,28 +338,35 @@ void HttpServerModule::pushRequestTable(lua_State* L, const HttpRequest& request
     lua_setfield(L, -2, "query");
 }
 
-HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index) {
+HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index)
+{
     HttpServerOptions options;
 
     const char* envPort = std::getenv("VARN_PORT");
-    if (envPort) {
+    if (envPort)
+    {
         const int parsed = std::atoi(envPort);
-        if (parsed >= 1 && parsed <= 65535) {
+        if (parsed >= 1 && parsed <= 65535)
+        {
             options.port = parsed;
-        } else {
+        }
+        else
+        {
             log::Log::line("HttpServerModule", "VARN_PORT is not a valid port (1-65535) and was ignored.");
         }
     }
 
     const char* cert = std::getenv("VARN_TLS_CERT");
     const char* key = std::getenv("VARN_TLS_KEY");
-    if (cert && key) {
+    if (cert && key)
+    {
         options.tls = true;
         options.certFile = cert;
         options.keyFile = key;
     }
 
-    if (!lua_istable(L, index)) {
+    if (!lua_istable(L, index))
+    {
         return options;
     }
 
@@ -338,9 +375,11 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index) {
     lua_pop(L, 1);
 
     lua_getfield(L, index, "port");
-    if (lua_isinteger(L, -1)) {
+    if (lua_isinteger(L, -1))
+    {
         const lua_Integer portValue = lua_tointeger(L, -1);
-        if (portValue >= 1 && portValue <= 65535) {
+        if (portValue >= 1 && portValue <= 65535)
+        {
             options.port = static_cast<int>(portValue);
         }
     }
@@ -351,15 +390,18 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index) {
     lua_pop(L, 1);
 
     lua_getfield(L, index, "servePublic");
-    if (lua_isboolean(L, -1)) options.servePublic = lua_toboolean(L, -1) != 0;
+    if (lua_isboolean(L, -1))
+        options.servePublic = lua_toboolean(L, -1) != 0;
     lua_pop(L, 1);
 
     lua_getfield(L, index, "directoryListing");
-    if (lua_isboolean(L, -1)) options.directoryListing = lua_toboolean(L, -1) != 0;
+    if (lua_isboolean(L, -1))
+        options.directoryListing = lua_toboolean(L, -1) != 0;
     lua_pop(L, 1);
 
     lua_getfield(L, index, "tls");
-    if (lua_isboolean(L, -1)) options.tls = lua_toboolean(L, -1) != 0;
+    if (lua_isboolean(L, -1))
+        options.tls = lua_toboolean(L, -1) != 0;
     lua_pop(L, 1);
 
     lua_getfield(L, index, "certFile");
@@ -371,36 +413,44 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index) {
     lua_pop(L, 1);
 
     lua_getfield(L, index, "maxQueued");
-    if (lua_isinteger(L, -1)) {
+    if (lua_isinteger(L, -1))
+    {
         const auto value = static_cast<int>(lua_tointeger(L, -1));
-        if (value > 0) {
+        if (value > 0)
+        {
             options.maxQueued = std::clamp(value, 1, 65535);
         }
     }
     lua_pop(L, 1);
 
     lua_getfield(L, index, "maxThreads");
-    if (lua_isinteger(L, -1)) {
+    if (lua_isinteger(L, -1))
+    {
         const auto value = static_cast<int>(lua_tointeger(L, -1));
-        if (value > 0) {
+        if (value > 0)
+        {
             options.maxThreads = std::clamp(value, 1, 1024);
         }
     }
     lua_pop(L, 1);
 
     lua_getfield(L, index, "requestTimeoutMs");
-    if (lua_isinteger(L, -1)) {
+    if (lua_isinteger(L, -1))
+    {
         const long long value = lua_tointeger(L, -1);
-        if (value >= 0) {
+        if (value >= 0)
+        {
             options.requestTimeoutMs = value;
         }
     }
     lua_pop(L, 1);
 
     lua_getfield(L, index, "keepAliveTimeoutSeconds");
-    if (lua_isinteger(L, -1)) {
+    if (lua_isinteger(L, -1))
+    {
         const int value = static_cast<int>(lua_tointeger(L, -1));
-        if (value >= 0) {
+        if (value >= 0)
+        {
             options.keepAliveTimeoutSeconds = value;
         }
     }
@@ -409,7 +459,8 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index) {
     return options;
 }
 
-void HttpServerModule::install(lua_State* L) {
+void HttpServerModule::install(lua_State* L)
+{
     luaL_requiref(L, "http", &HttpServerLuaBindings::luaOpen, 1);
     lua_pop(L, 1);
 }

@@ -2,9 +2,11 @@
 
 struct lua_State;
 
-namespace varn::lua {
+namespace varn::lua
+{
 
-class NativeModuleRegistry {
+class NativeModuleRegistry
+{
 public:
     NativeModuleRegistry() = delete;
 

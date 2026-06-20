@@ -3,17 +3,21 @@
 #include <fstream>
 #include <string>
 
-namespace varn::http {
+namespace varn::http
+{
 
-void HttpResponse::sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly) {
-    if (headersOnly) {
+void HttpResponse::sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly)
+{
+    if (headersOnly)
+    {
         end("");
         return;
     }
 
     // the buffering fallback reads the requested range up front, used only by transports that cannot stream.
     std::ifstream file(path, std::ios::binary);
-    if (!file) {
+    if (!file)
+    {
         end("");
         return;
     }

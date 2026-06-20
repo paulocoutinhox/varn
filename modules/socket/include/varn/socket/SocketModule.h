@@ -4,17 +4,20 @@
 
 struct lua_State;
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 class Runtime;
 }
 
-namespace varn::socket {
+namespace varn::socket
+{
 
 class TcpConnection;
 class TcpListener;
 class UdpSocket;
 
-class SocketModule {
+class SocketModule
+{
 public:
     SocketModule() = delete;
 

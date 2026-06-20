@@ -1,19 +1,22 @@
 #include "varn/lua/LuaEngine.h"
+#include "varn/log/Log.h"
 #include "varn/lua/LuaHelpers.h"
 #include "varn/lua/NativeModules.h"
-#include "varn/log/Log.h"
 #include "varn/runtime/Runtime.h"
 
-namespace varn::lua {
+namespace varn::lua
+{
 
-// last-resort handler for an error raised outside any protected call that logs the cause before the process terminates, since the default panic handler would otherwise abort with no message.
-int LuaEngine::handlePanic(lua_State* L) {
+int LuaEngine::handlePanic(lua_State* L)
+{
     const char* message = lua_tostring(L, -1);
     log::Log::error("LuaEngine", message ? message : "An unprotected Lua error occurred.");
     return 0;
 }
 
-LuaEngine::LuaEngine(varn::runtime::Runtime& runtime) : runtime(runtime) {
+LuaEngine::LuaEngine(varn::runtime::Runtime& runtime)
+    : runtime(runtime)
+{
     L = luaL_newstate();
     lua_atpanic(L, &LuaEngine::handlePanic);
     luaL_openlibs(L);
@@ -23,24 +26,29 @@ LuaEngine::LuaEngine(varn::runtime::Runtime& runtime) : runtime(runtime) {
     installNativeModules();
 }
 
-LuaEngine::~LuaEngine() {
-    if (L) {
+LuaEngine::~LuaEngine()
+{
+    if (L)
+    {
         lua_close(L);
     }
 }
 
-int LuaEngine::runFile(const std::string& path) {
+int LuaEngine::runFile(const std::string& path)
+{
     lua_pushcfunction(L, &varn::lua::LuaHelpers::traceback);
     int tracebackIndex = lua_gettop(L);
 
-    if (luaL_loadfile(L, path.c_str()) != LUA_OK) {
+    if (luaL_loadfile(L, path.c_str()) != LUA_OK)
+    {
         const char* message = lua_tostring(L, -1);
         log::Log::error("LuaEngine", message ? message : "The script could not be loaded.");
         lua_pop(L, 2);
         return 1;
     }
 
-    if (lua_pcall(L, 0, 0, tracebackIndex) != LUA_OK) {
+    if (lua_pcall(L, 0, 0, tracebackIndex) != LUA_OK)
+    {
         const char* message = lua_tostring(L, -1);
         log::Log::error("LuaEngine", message ? message : "The script failed to run.");
         lua_pop(L, 2);
@@ -51,13 +59,15 @@ int LuaEngine::runFile(const std::string& path) {
     return 0;
 }
 
-bool LuaEngine::runStringWithoutEventLoop(const std::string& source, const std::string& chunkName, std::string* errorMessage,
-                                          LuaPrePcallHook prePcallHook, void* prePcallUserdata) {
+bool LuaEngine::runStringWithoutEventLoop(const std::string& source, const std::string& chunkName, std::string* errorMessage, LuaPrePcallHook prePcallHook, void* prePcallUserdata)
+{
     lua_pushcfunction(L, &varn::lua::LuaHelpers::traceback);
     const int tracebackIndex = lua_gettop(L);
 
-    if (luaL_loadbuffer(L, source.data(), source.size(), chunkName.c_str()) != LUA_OK) {
-        if (errorMessage != nullptr) {
+    if (luaL_loadbuffer(L, source.data(), source.size(), chunkName.c_str()) != LUA_OK)
+    {
+        if (errorMessage != nullptr)
+        {
             size_t len = 0;
             const char* message = lua_tolstring(L, -1, &len);
             *errorMessage = message ? std::string(message, len) : std::string("Lua load failed.");
@@ -66,12 +76,15 @@ bool LuaEngine::runStringWithoutEventLoop(const std::string& source, const std::
         return false;
     }
 
-    if (prePcallHook != nullptr) {
+    if (prePcallHook != nullptr)
+    {
         prePcallHook(L, prePcallUserdata);
     }
 
-    if (lua_pcall(L, 0, 0, tracebackIndex) != LUA_OK) {
-        if (errorMessage != nullptr) {
+    if (lua_pcall(L, 0, 0, tracebackIndex) != LUA_OK)
+    {
+        if (errorMessage != nullptr)
+        {
             size_t len = 0;
             const char* message = lua_tolstring(L, -1, &len);
             *errorMessage = message ? std::string(message, len) : std::string("Lua runtime failed.");
@@ -84,18 +97,21 @@ bool LuaEngine::runStringWithoutEventLoop(const std::string& source, const std::
     return true;
 }
 
-int LuaEngine::runString(const std::string& source, const std::string& chunkName) {
+int LuaEngine::runString(const std::string& source, const std::string& chunkName)
+{
     lua_pushcfunction(L, &varn::lua::LuaHelpers::traceback);
     int tracebackIndex = lua_gettop(L);
 
-    if (luaL_loadbuffer(L, source.data(), source.size(), chunkName.c_str()) != LUA_OK) {
+    if (luaL_loadbuffer(L, source.data(), source.size(), chunkName.c_str()) != LUA_OK)
+    {
         const char* message = lua_tostring(L, -1);
         log::Log::error("LuaEngine", message ? message : "The source could not be loaded.");
         lua_pop(L, 2);
         return 1;
     }
 
-    if (lua_pcall(L, 0, 0, tracebackIndex) != LUA_OK) {
+    if (lua_pcall(L, 0, 0, tracebackIndex) != LUA_OK)
+    {
         const char* message = lua_tostring(L, -1);
         log::Log::error("LuaEngine", message ? message : "The source failed to run.");
         lua_pop(L, 2);
@@ -106,21 +122,25 @@ int LuaEngine::runString(const std::string& source, const std::string& chunkName
     return 0;
 }
 
-lua_State* LuaEngine::state() {
+lua_State* LuaEngine::state()
+{
     return L;
 }
 
-void LuaEngine::installNativeModules() {
+void LuaEngine::installNativeModules()
+{
     varn::lua::NativeModuleRegistry::installAll(L);
 }
 
-void LuaEngine::configureArgTable() {
+void LuaEngine::configureArgTable()
+{
     lua_newtable(L);
 
     // follow lua's convention: the chunk is arg[0], its arguments arg[1..], the program/options arg[-1..].
     const auto& args = runtime.args();
     const int base = static_cast<int>(runtime.scriptArgIndex());
-    for (std::size_t i = 0; i < args.size(); ++i) {
+    for (std::size_t i = 0; i < args.size(); ++i)
+    {
         lua_pushlstring(L, args[i].data(), args[i].size());
         lua_rawseti(L, -2, static_cast<int>(i) - base);
     }

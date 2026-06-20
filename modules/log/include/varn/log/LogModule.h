@@ -6,9 +6,11 @@
 
 struct lua_State;
 
-namespace varn::log {
+namespace varn::log
+{
 
-class LogModule {
+class LogModule
+{
 public:
     LogModule() = delete;
 

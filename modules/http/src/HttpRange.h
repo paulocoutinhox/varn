@@ -3,9 +3,11 @@
 #include <cstdint>
 #include <string>
 
-namespace varn::http {
+namespace varn::http
+{
 
-class HttpRange {
+class HttpRange
+{
 public:
     HttpRange() = delete;
 

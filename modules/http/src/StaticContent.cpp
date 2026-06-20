@@ -9,15 +9,16 @@
 #include <sstream>
 #include <string>
 
-namespace varn::http {
+namespace varn::http
+{
 
-// a hidden path component must never be served, except the well-known directory used for protocols.
-bool StaticContent::isHiddenComponent(const std::string& name) {
+bool StaticContent::isHiddenComponent(const std::string& name)
+{
     return !name.empty() && name.front() == '.' && name != "." && name != ".." && name != ".well-known";
 }
 
-// formats a file modification time as an rfc 9110 http-date in gmt.
-std::string StaticContent::httpDate(std::filesystem::file_time_type fileTime) {
+std::string StaticContent::httpDate(std::filesystem::file_time_type fileTime)
+{
     // map the file clock onto the system clock, since not every standard library offers clock_cast.
     const auto systemTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
         fileTime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
@@ -35,49 +36,72 @@ std::string StaticContent::httpDate(std::filesystem::file_time_type fileTime) {
     return std::string(buffer);
 }
 
-std::string StaticContent::headerValue(const HttpRequest& request, const std::string& name) {
-    for (const auto& [key, value] : request.headers) {
-        if (key.size() != name.size()) {
+std::string StaticContent::headerValue(const HttpRequest& request, const std::string& name)
+{
+    for (const auto& [key, value] : request.headers)
+    {
+        if (key.size() != name.size())
+        {
             continue;
         }
         bool same = true;
-        for (std::size_t i = 0; i < key.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
+        for (std::size_t i = 0; i < key.size(); ++i)
+        {
+            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i])))
+            {
                 same = false;
                 break;
             }
         }
-        if (same) {
+        if (same)
+        {
             return value;
         }
     }
     return "";
 }
 
-std::string StaticContent::htmlEscape(const std::string& value) {
+std::string StaticContent::htmlEscape(const std::string& value)
+{
     std::string out;
     out.reserve(value.size());
-    for (char c : value) {
-        switch (c) {
-            case '&': out += "&amp;"; break;
-            case '<': out += "&lt;"; break;
-            case '>': out += "&gt;"; break;
-            case '"': out += "&quot;"; break;
-            case '\'': out += "&#39;"; break;
-            default: out += c;
+    for (char c : value)
+    {
+        switch (c)
+        {
+        case '&':
+            out += "&amp;";
+            break;
+        case '<':
+            out += "&lt;";
+            break;
+        case '>':
+            out += "&gt;";
+            break;
+        case '"':
+            out += "&quot;";
+            break;
+        case '\'':
+            out += "&#39;";
+            break;
+        default:
+            out += c;
         }
     }
     return out;
 }
 
-std::string StaticContent::urlEncodePath(const std::string& value) {
+std::string StaticContent::urlEncodePath(const std::string& value)
+{
     static const char* hex = "0123456789ABCDEF";
     std::string out;
     out.reserve(value.size());
-    for (unsigned char c : value) {
+    for (unsigned char c : value)
+    {
         const bool unreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
                                 c == '-' || c == '_' || c == '.' || c == '~' || c == '/';
-        if (unreserved) {
+        if (unreserved)
+        {
             out += static_cast<char>(c);
             continue;
         }
@@ -88,16 +112,19 @@ std::string StaticContent::urlEncodePath(const std::string& value) {
     return out;
 }
 
-std::string StaticContent::makeEtag(std::uintmax_t size, long long writeTime) {
+std::string StaticContent::makeEtag(std::uintmax_t size, long long writeTime)
+{
     std::ostringstream tag;
     tag << '"' << std::hex << size << '-' << writeTime << '"';
     return tag.str();
 }
 
-bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response, const std::filesystem::path& path) {
+bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response, const std::filesystem::path& path)
+{
     std::error_code ec;
     const std::uintmax_t size = std::filesystem::file_size(path, ec);
-    if (ec) {
+    if (ec)
+    {
         response.setStatus(500);
         response.end("Cannot read file");
         return true;
@@ -117,7 +144,8 @@ bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response
 
     // a matching validator means the client already holds this exact file so send no representation, with the entity tag taking precedence over the modification date per rfc 9110.
     if (headerValue(request, "If-None-Match") == etag ||
-        (headerValue(request, "If-None-Match").empty() && headerValue(request, "If-Modified-Since") == lastModified)) {
+        (headerValue(request, "If-None-Match").empty() && headerValue(request, "If-Modified-Since") == lastModified))
+    {
         response.setStatus(304);
         response.end("");
         return true;
@@ -130,10 +158,12 @@ bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response
 
     // only single ranges are supported, so a multi-range request is ignored and the full body is sent.
     const std::string range = headerValue(request, "Range");
-    if (!range.empty() && range.find(',') == std::string::npos) {
+    if (!range.empty() && range.find(',') == std::string::npos)
+    {
         std::uintmax_t start = 0;
         std::uintmax_t end = 0;
-        if (!HttpRange::parse(range, size, start, end)) {
+        if (!HttpRange::parse(range, size, start, end))
+        {
             response.setStatus(416);
             response.setHeader("Content-Range", "bytes */" + std::to_string(size));
             response.end("");
@@ -152,7 +182,8 @@ bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response
     return true;
 }
 
-void StaticContent::serveListing(HttpResponse& response, const std::filesystem::path& root, const std::filesystem::path& dir) {
+void StaticContent::serveListing(HttpResponse& response, const std::filesystem::path& root, const std::filesystem::path& dir)
+{
     const std::string relative = std::filesystem::relative(dir, root).generic_string();
     const std::string title = relative.empty() || relative == "." ? "/" : "/" + relative;
 
@@ -161,10 +192,12 @@ void StaticContent::serveListing(HttpResponse& response, const std::filesystem::
          << "</title></head><body><h1>Index of " << htmlEscape(title) << "</h1><ul>";
 
     std::error_code ec;
-    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec))
+    {
         const std::string name = entry.path().filename().string();
         // keep hidden entries out of the listing for the same reason they are not served.
-        if (isHiddenComponent(name)) {
+        if (isHiddenComponent(name))
+        {
             continue;
         }
         const std::string suffix = entry.is_directory(ec) ? "/" : "";

@@ -4,9 +4,11 @@
 
 struct lua_State;
 
-namespace varn::http {
+namespace varn::http
+{
 
-class HttpMultipart {
+class HttpMultipart
+{
 public:
     static std::string extractBoundary(const std::string& contentType);
     static std::string multipartAttribute(const std::string& headers, const std::string& key);

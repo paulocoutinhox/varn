@@ -3,18 +3,22 @@
 #include <atomic>
 #include <functional>
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 
-class WorkLedger {
+class WorkLedger
+{
 public:
     void setNotify(std::function<void()> fn) { notify = std::move(fn); }
 
-    void enter() {
+    void enter()
+    {
         count.fetch_add(1, std::memory_order_relaxed);
         notifyIf();
     }
 
-    void leave() {
+    void leave()
+    {
         count.fetch_sub(1, std::memory_order_acq_rel);
         notifyIf();
     }
@@ -22,8 +26,10 @@ public:
     int depth() const { return count.load(std::memory_order_acquire); }
 
 private:
-    void notifyIf() {
-        if (notify) {
+    void notifyIf()
+    {
+        if (notify)
+        {
             notify();
         }
     }

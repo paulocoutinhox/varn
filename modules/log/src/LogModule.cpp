@@ -5,18 +5,23 @@
 #include <lua.hpp>
 #include <string>
 
-namespace varn::log {
+namespace varn::log
+{
 
-void LogModule::emitAt(lua_State* L, Level level) {
+void LogModule::emitAt(lua_State* L, Level level)
+{
     const int n = lua_gettop(L);
-    if (n == 0) {
+    if (n == 0)
+    {
         return;
     }
 
     std::string combined;
     combined.reserve(64);
-    for (int i = 1; i <= n; ++i) {
-        if (i > 1) {
+    for (int i = 1; i <= n; ++i)
+    {
+        if (i > 1)
+        {
             combined += '\t';
         }
         appendValue(L, i, combined, 0, false);
@@ -25,15 +30,18 @@ void LogModule::emitAt(lua_State* L, Level level) {
     Log::emit(level, combined);
 }
 
-void LogModule::appendValue(lua_State* L, int index, std::string& out, int depth, bool quoteStrings) {
+void LogModule::appendValue(lua_State* L, int index, std::string& out, int depth, bool quoteStrings)
+{
     index = lua_absindex(L, index);
 
-    if (lua_type(L, index) == LUA_TTABLE) {
+    if (lua_type(L, index) == LUA_TTABLE)
+    {
         appendTable(L, index, out, depth);
         return;
     }
 
-    if (quoteStrings && lua_type(L, index) == LUA_TSTRING) {
+    if (quoteStrings && lua_type(L, index) == LUA_TSTRING)
+    {
         size_t len = 0;
         const char* text = lua_tolstring(L, index, &len);
         out += '"';
@@ -49,10 +57,12 @@ void LogModule::appendValue(lua_State* L, int index, std::string& out, int depth
     lua_pop(L, 1);
 }
 
-void LogModule::appendKey(lua_State* L, int index, std::string& out) {
+void LogModule::appendKey(lua_State* L, int index, std::string& out)
+{
     index = lua_absindex(L, index);
 
-    if (lua_type(L, index) == LUA_TSTRING) {
+    if (lua_type(L, index) == LUA_TSTRING)
+    {
         size_t len = 0;
         const char* key = lua_tolstring(L, index, &len);
         out.append(key, len);
@@ -69,11 +79,13 @@ void LogModule::appendKey(lua_State* L, int index, std::string& out) {
     out += ']';
 }
 
-void LogModule::appendTable(lua_State* L, int index, std::string& out, int depth) {
+void LogModule::appendTable(lua_State* L, int index, std::string& out, int depth)
+{
     constexpr int maxDepth = 4;
     constexpr int maxEntries = 32;
 
-    if (depth >= maxDepth) {
+    if (depth >= maxDepth)
+    {
         out += "{...}";
         return;
     }
@@ -83,8 +95,10 @@ void LogModule::appendTable(lua_State* L, int index, std::string& out, int depth
     int count = 0;
 
     lua_pushnil(L);
-    while (lua_next(L, index) != 0) {
-        if (count >= maxEntries) {
+    while (lua_next(L, index) != 0)
+    {
+        if (count >= maxEntries)
+        {
             out += " ...";
             lua_pop(L, 2);
             break;
@@ -102,27 +116,32 @@ void LogModule::appendTable(lua_State* L, int index, std::string& out, int depth
     out += (count == 0) ? "}" : " }";
 }
 
-int LogModule::luaDebug(lua_State* L) {
+int LogModule::luaDebug(lua_State* L)
+{
     emitAt(L, Level::Debug);
     return 0;
 }
 
-int LogModule::luaInfo(lua_State* L) {
+int LogModule::luaInfo(lua_State* L)
+{
     emitAt(L, Level::Info);
     return 0;
 }
 
-int LogModule::luaWarn(lua_State* L) {
+int LogModule::luaWarn(lua_State* L)
+{
     emitAt(L, Level::Warn);
     return 0;
 }
 
-int LogModule::luaError(lua_State* L) {
+int LogModule::luaError(lua_State* L)
+{
     emitAt(L, Level::Error);
     return 0;
 }
 
-int LogModule::luaOpen(lua_State* L) {
+int LogModule::luaOpen(lua_State* L)
+{
     lua_newtable(L);
 
     lua_pushcfunction(L, &LogModule::luaDebug);
@@ -140,7 +159,8 @@ int LogModule::luaOpen(lua_State* L) {
     return 1;
 }
 
-void LogModule::install(lua_State* L) {
+void LogModule::install(lua_State* L)
+{
     luaL_requiref(L, "log", &LogModule::luaOpen, 1);
     lua_pop(L, 1);
 }

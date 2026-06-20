@@ -2,9 +2,11 @@
 
 struct lua_State;
 
-namespace varn::platform {
+namespace varn::platform
+{
 
-class PlatformModule {
+class PlatformModule
+{
 public:
     PlatformModule() = delete;
     static void install(lua_State* L);

@@ -3,11 +3,19 @@
 #include <string>
 #include <string_view>
 
-namespace varn::log {
+namespace varn::log
+{
 
-enum class Level { Debug, Info, Warn, Error };
+enum class Level
+{
+    Debug,
+    Info,
+    Warn,
+    Error
+};
 
-class Log {
+class Log
+{
 public:
     Log() = delete;
 

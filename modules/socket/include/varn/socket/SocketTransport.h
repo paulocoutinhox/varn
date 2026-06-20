@@ -4,15 +4,18 @@
 #include <memory>
 #include <string>
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 class Runtime;
 }
 
-namespace varn::socket {
+namespace varn::socket
+{
 
 class TcpConnection;
 
-struct UdpDatagram {
+struct UdpDatagram
+{
     std::string data;
     std::string host;
     int port = 0;
@@ -24,7 +27,8 @@ using ReceiveCallback = std::function<void(bool ok, const std::string& data)>;
 using SendCallback = std::function<void(bool ok, const std::string& error)>;
 using ReceiveFromCallback = std::function<void(bool ok, const UdpDatagram& datagram, const std::string& error)>;
 
-class TcpConnection {
+class TcpConnection
+{
 public:
     virtual ~TcpConnection() = default;
 
@@ -33,7 +37,8 @@ public:
     virtual void close() = 0;
 };
 
-class TcpListener {
+class TcpListener
+{
 public:
     virtual ~TcpListener() = default;
 
@@ -41,7 +46,8 @@ public:
     virtual void close() = 0;
 };
 
-class UdpSocket {
+class UdpSocket
+{
 public:
     virtual ~UdpSocket() = default;
 
@@ -50,7 +56,8 @@ public:
     virtual void close() = 0;
 };
 
-class SocketTransport {
+class SocketTransport
+{
 public:
     SocketTransport() = delete;
 

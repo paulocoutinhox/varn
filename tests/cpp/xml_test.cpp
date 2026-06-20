@@ -5,15 +5,18 @@
 #include <cctype>
 #include <string>
 
-namespace varn::xml {
+namespace varn::xml
+{
 
-TEST(XmlSanitizeName, ReplacesUnsafeCharacters) {
+TEST(XmlSanitizeName, ReplacesUnsafeCharacters)
+{
     EXPECT_EQ(XmlSerializer::sanitizeElementName("a b"), "a_b");
     EXPECT_EQ(XmlSerializer::sanitizeElementName("<script>"), "_script_");
     EXPECT_EQ(XmlSerializer::sanitizeElementName("a\"/>b"), "a___b");
 }
 
-TEST(XmlSanitizeName, GivesEmptyAndDigitLeadingNamesSafeForms) {
+TEST(XmlSanitizeName, GivesEmptyAndDigitLeadingNamesSafeForms)
+{
     EXPECT_FALSE(XmlSerializer::sanitizeElementName("").empty());
     const std::string fromDigit = XmlSerializer::sanitizeElementName("1abc");
     ASSERT_FALSE(fromDigit.empty());

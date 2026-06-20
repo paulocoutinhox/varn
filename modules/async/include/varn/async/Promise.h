@@ -7,15 +7,23 @@
 #include <string>
 #include <vector>
 
-namespace varn::runtime {
+namespace varn::runtime
+{
 class Runtime;
 }
 
-namespace varn::async {
+namespace varn::async
+{
 
-class Promise : public std::enable_shared_from_this<Promise> {
+class Promise : public std::enable_shared_from_this<Promise>
+{
 public:
-    enum class State { Pending, Resolved, Rejected };
+    enum class State
+    {
+        Pending,
+        Resolved,
+        Rejected
+    };
 
     explicit Promise(varn::runtime::Runtime& runtime);
     ~Promise();

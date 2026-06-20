@@ -6,9 +6,11 @@
 #include <memory>
 #include <string>
 
-namespace varn::http {
+namespace varn::http
+{
 
-struct HttpRequest {
+struct HttpRequest
+{
     std::string host;
     std::string method;
     std::string path;
@@ -21,7 +23,8 @@ struct HttpRequest {
     std::map<std::string, std::string> query;
 };
 
-class HttpResponse {
+class HttpResponse
+{
 public:
     virtual ~HttpResponse() = default;
     virtual void setStatus(int statusCode) = 0;
@@ -33,14 +36,16 @@ public:
     virtual void sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly);
 };
 
-class HttpServer {
+class HttpServer
+{
 public:
     virtual ~HttpServer() = default;
     virtual void start() = 0;
     virtual void stop() = 0;
 };
 
-struct HttpServerOptions {
+struct HttpServerOptions
+{
     std::string host = "0.0.0.0";
     int port = 3000;
     bool tls = false;
@@ -58,7 +63,8 @@ struct HttpServerOptions {
 
 using HttpHandler = std::function<void(const HttpRequest&, std::shared_ptr<HttpResponse>)>;
 
-class WebSocketConnection {
+class WebSocketConnection
+{
 public:
     virtual ~WebSocketConnection() = default;
     virtual void accept() = 0;

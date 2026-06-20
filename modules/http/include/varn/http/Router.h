@@ -7,43 +7,49 @@
 #include <unordered_map>
 #include <vector>
 
-namespace varn::http {
+namespace varn::http
+{
 
-struct RouteParam {
+struct RouteParam
+{
     std::string name;
     std::string value;
 };
 
-enum class MatchStatus {
+enum class MatchStatus
+{
     Found,
     MethodNotAllowed,
     NotFound,
 };
 
-struct MatchResult {
+struct MatchResult
+{
     MatchStatus status = MatchStatus::NotFound;
     int routeId = -1;
     std::vector<RouteParam> params;
     std::vector<std::string> allowedMethods;
 };
 
-class Router {
+class Router
+{
 public:
     int add(const std::string& method, const std::string& pattern);
     void setConstraint(int routeId, const std::string& param, const std::string& constraint);
     void setName(int routeId, const std::string& name);
 
     MatchResult match(const std::string& method, const std::string& path) const;
-    std::optional<std::string> buildUrl(const std::string& name,
-                                        const std::unordered_map<std::string, std::string>& params) const;
+    std::optional<std::string> buildUrl(const std::string& name, const std::unordered_map<std::string, std::string>& params) const;
 
 private:
-    struct Segment {
+    struct Segment
+    {
         bool isParam = false;
         std::string text;
     };
 
-    struct Route {
+    struct Route
+    {
         std::string method;
         std::vector<Segment> segments;
         std::unordered_map<std::string, std::regex> constraints;

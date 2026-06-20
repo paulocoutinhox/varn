@@ -2,13 +2,16 @@
 
 #include <atomic>
 
-namespace varn::wasm {
+namespace varn::wasm
+{
 
-class WasmAsyncHost {
+class WasmAsyncHost
+{
 public:
     WasmAsyncHost() = delete;
 
-    static std::atomic<int>& fetchInflight() {
+    static std::atomic<int>& fetchInflight()
+    {
         static std::atomic<int> counter{0};
         return counter;
     }

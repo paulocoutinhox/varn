@@ -6,9 +6,11 @@
 #include <filesystem>
 #include <string>
 
-namespace varn::http {
+namespace varn::http
+{
 
-class StaticContent {
+class StaticContent
+{
 public:
     static bool isHiddenComponent(const std::string& name);
     static bool serveFile(const HttpRequest& request, HttpResponse& response, const std::filesystem::path& path);

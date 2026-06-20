@@ -2,7 +2,8 @@
 
 #include "crash_handler.h"
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     varn::diagnostics::CrashHandler::install();
 
     varn::runtime::App app;

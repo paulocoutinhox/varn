@@ -4,9 +4,11 @@
 #include <string>
 #include <string_view>
 
-namespace varn::crypto {
+namespace varn::crypto
+{
 
-class CryptoPrimitives final {
+class CryptoPrimitives final
+{
 public:
     CryptoPrimitives() = delete;
 
