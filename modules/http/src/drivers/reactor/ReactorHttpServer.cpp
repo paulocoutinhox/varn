@@ -5,12 +5,16 @@
 #include "varn/runtime/EventLoop.h"
 #include "varn/runtime/Runtime.h"
 
+#include <Poco/Base64Encoder.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/NameValueCollection.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Poco/SHA1Engine.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
+
+#include <cstring>
 
 #ifdef VARN_ENABLE_TLS
 #include "../poco/TlsServerContext.h"
@@ -90,6 +94,109 @@ std::string sanitizeHeader(const std::string& value) {
         }
     }
     return out;
+}
+
+constexpr int kWsContinuation = 0x0;
+constexpr int kWsText = 0x1;
+constexpr int kWsClose = 0x8;
+constexpr int kWsPing = 0x9;
+constexpr int kWsPong = 0xA;
+constexpr std::size_t kWsMaxMessageBytes = 16 * 1024 * 1024;
+
+struct WsFrame {
+    bool fin = false;
+    int opcode = 0;
+    std::string payload;
+    std::size_t consumed = 0;
+};
+
+enum class WsParse { Ok, NeedMore, Error };
+
+// parse one masked client frame from the buffer, rejecting an unmasked frame or one above the message cap.
+WsParse parseWsFrame(const std::string& buffer, WsFrame& frame) {
+    const std::size_t size = buffer.size();
+    if (size < 2) {
+        return WsParse::NeedMore;
+    }
+
+    const auto byteAt = [&](std::size_t i) { return static_cast<unsigned char>(buffer[i]); };
+    frame.fin = (byteAt(0) & 0x80) != 0;
+    frame.opcode = byteAt(0) & 0x0F;
+    const bool masked = (byteAt(1) & 0x80) != 0;
+
+    std::uint64_t length = byteAt(1) & 0x7F;
+    std::size_t header = 2;
+    if (length == 126) {
+        if (size < 4) {
+            return WsParse::NeedMore;
+        }
+        length = (static_cast<std::uint64_t>(byteAt(2)) << 8) | byteAt(3);
+        header = 4;
+    } else if (length == 127) {
+        if (size < 10) {
+            return WsParse::NeedMore;
+        }
+        length = 0;
+        for (std::size_t i = 0; i < 8; ++i) {
+            length = (length << 8) | byteAt(2 + i);
+        }
+        header = 10;
+    }
+
+    if (!masked || length > kWsMaxMessageBytes) {
+        return WsParse::Error;
+    }
+    if (size < header + 4 + length) {
+        return WsParse::NeedMore;
+    }
+
+    const std::size_t maskOffset = header;
+    const std::size_t dataOffset = header + 4;
+    frame.payload.resize(static_cast<std::size_t>(length));
+    for (std::size_t i = 0; i < length; ++i) {
+        frame.payload[i] = static_cast<char>(byteAt(dataOffset + i) ^ byteAt(maskOffset + (i & 3)));
+    }
+    frame.consumed = dataOffset + static_cast<std::size_t>(length);
+    return WsParse::Ok;
+}
+
+// build a server frame, which is never masked.
+std::string buildWsFrame(int opcode, const std::string& payload) {
+    std::string out;
+    out.push_back(static_cast<char>(0x80 | (opcode & 0x0F)));
+
+    const std::size_t length = payload.size();
+    if (length < 126) {
+        out.push_back(static_cast<char>(length));
+    } else if (length <= 0xFFFF) {
+        out.push_back(static_cast<char>(126));
+        out.push_back(static_cast<char>((length >> 8) & 0xFF));
+        out.push_back(static_cast<char>(length & 0xFF));
+    } else {
+        out.push_back(static_cast<char>(127));
+        for (int shift = 56; shift >= 0; shift -= 8) {
+            out.push_back(static_cast<char>((static_cast<std::uint64_t>(length) >> shift) & 0xFF));
+        }
+    }
+
+    out += payload;
+    return out;
+}
+
+std::string computeWsAccept(const std::string& key) {
+    Poco::SHA1Engine sha1;
+    sha1.update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+    const Poco::DigestEngine::Digest& digest = sha1.digest();
+
+    std::ostringstream encoded;
+    Poco::Base64Encoder base64(encoded);
+    base64.write(reinterpret_cast<const char*>(digest.data()), static_cast<std::streamsize>(digest.size()));
+    base64.close();
+
+    std::string accept = encoded.str();
+    accept.erase(std::remove(accept.begin(), accept.end(), '\n'), accept.end());
+    accept.erase(std::remove(accept.begin(), accept.end(), '\r'), accept.end());
+    return accept;
 }
 
 class HttpConnection;
@@ -337,6 +444,12 @@ private:
         }
         fileMode = false;
 
+        // once the websocket handshake response is flushed the connection switches to reading client frames.
+        if (wsMode) {
+            armRead();
+            return Io::Detached;
+        }
+
         if (!keepAlive || stopping->load(std::memory_order_acquire)) {
             closeNow();
             return Io::Detached;
@@ -353,6 +466,10 @@ private:
     }
 
     Progress process() {
+        if (wsMode) {
+            return wsProcess();
+        }
+
         if (headersEnd == std::string::npos) {
             headersEnd = readBuffer.find("\r\n\r\n");
             if (headersEnd == std::string::npos) {
@@ -556,6 +673,12 @@ private:
         request.body = std::move(requestBody);
 
         dispatched = true;
+
+        if (isWebSocketUpgrade(request)) {
+            upgradeToWebSocket(request);
+            return;
+        }
+
         auto response = std::make_shared<ReactorResponse>(shared_from_this(), keepAlive);
 
         // a matching public file is served ahead of the user handler and streamed off the loop.
@@ -563,6 +686,128 @@ private:
             return;
         }
         handler(request, response);
+    }
+
+    static std::string headerValue(const std::map<std::string, std::string>& headers, const std::string& name) {
+        for (const auto& [key, value] : headers) {
+            if (Poco::icompare(key, name) == 0) {
+                return value;
+            }
+        }
+        return std::string();
+    }
+
+    static bool isWebSocketUpgrade(const HttpRequest& request) {
+        if (Poco::icompare(headerValue(request.headers, "Upgrade"), "websocket") != 0) {
+            return false;
+        }
+        std::string connection = headerValue(request.headers, "Connection");
+        Poco::toLowerInPlace(connection);
+        return connection.find("upgrade") != std::string::npos && !headerValue(request.headers, "Sec-WebSocket-Key").empty();
+    }
+
+    void upgradeToWebSocket(const HttpRequest& request) {
+        std::string response = "HTTP/1.1 101 Switching Protocols\r\n";
+        response += "Upgrade: websocket\r\n";
+        response += "Connection: Upgrade\r\n";
+        response += "Sec-WebSocket-Accept: " + computeWsAccept(headerValue(request.headers, "Sec-WebSocket-Key")) + "\r\n\r\n";
+
+        // drop the consumed handshake request so the frame parser starts on client frame bytes, keeping any already-pipelined frames.
+        readBuffer.erase(0, requestEnd);
+
+        wsMode = true;
+        keepAlive = true;
+        writeBuffer = std::move(response);
+        writeOffset = 0;
+        auto self = shared_from_this();
+        loop.watchWrite(socket, [self]() -> bool { return self->onWritable(); });
+    }
+
+    Progress wsProcess() {
+        for (;;) {
+            WsFrame frame;
+            const WsParse result = parseWsFrame(readBuffer, frame);
+            if (result == WsParse::NeedMore) {
+                return Progress::NeedMore;
+            }
+            if (result == WsParse::Error) {
+                closeNow();
+                return Progress::Detached;
+            }
+
+            readBuffer.erase(0, frame.consumed);
+            if (!handleWsFrame(frame)) {
+                return Progress::Detached;
+            }
+        }
+    }
+
+    bool handleWsFrame(const WsFrame& frame) {
+        if (frame.opcode == kWsClose) {
+            wsSend(kWsClose, frame.payload);
+            closeNow();
+            return false;
+        }
+        if (frame.opcode == kWsPing) {
+            wsSend(kWsPong, frame.payload);
+            return true;
+        }
+        if (frame.opcode == kWsPong) {
+            return true;
+        }
+
+        // data frames assemble across fragments, then echo back as one message until the lua handler is wired in.
+        if (frame.opcode != kWsContinuation) {
+            wsMessageOpcode = frame.opcode;
+            wsMessage.clear();
+        }
+        if (wsMessage.size() + frame.payload.size() > kWsMaxMessageBytes) {
+            closeNow();
+            return false;
+        }
+        wsMessage += frame.payload;
+        if (frame.fin) {
+            wsSend(wsMessageOpcode, wsMessage);
+            wsMessage.clear();
+        }
+        return true;
+    }
+
+    void wsSend(int opcode, const std::string& payload) {
+        wsOut += buildWsFrame(opcode, payload);
+        if (wsWriting) {
+            return;
+        }
+        wsWriting = true;
+        auto self = shared_from_this();
+        loop.watchWrite(socket, [self]() -> bool { return self->wsOnWritable(); });
+    }
+
+    bool wsOnWritable() {
+        while (wsOutOffset < wsOut.size()) {
+            const std::size_t remaining = wsOut.size() - wsOutOffset;
+            const int chunk = static_cast<int>(std::min(remaining, static_cast<std::size_t>(INT_MAX)));
+            int wrote;
+            try {
+                wrote = socket.sendBytes(wsOut.data() + wsOutOffset, chunk);
+            } catch (...) {
+                closeNow();
+                return true;
+            }
+            if (wrote < 0) {
+                return false;
+            }
+            if (wrote == 0) {
+                closeNow();
+                return true;
+            }
+            wsOutOffset += static_cast<std::size_t>(wrote);
+        }
+
+        wsOut.clear();
+        wsOutOffset = 0;
+        wsWriting = false;
+        return true;
     }
 
     void readNextChunk() {
@@ -677,6 +922,13 @@ private:
     std::string filePath;
     std::uint64_t fileOffset = 0;
     std::uint64_t fileRemaining = 0;
+
+    bool wsMode = false;
+    int wsMessageOpcode = kWsText;
+    std::string wsMessage;
+    std::string wsOut;
+    std::size_t wsOutOffset = 0;
+    bool wsWriting = false;
 
     std::string pendingMethod;
     std::string pendingTarget;

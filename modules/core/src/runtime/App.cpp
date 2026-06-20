@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(VARN_NO_FORK)
 #include <cerrno>
 #include <csignal>
 #include <sys/wait.h>
@@ -18,7 +18,7 @@
 
 namespace varn::runtime {
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(VARN_NO_FORK)
 namespace {
 volatile sig_atomic_t gWorkerShutdown = 0;
 void onWorkerSignal(int) {
@@ -39,7 +39,7 @@ int App::workerCount() {
     return std::clamp(std::atoi(value), 1, 1024);
 }
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(VARN_NO_FORK)
 int App::superviseWorkers(int count, const std::function<int()>& runChild) {
     std::vector<pid_t> workers;
     workers.reserve(static_cast<std::size_t>(count));
@@ -130,10 +130,10 @@ int App::run(int argc, char** argv) {
 
     const int workers = workerCount();
     if (workers > 1) {
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(VARN_NO_FORK)
         return superviseWorkers(workers, runChild);
 #else
-        log::Log::line("App", "Worker processes require a POSIX platform, running a single process.");
+        log::Log::line("App", "Worker processes are not supported on this platform, running a single process.");
 #endif
     }
     return runChild();
