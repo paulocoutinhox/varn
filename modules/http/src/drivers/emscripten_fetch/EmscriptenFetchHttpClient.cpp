@@ -122,6 +122,7 @@ extern "C"
 
 } // extern "C"
 
+// clang-format off
 EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const char* method, const char* headers_json, const char* body_ptr, int body_len, int timeout_sec, double max_bytes), {
     function reportError(message)
     {
@@ -150,7 +151,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
         reportError("[EmscriptenFetchHttpClient] Invalid headers json (" + String(e) + ")");
         return;
     }
-    if (parsed == = null || typeof parsed != = "object" || Array.isArray(parsed))
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
     {
         reportError("[EmscriptenFetchHttpClient] Headers json must be a JSON object.");
         return;
@@ -159,7 +160,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
     for (const key of Object.keys(parsed))
     {
         const value = parsed[key];
-        if (typeof value != = "string")
+        if (typeof value !== "string")
         {
             reportError("[EmscriptenFetchHttpClient] Header value must be a string (key: " + key + ")");
             return;
@@ -177,15 +178,15 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
     let tid = 0;
     if (timeout_sec > 0)
     {
-        tid = setTimeout(() = > ctrl.abort(), timeout_sec * 1000);
+        tid = setTimeout(() => ctrl.abort(), timeout_sec * 1000);
     }
 
     fetch(urlStr, {method : methodStr, headers : headersInit, body : body, signal : ctrl.signal})
-        .then((res) = > {
+        .then((res) => {
             const st = res.status;
-            return res.arrayBuffer().then((ab) = > ({status : st, ab : ab}));
+            return res.arrayBuffer().then((ab) => ({status : st, ab : ab}));
         })
-        .then((x) = > {
+        .then((x) => {
             if (tid)
             {
                 clearTimeout(tid);
@@ -209,7 +210,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
             }
             _varn_fetch_js_on_success(ctx, x.status, ptr, len);
         })
-        .catch((e) = > {
+        .catch((e) => {
             if (tid)
             {
                 clearTimeout(tid);
@@ -217,6 +218,7 @@ EM_JS(void, varn_browser_fetch_start, (uintptr_t ctx, const char* url, const cha
             reportError(String(e));
         });
 });
+// clang-format on
 
 void HttpClientPerform::performAsync(
     const std::shared_ptr<Promise>& promise,

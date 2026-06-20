@@ -136,6 +136,19 @@ if(VARN_NEEDS_LIBUV)
     )
 endif()
 
+# the http request parser.
+if(VARN_NEEDS_LLHTTP)
+    CPMAddPackage(
+        NAME llhttp
+        VERSION 9.2.1
+        GITHUB_REPOSITORY nodejs/llhttp
+        GIT_TAG release/v9.2.1
+        OPTIONS
+            "BUILD_SHARED_LIBS OFF"
+            "BUILD_STATIC_LIBS ON"
+    )
+endif()
+
 # spdlog backs the log SPDLOG driver.
 if(VARN_NEEDS_SPDLOG)
     CPMAddPackage(

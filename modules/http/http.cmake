@@ -40,6 +40,7 @@ if(VARN_HTTP_SERVER_DRIVER STREQUAL "POCO")
         "${CMAKE_CURRENT_LIST_DIR}/src/drivers/reactor/ReactorHttpServer.cpp"
     )
     set(VARN_NEEDS_POCO ON)
+    set(VARN_NEEDS_LLHTTP ON)
 else()
     list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/dummy/HttpServerModuleStub.cpp")
 endif()

@@ -106,23 +106,32 @@ A `THRESHOLD` line marked failed means the server crossed a budget defined in `o
 
 ## ⚙️ Tune the server for load
 
-`listen` accepts options that shape how the server absorbs concurrency. Raise them when the test shows queuing or rejected connections.
+The server runs one event loop per process, so the main scaling knob is the number of
+processes. Set `VARN_WORKERS` to the core count to spread connections across all cores:
+
+```bash
+VARN_WORKERS=8 ./build/bin/varn your_server.lua
+```
+
+`listen` options shape how a single worker absorbs concurrency. Raise them when the test shows
+queuing or rejected connections.
 
 ```lua
 server:listen({
     host = "0.0.0.0",
     port = 3000,
-    maxThreads = 64,          -- worker threads serving requests
-    maxQueued = 1024,         -- connections allowed to wait for a thread
-    requestTimeoutMs = 15000, -- per-request deadline
+    maxQueued = 1024,             -- accept backlog before new connections are refused
+    requestTimeoutMs = 15000,     -- per-request deadline
+    keepAliveTimeoutSeconds = 30, -- idle and slow-connection reaping
 })
 ```
 
-| Option | Effect under load |
-|--------|-------------------|
-| `maxThreads` | more concurrent requests in flight, at the cost of memory and context switching |
+| Knob | Effect under load |
+|------|-------------------|
+| `VARN_WORKERS` | one process per core; on Linux the kernel load-balances connections across them |
 | `maxQueued` | longer accept backlog before new connections are refused |
-| `requestTimeoutMs` | bounds how long a slow request ties up a thread |
+| `requestTimeoutMs` | bounds how long a slow request stays open |
+| `keepAliveTimeoutSeconds` | closes idle keep-alive and slow-read connections |
 
 ## 💡 Tips
 

@@ -6,8 +6,6 @@
 #include "varn/runtime/Runtime.h"
 
 #include <Poco/Base64Encoder.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/SHA1Engine.h>
@@ -15,6 +13,7 @@
 #include <Poco/URI.h>
 
 #include <cstring>
+#include <llhttp.h>
 
 #ifdef VARN_ENABLE_TLS
 #include "../poco/TlsServerContext.h"
@@ -356,6 +355,7 @@ public:
         }
 
         requestStartMs = nowMs();
+        llhttp_init(&parser, HTTP_REQUEST, requestSettings());
     }
 
     void start()
@@ -901,49 +901,115 @@ private:
         return true;
     }
 
+    static int onUrl(llhttp_t* parser, const char* at, std::size_t length)
+    {
+        static_cast<HttpConnection*>(parser->data)->pendingTarget.append(at, length);
+        return 0;
+    }
+
+    static int onHeaderField(llhttp_t* parser, const char* at, std::size_t length)
+    {
+        static_cast<HttpConnection*>(parser->data)->parseField.append(at, length);
+        return 0;
+    }
+
+    static int onHeaderValue(llhttp_t* parser, const char* at, std::size_t length)
+    {
+        static_cast<HttpConnection*>(parser->data)->parseValue.append(at, length);
+        return 0;
+    }
+
+    static int onHeaderValueComplete(llhttp_t* parser)
+    {
+        auto* self = static_cast<HttpConnection*>(parser->data);
+        self->pendingHeaders[self->parseField] = self->parseValue;
+        self->parseField.clear();
+        self->parseValue.clear();
+        return 0;
+    }
+
+    // one shared callback table for every connection's request parser.
+    static const llhttp_settings_t* requestSettings()
+    {
+        static const llhttp_settings_t settings = []
+        {
+            llhttp_settings_t table;
+            llhttp_settings_init(&table);
+            table.on_url = &HttpConnection::onUrl;
+            table.on_header_field = &HttpConnection::onHeaderField;
+            table.on_header_value = &HttpConnection::onHeaderValue;
+            table.on_header_value_complete = &HttpConnection::onHeaderValueComplete;
+            return table;
+        }();
+        return &settings;
+    }
+
+    // splits a Cookie header into name/value pairs, trimming optional whitespace around each.
+    static void parseCookies(const std::string& header, std::map<std::string, std::string>& out)
+    {
+        std::size_t pos = 0;
+        while (pos < header.size())
+        {
+            const std::size_t semicolon = header.find(';', pos);
+            const std::size_t end = semicolon == std::string::npos ? header.size() : semicolon;
+            const std::size_t equals = header.find('=', pos);
+            if (equals != std::string::npos && equals < end)
+            {
+                const std::size_t nameBegin = header.find_first_not_of(" \t", pos);
+                const std::size_t nameEnd = header.find_last_not_of(" \t", equals - 1);
+                if (nameBegin != std::string::npos && nameBegin <= nameEnd)
+                {
+                    std::string value;
+                    const std::size_t valueBegin = header.find_first_not_of(" \t", equals + 1);
+                    if (valueBegin != std::string::npos && valueBegin < end)
+                    {
+                        const std::size_t valueEnd = header.find_last_not_of(" \t", end - 1);
+                        value = header.substr(valueBegin, valueEnd - valueBegin + 1);
+                    }
+
+                    out[header.substr(nameBegin, nameEnd - nameBegin + 1)] = value;
+                }
+            }
+
+            if (semicolon == std::string::npos)
+            {
+                break;
+            }
+            pos = semicolon + 1;
+        }
+    }
+
     bool parseHeaders()
     {
-        Poco::Net::HTTPRequest request;
-        try
-        {
-            std::istringstream stream(readBuffer.substr(0, headersEnd + 4));
-            request.read(stream);
-        }
-        catch (...)
+        pendingTarget.clear();
+        pendingHeaders.clear();
+        parseField.clear();
+        parseValue.clear();
+
+        llhttp_reset(&parser);
+        parser.data = this;
+
+        // llhttp parses the request line and headers in place and rejects smuggling, duplicate content-length, and malformed framing.
+        const llhttp_errno_t status = llhttp_execute(&parser, readBuffer.data(), headersEnd + 4);
+        if (status != HPE_OK && status != HPE_PAUSED_UPGRADE)
         {
             sendSimpleAndClose(400);
             return false;
         }
+
+        const char* methodName = llhttp_method_name(static_cast<llhttp_method_t>(llhttp_get_method(&parser)));
+        pendingMethod = methodName != nullptr ? std::string(methodName) : std::string();
 
         bodyStart = headersEnd + 4;
         chunked = false;
         contentLength = 0;
 
-        // reject duplicate framing headers, since a proxy honoring a different copy enables request smuggling.
-        int contentLengthCount = 0;
-        int transferEncodingCount = 0;
-        for (const auto& header : request)
-        {
-            if (Poco::icompare(header.first, "Content-Length") == 0)
-            {
-                ++contentLengthCount;
-            }
-            else if (Poco::icompare(header.first, "Transfer-Encoding") == 0)
-            {
-                ++transferEncodingCount;
-            }
-        }
-
-        if (contentLengthCount > 1 || transferEncodingCount > 1)
-        {
-            sendSimpleAndClose(400);
-            return false;
-        }
-
-        if (request.has("Transfer-Encoding"))
+        const std::string transferEncoding = headerValue(pendingHeaders, "Transfer-Encoding");
+        const std::string contentLengthValue = headerValue(pendingHeaders, "Content-Length");
+        if (!transferEncoding.empty())
         {
             // only chunked is supported, and it must not be combined with a content-length.
-            if (Poco::icompare(request.get("Transfer-Encoding"), "chunked") != 0 || request.has("Content-Length"))
+            if (Poco::icompare(transferEncoding, "chunked") != 0 || !contentLengthValue.empty())
             {
                 sendSimpleAndClose(400);
                 return false;
@@ -953,10 +1019,9 @@ private:
             chunkPos = bodyStart;
             chunkedBody.clear();
         }
-        else if (request.has("Content-Length"))
+        else if (!contentLengthValue.empty())
         {
-            const std::string value = request.get("Content-Length");
-            if (value.empty() || value.find_first_not_of("0123456789") != std::string::npos)
+            if (contentLengthValue.find_first_not_of("0123456789") != std::string::npos)
             {
                 sendSimpleAndClose(400);
                 return false;
@@ -964,7 +1029,7 @@ private:
 
             try
             {
-                contentLength = std::stoull(value);
+                contentLength = std::stoull(contentLengthValue);
             }
             catch (...)
             {
@@ -979,10 +1044,16 @@ private:
             }
         }
 
-        keepAlive = request.getKeepAlive();
+        const std::string connectionHeader = headerValue(pendingHeaders, "Connection");
+        if (llhttp_get_http_major(&parser) == 1 && llhttp_get_http_minor(&parser) == 0)
+        {
+            keepAlive = Poco::icompare(connectionHeader, "keep-alive") == 0;
+        }
+        else
+        {
+            keepAlive = Poco::icompare(connectionHeader, "close") != 0;
+        }
 
-        pendingMethod = request.getMethod();
-        pendingTarget = request.getURI();
         try
         {
             Poco::URI uri(pendingTarget);
@@ -1000,26 +1071,9 @@ private:
             return false;
         }
 
-        pendingHost = request.get("Host", "");
-        pendingHeaders.clear();
-        for (auto it = request.begin(); it != request.end(); ++it)
-        {
-            pendingHeaders[it->first] = it->second;
-        }
-
+        pendingHost = headerValue(pendingHeaders, "Host");
         pendingCookies.clear();
-        try
-        {
-            Poco::Net::NameValueCollection values;
-            request.getCookies(values);
-            for (auto it = values.begin(); it != values.end(); ++it)
-            {
-                pendingCookies[it->first] = it->second;
-            }
-        }
-        catch (...)
-        {
-        }
+        parseCookies(headerValue(pendingHeaders, "Cookie"), pendingCookies);
 
         return true;
     }
@@ -1027,14 +1081,14 @@ private:
     void dispatch()
     {
         HttpRequest request;
-        request.host = pendingHost;
-        request.method = pendingMethod;
-        request.target = pendingTarget;
-        request.path = pendingPath;
-        request.queryString = pendingQueryString;
-        request.headers = pendingHeaders;
-        request.cookies = pendingCookies;
-        request.query = pendingQuery;
+        request.host = std::move(pendingHost);
+        request.method = std::move(pendingMethod);
+        request.target = std::move(pendingTarget);
+        request.path = std::move(pendingPath);
+        request.queryString = std::move(pendingQueryString);
+        request.headers = std::move(pendingHeaders);
+        request.cookies = std::move(pendingCookies);
+        request.query = std::move(pendingQuery);
         request.remoteAddress = remoteAddress;
         request.body = std::move(requestBody);
 
@@ -1414,6 +1468,10 @@ private:
     std::map<std::string, std::string> pendingHeaders;
     std::map<std::string, std::string> pendingCookies;
     std::map<std::string, std::string> pendingQuery;
+
+    llhttp_t parser;
+    std::string parseField;
+    std::string parseValue;
 };
 
 std::string ReactorResponse::buildHead(std::size_t contentLength, bool emitContentLength)

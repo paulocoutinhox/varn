@@ -26,6 +26,8 @@ Server-side code that calls `http.client.request` with user-controlled URLs can 
 
 The rate-limit middleware keys buckets by client IP. With `trustProxy = true` it trusts the left-most `X-Forwarded-For` entry, which a client can spoof — only enable it behind a proxy that overwrites that header, otherwise the limit is bypassable and the bucket table can grow per spoofed address.
 
+At the transport level the server rejects ambiguous or abusive requests automatically: duplicate or conflicting `Content-Length`/`Transfer-Encoding` (request smuggling), bodies over 16 MB, and malformed chunked encoding. Connections that stall — a slow or partial request, or a client reading its response too slowly (slowloris) — are closed once they pass `requestTimeoutMs`/`keepAliveTimeoutSeconds`.
+
 ## 🧩 ffi
 
 `ffi` can call any native function available to the process. Treat scripts that use `ffi` as equivalent to native code for sandboxing purposes.

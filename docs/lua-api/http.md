@@ -31,10 +31,11 @@ If the handler returns without ending the response, the server sends `204 No Con
 
 `builder:listen(port)` or `builder:listen(options)` starts the server. The same options
 work for both `http.createServer` and `app:listen`: `host`, `port`, `publicDir`,
-`servePublic`, `directoryListing`, `requestTimeoutMs`, `maxQueued`, `maxThreads`, `tls`,
-`certFile`, `keyFile`. The environment variables `VARN_PORT`, `VARN_TLS_CERT`, and
-`VARN_TLS_KEY` override the matching options. When `servePublic` is on and `publicDir` is
-omitted, it defaults to `apps/lua/public`.
+`servePublic`, `directoryListing`, `requestTimeoutMs` (default 30000),
+`keepAliveTimeoutSeconds` (default 30), `maxQueued` (the accept backlog), `tls`, `certFile`,
+`keyFile`. The environment variables `VARN_PORT`, `VARN_TLS_CERT`, and `VARN_TLS_KEY` override
+the matching options. When `servePublic` is on and `publicDir` is omitted, it defaults to
+`apps/lua/public`.
 
 ## App framework
 
@@ -52,6 +53,23 @@ results are marshalled back. Request handlers, middleware, and WebSocket callbac
 free; a handler that busy-loops or makes a synchronous blocking call will stall every other
 connection until it returns. HTTP requests are bounded by `requestTimeoutMs` (the server answers
 504 if a handler runs too long); WebSocket messages for one connection are processed in order.
+
+## Scaling across cores
+
+One process runs one event loop, so it uses one CPU core. Set `VARN_WORKERS=N` to run `N`
+worker processes: a master forks them, each binds the same port with `SO_REUSEPORT`, and the
+master restarts any worker that exits. This is the model Node's `cluster` and nginx use — on
+Linux the kernel load-balances new connections across the workers. `VARN_WORKERS` defaults to
+`1` and is capped at `1024`. Windows and tvOS/watchOS have no `fork`, so the server stays
+single-process there.
+
+## Request hardening
+
+The server fails closed on ambiguous or abusive requests: duplicate or conflicting
+`Content-Length`/`Transfer-Encoding` headers (request smuggling) are answered with `400`, a
+body over 16 MB gets `413`, and a malformed chunk size is rejected. A connection that stops
+making progress — a slow or partial request, or a client reading its response too slowly
+(slowloris) — is closed once it passes `requestTimeoutMs`/`keepAliveTimeoutSeconds`.
 
 ## Client
 
@@ -541,4 +559,7 @@ server:listen({
 
 ## Under the hood
 
-The HTTP server and client are built on the Poco C++ libraries.
+The server runs an event loop on the same thread as Lua — `epoll` on Linux, `kqueue` on
+macOS/BSD, `IOCP` on Windows — so one process serves many thousands of connections without a
+thread per connection. Poco provides the sockets and TLS; the HTTP client is built on Poco (in
+the browser build, the client uses the host's `fetch`).

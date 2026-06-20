@@ -6,8 +6,10 @@
 
 #if defined(_WIN32)
 
-#include <dbghelp.h>
+// clang-format off
 #include <windows.h>
+#include <dbghelp.h>
+// clang-format on
 
 #include <cstdint>
 
