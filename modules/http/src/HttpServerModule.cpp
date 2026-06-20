@@ -3,10 +3,7 @@
 #include "varn/http/HttpClientModule.h"
 #include "varn/http/HttpServerModule.h"
 #include "varn/http/HttpTypes.h"
-#include "varn/http/drivers/poco/PocoHttpServer.h"
-#ifdef VARN_HTTP_REACTOR_SERVER
 #include "varn/http/drivers/reactor/ReactorHttpServer.h"
-#endif
 #if VARN_JSON_DRIVER_NLOHMANN
 #include "varn/json/JsonSerializer.h"
 #endif
@@ -193,12 +190,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L) {
         });
     };
 
-    HttpServer* engine =
-#ifdef VARN_HTTP_REACTOR_SERVER
-        new ReactorHttpServer(rt, std::move(options), std::move(handler));
-#else
-        new PocoHttpServer(rt, std::move(options), std::move(handler));
-#endif
+    auto* engine = new ReactorHttpServer(rt, std::move(options), std::move(handler));
 
     auto server = std::shared_ptr<HttpServer>(
         engine,

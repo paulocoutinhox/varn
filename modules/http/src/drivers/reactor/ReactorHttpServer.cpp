@@ -251,13 +251,14 @@ private:
 };
 
 // one connection state machine, multiplexed on the reactor i/o thread and kept alive by the handlers and the response that reference it.
-class HttpConnection final : public std::enable_shared_from_this<HttpConnection> {
+class HttpConnection final : public std::enable_shared_from_this<HttpConnection>, public WebSocketConnection {
 public:
     HttpConnection(Poco::Net::StreamSocket socket, EventLoop& loop, Runtime& runtime, HttpServerOptions opts,
-                   HttpHandler handler, std::shared_ptr<StaticFileHandler> staticFiles,
+                   HttpHandler handler, WebSocketHandler onWebSocket, std::shared_ptr<StaticFileHandler> staticFiles,
                    std::shared_ptr<std::atomic<bool>> stopping)
         : socket(std::move(socket)), loop(loop), runtime(runtime), options(std::move(opts)),
-          handler(std::move(handler)), staticFiles(std::move(staticFiles)), stopping(std::move(stopping)) {
+          handler(std::move(handler)), onWebSocket(std::move(onWebSocket)), staticFiles(std::move(staticFiles)),
+          stopping(std::move(stopping)) {
         this->socket.setBlocking(false);
         try {
             this->socket.setNoDelay(true);
@@ -313,6 +314,55 @@ public:
         loop.watchWrite(socket, [self]() -> bool { return self->onWritable(); });
     }
 
+    void accept() override {
+        if (wsMode || closed) {
+            return;
+        }
+        std::string response = "HTTP/1.1 101 Switching Protocols\r\n";
+        response += "Upgrade: websocket\r\n";
+        response += "Connection: Upgrade\r\n";
+        response += "Sec-WebSocket-Accept: " + computeWsAccept(wsKey) + "\r\n\r\n";
+
+        // drop the consumed handshake request so the frame parser starts on client frame bytes.
+        readBuffer.erase(0, wsRequestEnd);
+
+        wsMode = true;
+        keepAlive = true;
+        writeBuffer = std::move(response);
+        writeOffset = 0;
+        auto self = shared_from_this();
+        loop.watchWrite(socket, [self]() -> bool { return self->onWritable(); });
+    }
+
+    void reject(int statusCode) override {
+        sendSimpleAndClose(statusCode);
+    }
+
+    void send(const std::string& message) override {
+        if (!closed) {
+            wsSend(kWsText, message);
+        }
+    }
+
+    void close() override {
+        if (closed || wsCloseAfterFlush) {
+            return;
+        }
+        std::string payload;
+        payload.push_back(static_cast<char>((1000 >> 8) & 0xFF));
+        payload.push_back(static_cast<char>(1000 & 0xFF));
+        wsSend(kWsClose, payload);
+        wsCloseAfterFlush = true;
+    }
+
+    void onMessage(std::function<void(const std::string&)> handler) override {
+        wsMessageHandler = std::move(handler);
+    }
+
+    void onClose(std::function<void()> handler) override {
+        wsCloseHandler = std::move(handler);
+    }
+
 private:
     enum class Progress { NeedMore, Detached };
     enum class ChunkResult { Done, NeedMore, Error };
@@ -335,6 +385,13 @@ private:
             return;
         }
         closed = true;
+
+        if (wsCloseHandler) {
+            auto handler = std::move(wsCloseHandler);
+            wsCloseHandler = nullptr;
+            handler();
+        }
+
         if (loop.isRunning()) {
             loop.closeSocket(socket);
             return;
@@ -385,6 +442,16 @@ private:
         if (received == 0) {
             closeNow();
             return Io::Detached;
+        }
+
+        if (draining) {
+            const std::size_t consumed = std::min(static_cast<std::size_t>(received), drainRemaining);
+            drainRemaining -= consumed;
+            if (drainRemaining == 0) {
+                closeNow();
+                return Io::Detached;
+            }
+            return Io::Again;
         }
 
         readBuffer.append(buffer, static_cast<std::size_t>(received));
@@ -443,6 +510,11 @@ private:
             return Io::Detached;
         }
         fileMode = false;
+
+        // the rejection response is flushed, but the connection stays open until the read side has drained the upload.
+        if (draining) {
+            return Io::Detached;
+        }
 
         // once the websocket handshake response is flushed the connection switches to reading client frames.
         if (wsMode) {
@@ -620,7 +692,7 @@ private:
                 return false;
             }
             if (options.maxRequestBodyBytes > 0 && contentLength > static_cast<std::size_t>(options.maxRequestBodyBytes)) {
-                sendSimpleAndClose(413);
+                beginRejectDrain(413);
                 return false;
             }
         }
@@ -675,7 +747,13 @@ private:
         dispatched = true;
 
         if (isWebSocketUpgrade(request)) {
-            upgradeToWebSocket(request);
+            if (onWebSocket) {
+                wsKey = headerValue(request.headers, "Sec-WebSocket-Key");
+                wsRequestEnd = requestEnd;
+                onWebSocket(request, shared_from_this());
+            } else {
+                sendSimpleAndClose(404);
+            }
             return;
         }
 
@@ -704,23 +782,6 @@ private:
         std::string connection = headerValue(request.headers, "Connection");
         Poco::toLowerInPlace(connection);
         return connection.find("upgrade") != std::string::npos && !headerValue(request.headers, "Sec-WebSocket-Key").empty();
-    }
-
-    void upgradeToWebSocket(const HttpRequest& request) {
-        std::string response = "HTTP/1.1 101 Switching Protocols\r\n";
-        response += "Upgrade: websocket\r\n";
-        response += "Connection: Upgrade\r\n";
-        response += "Sec-WebSocket-Accept: " + computeWsAccept(headerValue(request.headers, "Sec-WebSocket-Key")) + "\r\n\r\n";
-
-        // drop the consumed handshake request so the frame parser starts on client frame bytes, keeping any already-pipelined frames.
-        readBuffer.erase(0, requestEnd);
-
-        wsMode = true;
-        keepAlive = true;
-        writeBuffer = std::move(response);
-        writeOffset = 0;
-        auto self = shared_from_this();
-        loop.watchWrite(socket, [self]() -> bool { return self->onWritable(); });
     }
 
     Progress wsProcess() {
@@ -756,9 +817,8 @@ private:
             return true;
         }
 
-        // data frames assemble across fragments, then echo back as one message until the lua handler is wired in.
+        // data frames assemble across fragments into one message delivered to the route handler.
         if (frame.opcode != kWsContinuation) {
-            wsMessageOpcode = frame.opcode;
             wsMessage.clear();
         }
         if (wsMessage.size() + frame.payload.size() > kWsMaxMessageBytes) {
@@ -767,7 +827,9 @@ private:
         }
         wsMessage += frame.payload;
         if (frame.fin) {
-            wsSend(wsMessageOpcode, wsMessage);
+            if (wsMessageHandler) {
+                wsMessageHandler(wsMessage);
+            }
             wsMessage.clear();
         }
         return true;
@@ -807,6 +869,9 @@ private:
         wsOut.clear();
         wsOutOffset = 0;
         wsWriting = false;
+        if (wsCloseAfterFlush) {
+            closeNow();
+        }
         return true;
     }
 
@@ -871,6 +936,32 @@ private:
         submitResponse(std::move(head), false);
     }
 
+    void beginRejectDrain(int code) {
+        // reject the oversized upload but read off the rest of the body first, so the close is a clean fin rather than a reset that loses the response.
+        const std::size_t received = readBuffer.size() - bodyStart;
+        drainRemaining = contentLength > received ? contentLength - received : 0;
+        readBuffer.clear();
+
+        if (drainRemaining == 0) {
+            sendSimpleAndClose(code);
+            return;
+        }
+
+        draining = true;
+        const std::string body = std::string(reasonPhrase(code)) + ".";
+        std::string head = "HTTP/1.1 " + std::to_string(code) + " " + reasonPhrase(code) + "\r\n";
+        head += "Content-Type: text/plain; charset=utf-8\r\n";
+        head += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+        head += "Connection: close\r\n\r\n";
+        head += body;
+        keepAlive = false;
+        writeBuffer = std::move(head);
+        writeOffset = 0;
+        auto self = shared_from_this();
+        loop.watchWrite(socket, [self]() -> bool { return self->onWritable(); });
+        armRead();
+    }
+
     void resetForNextRequest() {
         std::string leftover = readBuffer.substr(requestEnd);
         readBuffer = std::move(leftover);
@@ -897,6 +988,7 @@ private:
     Runtime& runtime;
     HttpServerOptions options;
     HttpHandler handler;
+    WebSocketHandler onWebSocket;
     std::shared_ptr<StaticFileHandler> staticFiles;
     std::shared_ptr<std::atomic<bool>> stopping;
     std::string remoteAddress;
@@ -906,6 +998,8 @@ private:
     std::size_t bodyStart = 0;
     std::size_t contentLength = 0;
     std::size_t requestEnd = 0;
+    bool draining = false;
+    std::size_t drainRemaining = 0;
     bool chunked = false;
     std::size_t chunkPos = 0;
     std::string chunkedBody;
@@ -924,11 +1018,15 @@ private:
     std::uint64_t fileRemaining = 0;
 
     bool wsMode = false;
-    int wsMessageOpcode = kWsText;
     std::string wsMessage;
     std::string wsOut;
     std::size_t wsOutOffset = 0;
     bool wsWriting = false;
+    bool wsCloseAfterFlush = false;
+    std::string wsKey;
+    std::size_t wsRequestEnd = 0;
+    std::function<void(const std::string&)> wsMessageHandler;
+    std::function<void()> wsCloseHandler;
 
     std::string pendingMethod;
     std::string pendingTarget;
@@ -1043,8 +1141,9 @@ void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<Ht
 
 } // namespace
 
-ReactorHttpServer::ReactorHttpServer(Runtime& rt, HttpServerOptions opts, HttpHandler onRequest)
-    : runtime(rt), serverOptions(std::move(opts)), httpHandler(std::move(onRequest)) {}
+ReactorHttpServer::ReactorHttpServer(Runtime& rt, HttpServerOptions opts, HttpHandler onRequest, WebSocketHandler onWebSocket)
+    : runtime(rt), serverOptions(std::move(opts)), httpHandler(std::move(onRequest)),
+      webSocketHandler(std::move(onWebSocket)) {}
 
 ReactorHttpServer::~ReactorHttpServer() {
     stop();
@@ -1097,10 +1196,11 @@ void ReactorHttpServer::start() {
     Runtime& rt = runtime;
     HttpServerOptions opts = serverOptions;
     HttpHandler onRequest = httpHandler;
+    WebSocketHandler onWebSocket = webSocketHandler;
     auto stop = stopping;
     Poco::Net::ServerSocket server = listener;
 
-    loop.watchRead(listener, [&loop, &rt, opts, onRequest, staticFiles, stop, server, registry]() mutable -> bool {
+    loop.watchRead(listener, [&loop, &rt, opts, onRequest, onWebSocket, staticFiles, stop, server, registry]() mutable -> bool {
         if (stop->load(std::memory_order_acquire)) {
             return true;
         }
@@ -1113,8 +1213,8 @@ void ReactorHttpServer::start() {
             } catch (...) {
                 break;
             }
-            auto connection =
-                std::make_shared<HttpConnection>(std::move(accepted), loop, rt, opts, onRequest, staticFiles, stop);
+            auto connection = std::make_shared<HttpConnection>(std::move(accepted), loop, rt, opts, onRequest,
+                                                               onWebSocket, staticFiles, stop);
             registry->push_back(connection);
             connection->start();
         }

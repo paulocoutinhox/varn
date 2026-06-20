@@ -6,8 +6,6 @@ endif()
 set_property(CACHE VARN_HTTP_SERVER_DRIVER PROPERTY STRINGS POCO DUMMY)
 varn_validate_driver(VARN_HTTP_SERVER_DRIVER POCO DUMMY)
 
-option(VARN_HTTP_REACTOR_SERVER "Use the event-driven reactor http server engine for createServer" OFF)
-
 if(NOT DEFINED CACHE{VARN_HTTP_CLIENT_DRIVER})
     set(VARN_HTTP_CLIENT_DRIVER "POCO" CACHE STRING "http client transport: POCO EMSCRIPTEN_FETCH DUMMY")
 endif()
@@ -38,21 +36,10 @@ if(VARN_HTTP_SERVER_DRIVER STREQUAL "POCO")
         "${CMAKE_CURRENT_LIST_DIR}/src/StaticFileHandler.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/StaticContent.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/MimeTypes.cpp"
-        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoHttpServer.cpp"
-        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoRequestReader.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/TlsServerContext.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/reactor/ReactorHttpServer.cpp"
     )
     set(VARN_NEEDS_POCO ON)
-
-    # the event-driven engine multiplexes connections on the poco socket reactor, so it requires the poco socket driver.
-    if(VARN_SOCKET_DRIVER STREQUAL "POCO")
-        list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/reactor/ReactorHttpServer.cpp")
-        if(VARN_HTTP_REACTOR_SERVER)
-            list(APPEND VARN_COMPILE_DEFS "VARN_HTTP_REACTOR_SERVER=1")
-        endif()
-    elseif(VARN_HTTP_REACTOR_SERVER)
-        message(FATAL_ERROR "VARN_HTTP_REACTOR_SERVER requires VARN_SOCKET_DRIVER=POCO.")
-    endif()
 else()
     list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/dummy/HttpServerModuleStub.cpp")
 endif()

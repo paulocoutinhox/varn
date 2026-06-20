@@ -4,7 +4,7 @@
 #include "varn/http/MimeTypes.h"
 #include "varn/http/Router.h"
 #include "varn/http/StaticFileHandler.h"
-#include "varn/http/drivers/poco/PocoHttpServer.h"
+#include "varn/http/drivers/reactor/ReactorHttpServer.h"
 
 #include "HttpMultipart.h"
 #include "HttpText.h"
@@ -22,15 +22,12 @@
 #endif
 
 #include <Poco/Exception.h>
-#include <Poco/Net/WebSocket.h>
-#include <Poco/Timespan.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cctype>
-#include <deque>
-#include <future>
 #include <chrono>
 #include <cstring>
 #include <ctime>
@@ -87,13 +84,6 @@ struct WsRoute {
 constexpr std::size_t kWsMaxMessageBytes = 1u << 20;
 
 // shared between the transport thread that owns the socket and the main loop that runs lua callbacks.
-struct WsConnState {
-    std::mutex mutex;
-    std::deque<std::string> outgoing;
-    bool closed = false;
-    int luaRef = LUA_NOREF;
-};
-
 struct AppState {
     Router router;
     Runtime* runtime = nullptr;
@@ -114,8 +104,6 @@ struct AppState {
     std::vector<int> requestHooks;
     std::vector<int> responseHooks;
     std::vector<WsRoute> wsRoutes;
-    // live websocket connections tracked on the loop thread so their registry refs are released here when shutdown cuts a session short before wsRelease runs.
-    std::vector<std::shared_ptr<WsConnState>> liveWsConns;
     int configRef = LUA_NOREF;
 
     ~AppState() {
@@ -164,14 +152,6 @@ struct AppState {
             luaL_unref(luaMain, LUA_REGISTRYINDEX, route.closeRef);
         }
 
-        // release any websocket connection ref whose session ended without wsRelease running.
-        for (const auto& conn : liveWsConns) {
-            if (conn && conn->luaRef != LUA_NOREF) {
-                luaL_unref(luaMain, LUA_REGISTRYINDEX, conn->luaRef);
-                conn->luaRef = LUA_NOREF;
-            }
-        }
-
         luaL_unref(luaMain, LUA_REGISTRYINDEX, configRef);
         luaL_unref(luaMain, LUA_REGISTRYINDEX, errorHandlerRef);
         luaL_unref(luaMain, LUA_REGISTRYINDEX, notFoundHandlerRef);
@@ -203,7 +183,7 @@ struct ContextUserdata {
 };
 
 struct WsConnUserdata {
-    std::shared_ptr<WsConnState> conn;
+    std::shared_ptr<WebSocketConnection> conn;
 };
 
 struct Target {
@@ -282,13 +262,10 @@ public:
     static int luaWsSend(lua_State* L);
     static int luaWsClose(lua_State* L);
     static int luaWsGc(lua_State* L);
-    static void pushWsConn(lua_State* L, std::shared_ptr<WsConnState> conn);
-    static bool wsClosed(const std::shared_ptr<WsConnState>& conn);
-    static void wsFlush(Poco::Net::WebSocket& socket, const std::shared_ptr<WsConnState>& conn);
-    static void waitForMainLoop(std::future<void>& ready, const std::shared_ptr<std::atomic<bool>>& stopping);
-    static void wsInvoke(const std::shared_ptr<AppState>& app, int ref, std::shared_ptr<WsConnState> conn, bool hasData, std::string data, const std::shared_ptr<std::atomic<bool>>& stopping);
-    static void wsRelease(const std::shared_ptr<AppState>& app, std::shared_ptr<WsConnState> conn, const std::shared_ptr<std::atomic<bool>>& stopping);
-    static void runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTPServerRequest& request, Poco::Net::HTTPServerResponse& response, std::shared_ptr<std::atomic<bool>> stopping);
+    static void pushWsConn(lua_State* L, std::shared_ptr<WebSocketConnection> conn);
+    static void callWsCallback(const std::shared_ptr<AppState>& app, int ref, int connRef);
+    static void callWsMessage(const std::shared_ptr<AppState>& app, int ref, int connRef, const std::string& data);
+    static void handleWebSocketUpgrade(const std::shared_ptr<AppState>& app, const HttpRequest& request, const std::shared_ptr<WebSocketConnection>& conn);
     static int luaWs(lua_State* L);
     static int registerRoute(lua_State* L, const std::string& method, int pathIndex);
     static int luaVerb(lua_State* L);
@@ -1833,146 +1810,85 @@ int HttpApp::luaWsSend(lua_State* L) {
     auto* userdata = checkWsConn(L);
     std::size_t length = 0;
     const char* data = luaL_checklstring(L, 2, &length);
-    {
-        std::lock_guard<std::mutex> lock(userdata->conn->mutex);
-        userdata->conn->outgoing.emplace_back(data, length);
-    }
+    userdata->conn->send(std::string(data, length));
     lua_pushvalue(L, 1);
     return 1;
 }
 
 int HttpApp::luaWsClose(lua_State* L) {
     auto* userdata = checkWsConn(L);
-    {
-        std::lock_guard<std::mutex> lock(userdata->conn->mutex);
-        userdata->conn->closed = true;
-    }
+    userdata->conn->close();
     return 0;
 }
 
 int HttpApp::luaWsGc(lua_State* L) {
     auto* userdata = checkWsConn(L);
-    userdata->conn.~shared_ptr<WsConnState>();
+    userdata->conn.~shared_ptr<WebSocketConnection>();
     return 0;
 }
 
-void HttpApp::pushWsConn(lua_State* L, std::shared_ptr<WsConnState> conn) {
+void HttpApp::pushWsConn(lua_State* L, std::shared_ptr<WebSocketConnection> conn) {
     void* memory = lua_newuserdatauv(L, sizeof(WsConnUserdata), 0);
     new (memory) WsConnUserdata{std::move(conn)};
     luaL_getmetatable(L, kWsConnMeta);
     lua_setmetatable(L, -2);
 }
 
-bool HttpApp::wsClosed(const std::shared_ptr<WsConnState>& conn) {
-    std::lock_guard<std::mutex> lock(conn->mutex);
-    return conn->closed;
-}
-
-void HttpApp::wsFlush(Poco::Net::WebSocket& socket, const std::shared_ptr<WsConnState>& conn) {
-    std::deque<std::string> pending;
-    {
-        std::lock_guard<std::mutex> lock(conn->mutex);
-        pending.swap(conn->outgoing);
+void HttpApp::callWsCallback(const std::shared_ptr<AppState>& app, int ref, int connRef) {
+    if (ref == LUA_NOREF) {
+        return;
     }
-    for (const std::string& message : pending) {
-        try {
-            socket.sendFrame(message.data(), static_cast<int>(message.size()), Poco::Net::WebSocket::FRAME_TEXT);
-        } catch (const std::exception&) {
-            break;
-        }
+
+    lua_State* L = app->luaMain;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, connRef);
+    if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+        const char* error = lua_tostring(L, -1);
+        log::Log::error("HttpApp", error ? error : "A websocket handler failed.");
+        lua_pop(L, 1);
     }
 }
 
-// blocks until the posted task runs but gives up once the server starts shutting down, keeping the transport thread from deadlocking against a main loop that is being joined.
-void HttpApp::waitForMainLoop(std::future<void>& ready, const std::shared_ptr<std::atomic<bool>>& stopping) {
-    while (ready.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
-        if (stopping && stopping->load(std::memory_order_acquire)) {
-            return;
-        }
+void HttpApp::callWsMessage(const std::shared_ptr<AppState>& app, int ref, int connRef, const std::string& data) {
+    if (ref == LUA_NOREF) {
+        return;
+    }
+
+    lua_State* L = app->luaMain;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, connRef);
+    lua_pushlstring(L, data.data(), data.size());
+    if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+        const char* error = lua_tostring(L, -1);
+        log::Log::error("HttpApp", error ? error : "A websocket handler failed.");
+        lua_pop(L, 1);
     }
 }
 
-// runs a websocket callback on the main loop and waits, so lua only ever runs on its owning thread.
-void HttpApp::wsInvoke(const std::shared_ptr<AppState>& app, int ref, std::shared_ptr<WsConnState> conn, bool hasData,
-              std::string data, const std::shared_ptr<std::atomic<bool>>& stopping) {
-    auto done = std::make_shared<std::promise<void>>();
-    std::future<void> ready = done->get_future();
-
-    app->runtime->mainLoop().post([app, ref, conn, hasData, data, done]() {
-        lua_State* L = app->runtime->luaState();
-        if (conn->luaRef == LUA_NOREF) {
-            pushWsConn(L, conn);
-            conn->luaRef = luaL_ref(L, LUA_REGISTRYINDEX);
-            // track it on the loop thread so ~AppState can release the ref if shutdown skips wsRelease.
-            app->liveWsConns.push_back(conn);
-        }
-        if (ref != LUA_NOREF) {
-            lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
-            lua_rawgeti(L, LUA_REGISTRYINDEX, conn->luaRef);
-            int nargs = 1;
-            if (hasData) {
-                lua_pushlstring(L, data.data(), data.size());
-                nargs = 2;
-            }
-            if (lua_pcall(L, nargs, 0, 0) != LUA_OK) {
-                const char* error = lua_tostring(L, -1);
-                log::Log::error("HttpApp", error ? error : "A websocket handler failed.");
-                lua_pop(L, 1);
-            }
-        }
-        done->set_value();
-    });
-
-    waitForMainLoop(ready, stopping);
-}
-
-void HttpApp::wsRelease(const std::shared_ptr<AppState>& app, std::shared_ptr<WsConnState> conn,
-               const std::shared_ptr<std::atomic<bool>>& stopping) {
-    auto done = std::make_shared<std::promise<void>>();
-    std::future<void> ready = done->get_future();
-
-    app->runtime->mainLoop().post([app, conn, done]() {
-        if (conn->luaRef != LUA_NOREF) {
-            luaL_unref(app->runtime->luaState(), LUA_REGISTRYINDEX, conn->luaRef);
-            conn->luaRef = LUA_NOREF;
-        }
-        auto& live = app->liveWsConns;
-        live.erase(std::remove(live.begin(), live.end(), conn), live.end());
-        done->set_value();
-    });
-
-    waitForMainLoop(ready, stopping);
-}
-
-void HttpApp::runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTPServerRequest& request,
-                         Poco::Net::HTTPServerResponse& response, std::shared_ptr<std::atomic<bool>> stopping) {
-    std::string path;
-    try {
-        path = Poco::URI(request.getURI()).getPath();
-    } catch (const std::exception&) {
-        path = request.getURI();
-    }
-    if (path.empty()) {
-        path = "/";
-    }
-
+// the upgrade runs on the loop thread, so the lua callbacks fire directly with no cross-thread marshaling.
+void HttpApp::handleWebSocketUpgrade(const std::shared_ptr<AppState>& app, const HttpRequest& request,
+                                     const std::shared_ptr<WebSocketConnection>& conn) {
     const WsRoute* route = nullptr;
     for (const WsRoute& candidate : app->wsRoutes) {
-        if (candidate.pattern == path) {
+        if (candidate.pattern == request.path) {
             route = &candidate;
             break;
         }
     }
     if (!route) {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        response.setContentLength(0);
-        response.send();
+        conn->reject(404);
         return;
     }
 
-    // reject cross-site upgrades when the route declares an origin allowlist.
+    // an origin allowlist blocks cross-site upgrades when the route declares one.
     if (!route->allowedOrigins.empty()) {
-        const std::string origin = request.get("Origin", "");
+        std::string origin;
+        for (const auto& [name, value] : request.headers) {
+            if (Poco::icompare(name, "Origin") == 0) {
+                origin = value;
+                break;
+            }
+        }
         bool allowed = false;
         for (const std::string& candidate : route->allowedOrigins) {
             if (candidate == origin) {
@@ -1981,87 +1897,26 @@ void HttpApp::runWebSocketSession(std::shared_ptr<AppState> app, Poco::Net::HTTP
             }
         }
         if (!allowed) {
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
-            response.setContentLength(0);
-            response.send();
+            conn->reject(403);
             return;
         }
     }
 
-    std::unique_ptr<Poco::Net::WebSocket> socket;
-    try {
-        socket = std::make_unique<Poco::Net::WebSocket>(request, response);
-    } catch (const std::exception& ex) {
-        log::Log::error("HttpApp", std::string("The websocket handshake failed. ") + ex.what());
-        return;
-    }
-    socket->setReceiveTimeout(Poco::Timespan(0, 200 * 1000));
+    conn->accept();
 
-    auto conn = std::make_shared<WsConnState>();
+    lua_State* L = app->luaMain;
+    pushWsConn(L, conn);
+    const int connRef = luaL_ref(L, LUA_REGISTRYINDEX);
 
-    wsInvoke(app, route->openRef, conn, false, "", stopping);
-    wsFlush(*socket, conn);
+    callWsCallback(app, route->openRef, connRef);
 
-    std::vector<char> buffer(65536);
-    std::string fragment;
-    while (!wsClosed(conn) && !stopping->load(std::memory_order_acquire)) {
-        int flags = 0;
-        int received = 0;
-        try {
-            received = socket->receiveFrame(buffer.data(), static_cast<int>(buffer.size()), flags);
-        } catch (const Poco::TimeoutException&) {
-            wsFlush(*socket, conn);
-            continue;
-        } catch (const std::exception&) {
-            break;
-        }
-
-        // a negative count should not occur, but guard it so it is never cast to a huge size below.
-        if (received < 0) {
-            break;
-        }
-
-        const int opcode = flags & Poco::Net::WebSocket::FRAME_OP_BITMASK;
-
-        // a zero-length read with no opcode means the peer closed the connection.
-        if (received == 0 && opcode == 0) {
-            break;
-        }
-        if (opcode == Poco::Net::WebSocket::FRAME_OP_CLOSE) {
-            break;
-        }
-        if (opcode == Poco::Net::WebSocket::FRAME_OP_PING) {
-            try {
-                socket->sendFrame(buffer.data(), received,
-                                  Poco::Net::WebSocket::FRAME_OP_PONG | Poco::Net::WebSocket::FRAME_FLAG_FIN);
-            } catch (const std::exception&) {
-                break;
-            }
-            continue;
-        }
-
-        // assemble continuation frames until the final fragment, checking the size bound before appending so the buffer never overshoots the cap by a whole frame.
-        if (fragment.size() + static_cast<std::size_t>(received) > kWsMaxMessageBytes) {
-            break;
-        }
-        fragment.append(buffer.data(), static_cast<std::size_t>(received));
-        if ((flags & Poco::Net::WebSocket::FRAME_FLAG_FIN) == 0) {
-            continue;
-        }
-
-        wsInvoke(app, route->messageRef, conn, true, fragment, stopping);
-        fragment.clear();
-        wsFlush(*socket, conn);
-    }
-
-    wsInvoke(app, route->closeRef, conn, false, "", stopping);
-    wsFlush(*socket, conn);
-    wsRelease(app, conn, stopping);
-
-    try {
-        socket->shutdown();
-    } catch (const std::exception&) {
-    }
+    const int messageRef = route->messageRef;
+    const int closeRef = route->closeRef;
+    conn->onMessage([app, messageRef, connRef](const std::string& data) { callWsMessage(app, messageRef, connRef, data); });
+    conn->onClose([app, closeRef, connRef]() {
+        callWsCallback(app, closeRef, connRef);
+        luaL_unref(app->luaMain, LUA_REGISTRYINDEX, connRef);
+    });
 }
 
 int HttpApp::luaWs(lua_State* L) {
@@ -2465,12 +2320,11 @@ int HttpApp::luaAppListen(lua_State* L) {
     // remember the transport scheme so cookies and hsts can be hardened under tls.
     state->tls = tls;
 
-    auto upgrade = [state](Poco::Net::HTTPServerRequest& request, Poco::Net::HTTPServerResponse& response,
-                           std::shared_ptr<std::atomic<bool>> stopping) {
-        runWebSocketSession(state, request, response, std::move(stopping));
+    auto wsHandler = [state](const HttpRequest& request, std::shared_ptr<WebSocketConnection> conn) {
+        handleWebSocketUpgrade(state, request, conn);
     };
 
-    auto server = std::make_shared<PocoHttpServer>(rt, std::move(options), std::move(handler), std::move(upgrade));
+    auto server = std::make_shared<ReactorHttpServer>(rt, std::move(options), std::move(handler), std::move(wsHandler));
     server->start();
     rt.addServer(server);
 

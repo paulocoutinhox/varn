@@ -58,4 +58,17 @@ struct HttpServerOptions {
 
 using HttpHandler = std::function<void(const HttpRequest&, std::shared_ptr<HttpResponse>)>;
 
+class WebSocketConnection {
+public:
+    virtual ~WebSocketConnection() = default;
+    virtual void accept() = 0;
+    virtual void reject(int statusCode) = 0;
+    virtual void send(const std::string& message) = 0;
+    virtual void close() = 0;
+    virtual void onMessage(std::function<void(const std::string&)> handler) = 0;
+    virtual void onClose(std::function<void()> handler) = 0;
+};
+
+using WebSocketHandler = std::function<void(const HttpRequest&, std::shared_ptr<WebSocketConnection>)>;
+
 } // namespace varn::http
