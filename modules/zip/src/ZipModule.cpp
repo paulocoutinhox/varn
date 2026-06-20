@@ -128,6 +128,14 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             }
             out.write(buf, static_cast<std::size_t>(r));
         }
+
+        out.flush();
+        if (!out)
+        {
+            zip_fclose(zf);
+            zip_discard(za);
+            throw std::runtime_error("[ZipModule] An extracted file could not be fully written.");
+        }
         zip_fclose(zf);
     }
 

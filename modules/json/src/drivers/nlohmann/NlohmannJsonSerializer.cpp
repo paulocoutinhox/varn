@@ -84,8 +84,9 @@ void JsonSerializer::appendValue(lua_State* L, int index, std::string& out, int 
         {
             // coerce a copy of the key so lua_next still sees the original on the next step.
             lua_pushvalue(L, -2);
-            const char* raw = lua_tolstring(L, -1, nullptr);
-            std::string key = raw ? raw : "";
+            std::size_t keyLength = 0;
+            const char* raw = lua_tolstring(L, -1, &keyLength);
+            std::string key = raw ? std::string(raw, keyLength) : std::string();
             lua_pop(L, 1);
 
             if (count > 0)

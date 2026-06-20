@@ -20,8 +20,8 @@ int JsonModule::readIndent(lua_State* L, int optsIndex)
     lua_getfield(L, optsIndex, "indent");
     if (lua_isinteger(L, -1))
     {
-        const int value = static_cast<int>(lua_tointeger(L, -1));
-        indent = value > 0 ? value : 0;
+        const lua_Integer value = lua_tointeger(L, -1);
+        indent = value > 0 ? static_cast<int>(value < 16 ? value : 16) : 0;
     }
     lua_pop(L, 1);
 

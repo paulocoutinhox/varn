@@ -22,6 +22,8 @@ using varn::runtime::EventLoop;
 namespace
 {
 
+constexpr int kMaxReceiveBytes = 16 * 1024 * 1024;
+
 void closeManagedSocket(EventLoop& loop, const Poco::Net::Socket& socket)
 {
     if (loop.isRunning())
@@ -61,8 +63,9 @@ public:
         loop.watchRead(socket, [self, maxBytes, callback = std::move(callback)]() -> bool
                        {
             try {
-                std::vector<char> buffer(static_cast<std::size_t>(maxBytes));
-                const int received = self->socket.receiveBytes(buffer.data(), maxBytes);
+                const int capped = maxBytes < kMaxReceiveBytes ? maxBytes : kMaxReceiveBytes;
+                std::vector<char> buffer(static_cast<std::size_t>(capped));
+                const int received = self->socket.receiveBytes(buffer.data(), capped);
                 if (received < 0) {
                     return false;
                 }

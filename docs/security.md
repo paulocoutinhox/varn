@@ -18,6 +18,10 @@ Like Node, `fs` is unrestricted by design: `fs.readFile`/`fs.writeFile` operate 
 
 `platform.os`, `platform.arch`, and the filename helpers expose non-secret host facts. They are not a substitute for secure packaging or attestation. The library-name/subdir helpers build paths from their arguments without sanitization and are typically fed into `ffi.load`, so the same "treat as native code" trust applies — do not derive the name or directory from untrusted input.
 
+## 📝 log
+
+Log messages are written verbatim, the same way `console.log` and `print` are: control bytes are not escaped. If you log untrusted input, sequences like CRLF or terminal escapes pass through to the sink, which can forge log lines or drive a terminal. Sanitize untrusted data before logging when the sink is a shared log file or an interactive terminal.
+
 ## 🌐 http and http.client
 
 Server-side code that calls `http.client.request` with user-controlled URLs can reach internal networks (SSRF). Restrict URLs in your application or with network egress rules. In the browser, `http.client.request` follows the browser's CORS, cookies, and redirects.

@@ -927,7 +927,6 @@ private:
         return 0;
     }
 
-    // one shared callback table for every connection's request parser.
     static const llhttp_settings_t* requestSettings()
     {
         static const llhttp_settings_t settings = []
@@ -943,7 +942,6 @@ private:
         return &settings;
     }
 
-    // splits a Cookie header into name/value pairs, trimming optional whitespace around each.
     static void parseCookies(const std::string& header, std::vector<std::pair<std::string, std::string>>& out)
     {
         std::size_t pos = 0;
@@ -998,7 +996,6 @@ private:
         return -1;
     }
 
-    // decodes percent-escapes, and optionally treats '+' as a space for query components.
     static std::string urlDecode(const std::string& in, bool plusAsSpace)
     {
         std::string out;
@@ -1024,7 +1021,6 @@ private:
         return out;
     }
 
-    // splits a raw query string into decoded name/value pairs.
     static void parseQuery(const std::string& query, std::vector<std::pair<std::string, std::string>>& out)
     {
         std::size_t pos = 0;

@@ -103,6 +103,7 @@ struct AppState
     long long sessionTtlMs = 86400000;
     std::size_t maxSessions = 100000;
     std::string csrfSecret;
+    std::string csrfCookie = "csrf_token";
     bool tls = false;
     std::unique_ptr<StaticFileHandler> staticFiles;
     std::unordered_map<std::string, std::vector<int>> events;
@@ -808,6 +809,17 @@ int HttpApp::luaContextRegenerateSession(lua_State* L)
         cookie += "; Secure";
     }
     context->response->addHeader("Set-Cookie", cookie);
+
+    // rotate the csrf token with the session so the double-submit cookie stays bound to the new id, the way django and rails do on login.
+    if (!app->csrfSecret.empty())
+    {
+        std::string csrfCookie = app->csrfCookie + "=" + HttpToken::makeCsrfToken(app->csrfSecret, id) + "; Path=/; SameSite=Lax";
+        if (app->tls)
+        {
+            csrfCookie += "; Secure";
+        }
+        context->response->addHeader("Set-Cookie", csrfCookie);
+    }
 
     lua_pushvalue(L, 1);
     return 1;
@@ -2031,6 +2043,9 @@ int HttpApp::csrfMiddleware(lua_State* L)
             const std::string cookieName = optString(L, opts, "cookie", "csrf_token");
             const std::string headerName = optString(L, opts, "header", "X-CSRF-Token");
             const std::string method = requestField(L, "method");
+
+            // remember the cookie name so regenerateSession can rotate the token bound to the session.
+            app->csrfCookie = cookieName;
 
             // a per-app secret signs every token so an injected or forged cookie cannot pass verification.
             if (app->csrfSecret.empty())
