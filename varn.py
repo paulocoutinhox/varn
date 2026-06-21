@@ -84,8 +84,8 @@ def _opt_site(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--zip", help="ON or OFF")
     parser.add_argument(
         "--remote",
-        default="https://github.com/varn-project/website.git",
-        help="target git remote (default: the varn-project/website repo)",
+        default="git@github.com:varn-project/website.git",
+        help="target git remote (default: the varn-project/website repo over ssh)",
     )
     parser.add_argument("--branch", default="main", help="target branch (default: main)")
     parser.add_argument("--message", help="commit message (default: auto from source commit)")
