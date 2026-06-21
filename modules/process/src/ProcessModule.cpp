@@ -5,6 +5,7 @@
 #include "varn/runtime/Runtime.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -94,14 +95,11 @@ int ProcessModule::luaGetenv(lua_State* L)
 {
     const std::string name = varn::lua::LuaHelpers::checkString(L, 1);
 
-    const std::vector<std::pair<std::string, std::string>> entries = ProcessRunner::environment();
-    for (const auto& entry : entries)
+    const std::optional<std::string> value = ProcessRunner::getenv(name);
+    if (value)
     {
-        if (entry.first == name)
-        {
-            lua_pushlstring(L, entry.second.data(), entry.second.size());
-            return 1;
-        }
+        lua_pushlstring(L, value->data(), value->size());
+        return 1;
     }
 
     // fall back to the optional default, which is nil when the caller omits it.
@@ -136,6 +134,9 @@ int ProcessModule::luaOpen(lua_State* L)
 
     pushArgvTable(L, rt);
     lua_setfield(L, -2, "argv");
+
+    lua_pushboolean(L, ProcessRunner::available());
+    lua_setfield(L, -2, "available");
 
     return 1;
 }

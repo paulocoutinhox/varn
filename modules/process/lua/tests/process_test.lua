@@ -2,6 +2,11 @@
 local async = require("async")
 local process = require("process")
 
+if not process.available then
+    print("process not available on this build, skipping")
+    return
+end
+
 async.run(function()
     local ok, okErr = process.exec("echo hello"):await()
     assert(not okErr, okErr)

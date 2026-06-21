@@ -2,7 +2,9 @@
 
 #include <array>
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -58,6 +60,11 @@ void closeFd(int& fd)
     }
 }
 } // namespace
+
+bool ProcessRunner::available()
+{
+    return true;
+}
 
 ProcessResult ProcessRunner::exec(const std::string& command)
 {
@@ -123,6 +130,17 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     }
 
     return result;
+}
+
+std::optional<std::string> ProcessRunner::getenv(const std::string& name)
+{
+    const char* value = ::getenv(name.c_str());
+    if (value == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    return std::string(value);
 }
 
 std::vector<std::pair<std::string, std::string>> ProcessRunner::environment()

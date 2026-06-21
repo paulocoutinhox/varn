@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,7 +20,9 @@ class ProcessRunner
 public:
     ProcessRunner() = delete;
 
+    static bool available();
     static ProcessResult exec(const std::string& command);
+    static std::optional<std::string> getenv(const std::string& name);
     static std::vector<std::pair<std::string, std::string>> environment();
     static std::string cwd();
 };
