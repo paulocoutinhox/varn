@@ -1,4 +1,4 @@
--- json: stringify and parse are aliases of encode and decode.
+-- shows stringify and parse as aliases of encode and decode
 local json = require("json")
 
 local text = json.stringify({ id = 1, active = true })

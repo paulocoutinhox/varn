@@ -28,7 +28,7 @@ std::string checkPath(lua_State* L, int index)
 {
     std::string path = varn::lua::LuaHelpers::checkString(L, index);
 
-    // a null byte truncates the path at the os boundary, so reject it rather than act on a different path than was asked for.
+    // reject a path containing a null byte
     if (path.find('\0') != std::string::npos)
     {
         luaL_error(L, "[FsModule] A path must not contain a null byte.");
@@ -394,7 +394,7 @@ int FsModule::luaReadFile(lua_State* L)
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape and terminate the process.
+            // reject on a non-standard exception
             promise->reject("[FsModule] The operation failed with a non-standard error.");
         } });
 
@@ -417,7 +417,7 @@ int FsModule::luaWriteFile(lua_State* L)
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape and terminate the process.
+            // reject on a non-standard exception
             promise->reject("[FsModule] The operation failed with a non-standard error.");
         } });
 

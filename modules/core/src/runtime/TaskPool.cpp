@@ -11,7 +11,7 @@ TaskPool::TaskPool(std::size_t threadCount, std::shared_ptr<WorkLedger> ledger)
 
 void TaskPool::start()
 {
-    // the workers must spawn only after the ledger notify hook is installed, so none observes a half-set callback.
+    // spawn workers only after the ledger notify hook is installed so none observes a half-set callback
 #if !defined(__EMSCRIPTEN__)
     if (!workers.empty())
     {
@@ -86,7 +86,7 @@ void TaskPool::stop()
     running = false;
 #else
     {
-        // the flag must change under the same mutex the workers wait on, otherwise a worker that has already evaluated the predicate but not yet blocked misses the notify and never wakes.
+        // change the flag under the mutex the workers wait on so a worker that has evaluated the predicate but not yet blocked does not miss the notify
         std::lock_guard<std::mutex> lock(mutex);
         bool expected = true;
         if (!running.compare_exchange_strong(expected, false))

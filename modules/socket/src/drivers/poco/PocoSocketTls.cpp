@@ -32,7 +32,7 @@ Poco::Net::Context::Ptr tlsClientContext(bool verify)
 {
     static Poco::Crypto::OpenSSLInitializer openSslInitializer;
 
-    // the ssl manager default handler is set once so a strict session fails closed on an invalid certificate.
+    // sets the ssl manager default handler once so a strict session fails closed on an invalid certificate
     static std::once_flag onceFlag;
     std::call_once(onceFlag, []
                    {
@@ -110,7 +110,7 @@ void driveHandshake(EventLoop& loop, std::shared_ptr<Poco::Net::SecureStreamSock
         return;
     }
 
-    // the handshake may need another readable or writable turn before it settles.
+    // the handshake may need another readable or writable turn before it settles
     if (result == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ)
     {
         watchHandshake(loop, socket, false, settled, shared);
@@ -150,7 +150,7 @@ void SocketTransport::connectTlsAsync(varn::runtime::Runtime& runtime, const std
 
     secure->setBlocking(false);
 
-    // the connect watcher and the optional timeout race to settle, so the first to fire wins and the other becomes a no-op.
+    // the connect watcher and the optional timeout race to settle and the first to fire wins
     auto settled = std::make_shared<bool>(false);
     auto shared = std::make_shared<ConnectCallback>(std::move(callback));
 
@@ -178,7 +178,7 @@ void SocketTransport::connectTlsAsync(varn::runtime::Runtime& runtime, const std
             return true;
         }
 
-        // the transport is connected, so start the tls handshake on the same fd.
+        // starts the tls handshake on the same fd once the transport is connected
         driveHandshake(loop, secure, settled, shared);
         return true; });
 

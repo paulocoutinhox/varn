@@ -1,4 +1,4 @@
--- fs extra: exercises stat, readdir, append, copy, rename, and mkdtemp against a scratch directory.
+-- exercises stat, readdir, append, copy, rename, and mkdtemp against a scratch directory
 local async = require("async")
 local fs = require("fs")
 
@@ -8,7 +8,7 @@ async.run(function()
     local path = dir .. "/fs_extra.txt"
     local payload = "varn-fs-extra\n"
 
-    -- write a file then stat it for size, kind, and a plausible mtime.
+    -- writes a file and stats it for size, kind, and mtime
     fs.writeFile(path, payload):await()
     local info, serr = fs.stat(path):await()
     assert(not serr, serr)
@@ -17,11 +17,11 @@ async.run(function()
     assert(not info.isDir, "stat should not report a directory")
     assert(info.mtime > 0, "stat mtime should be positive")
 
-    -- a missing path rejects rather than returning a table.
+    -- stats a missing path
     local _, merr = fs.stat(dir .. "/fs_extra_missing.txt"):await()
     assert(merr, "stat on a missing path should reject")
 
-    -- mkdir then readdir lists the entries by name.
+    -- creates a directory and lists its entries by name
     local sub = dir .. "/fs_extra_dir"
     fs.mkdir(sub):await()
     fs.writeFile(sub .. "/one.txt", "1"):await()
@@ -35,25 +35,25 @@ async.run(function()
     assert(seen["one.txt"], "readdir should list one.txt")
     assert(seen["two.txt"], "readdir should list two.txt")
 
-    -- append extends the file and the read-back includes both parts.
+    -- appends to the file and reads back the combined content
     fs.append(path, "more"):await()
     local appended, aerr = fs.readFile(path):await()
     assert(not aerr, aerr)
     assert(appended == payload .. "more", "append round-trip mismatch")
 
-    -- copy duplicates the bytes and the two files compare equal.
+    -- copies the file and compares the two contents
     local copyPath = dir .. "/fs_extra_copy.txt"
     fs.copy(path, copyPath):await()
     local copied = fs.readFile(copyPath):await()
     assert(copied == appended, "copy content mismatch")
 
-    -- rename moves the file so the old name is gone and the new one exists.
+    -- renames the file and checks the source and destination paths
     local renamed = dir .. "/fs_extra_renamed.txt"
     fs.rename(copyPath, renamed):await()
     assert(not fs.exists(copyPath), "rename should remove the source")
     assert(fs.exists(renamed), "rename should create the destination")
 
-    -- mkdtemp creates a fresh unique directory under the given prefix.
+    -- creates a unique temporary directory under the given prefix
     local tempDir, terr = fs.mkdtemp(dir .. "/fs_extra_tmp_"):await()
     assert(not terr, terr)
     assert(fs.exists(tempDir), "mkdtemp directory should exist")

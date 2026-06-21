@@ -60,7 +60,7 @@ std::string XmlSerializer::serialize(lua_State* L, int index)
     lua_pushnil(L);
     while (lua_next(L, index) != 0)
     {
-        // luaL_tolstring pushes a copy of the key, so drop it before touching the value at -1 where lua_next still sees the original key on the next iteration.
+        // copy the key with luaL_tolstring and drop the copy before reading the value at -1
         const char* keyRaw = luaL_tolstring(L, -2, nullptr);
         const std::string key = keyRaw ? keyRaw : "";
         lua_pop(L, 1);
@@ -126,7 +126,7 @@ std::string XmlSerializer::encodeNode(lua_State* L, int index, int indent)
 bool XmlSerializer::parse(lua_State* L, const std::string& text)
 {
     pugi::xml_document doc;
-    // pugixml does not load external entities or expand DTD entities, so xxe and entity bombs do not apply.
+    // pugixml does not load external entities or expand DTD entities
     const pugi::xml_parse_result result = doc.load_buffer(text.data(), text.size(), pugi::parse_default);
     if (!result)
     {

@@ -13,7 +13,7 @@ void HttpUrlForm::pushFormUrlEncoded(lua_State* L, const std::string& body)
 {
     lua_newtable(L);
 
-    // bound the field count so a body full of separators cannot drive unbounded parse work.
+    // bound the field count so a body full of separators cannot drive unbounded parse work
     constexpr int maxFields = 10000;
     int fields = 0;
 
@@ -28,7 +28,7 @@ void HttpUrlForm::pushFormUrlEncoded(lua_State* L, const std::string& body)
             const std::size_t eq = pair.find('=');
             const std::string key = HttpUrl::decode(eq == std::string::npos ? pair : pair.substr(0, eq));
             const std::string value = eq == std::string::npos ? std::string() : HttpUrl::decode(pair.substr(eq + 1));
-            // length-safe key so a decoded nul byte cannot truncate the field name.
+            // length-safe key so a decoded nul byte cannot truncate the field name
             lua_pushlstring(L, key.data(), key.size());
             lua_pushlstring(L, value.data(), value.size());
             lua_settable(L, -3);

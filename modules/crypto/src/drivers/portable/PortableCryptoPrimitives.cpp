@@ -115,7 +115,7 @@ std::string CryptoPrimitives::uuidV4()
     unsigned char bytes[16];
     std::memcpy(bytes, random.data(), sizeof(bytes));
 
-    // version 4 in the high nibble of byte 6 and the rfc 4122 variant in the high bits of byte 8.
+    // version 4 in the high nibble of byte 6 and the rfc 4122 variant in the high bits of byte 8
     bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0F) | 0x40);
     bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3F) | 0x80);
 
@@ -128,7 +128,7 @@ std::string CryptoPrimitives::uuidV7()
 
     unsigned char bytes[16];
 
-    // the first 48 bits hold a big-endian unix millisecond timestamp so the ids sort by creation time.
+    // the first 48 bits hold a big-endian unix millisecond timestamp so the ids sort by creation time
     const std::uint64_t millis = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     bytes[0] = static_cast<unsigned char>((millis >> 40) & 0xFF);
     bytes[1] = static_cast<unsigned char>((millis >> 32) & 0xFF);
@@ -139,7 +139,7 @@ std::string CryptoPrimitives::uuidV7()
 
     std::memcpy(bytes + 6, random.data(), 10);
 
-    // version 7 in the high nibble of byte 6 and the rfc 4122 variant in the high bits of byte 8.
+    // version 7 in the high nibble of byte 6 and the rfc 4122 variant in the high bits of byte 8
     bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0F) | 0x70);
     bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3F) | 0x80);
 

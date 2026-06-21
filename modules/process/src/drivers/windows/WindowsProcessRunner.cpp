@@ -48,7 +48,7 @@ std::string drainPipe(HANDLE pipe)
     std::string out;
     std::vector<char> chunk(65536);
 
-    // read until the write ends are closed and the buffer is empty, so the capture is binary-safe.
+    // reads until the write ends are closed and the buffer is empty
     while (true)
     {
         DWORD got = 0;
@@ -100,7 +100,7 @@ ProcessResult ProcessRunner::exec(const std::string& command)
         throw std::runtime_error("[ProcessRunner] A pipe could not be created.");
     }
 
-    // only the child inherits the write ends, so the parent's read ends stay private and reach eof.
+    // keeps the parent read ends out of child inheritance
     SetHandleInformation(outRead, HANDLE_FLAG_INHERIT, 0);
     SetHandleInformation(errRead, HANDLE_FLAG_INHERIT, 0);
 
@@ -127,7 +127,7 @@ ProcessResult ProcessRunner::exec(const std::string& command)
         throw std::runtime_error("[ProcessRunner] The process could not be started.");
     }
 
-    // close the parent copies of the write ends so the reads terminate when the child exits.
+    // closes the parent copies of the write ends so the reads terminate when the child exits
     closeHandle(outWrite);
     closeHandle(errWrite);
 
@@ -154,7 +154,7 @@ std::optional<std::string> ProcessRunner::getenv(const std::string& name)
 {
     const std::wstring wideName = toWide(name);
 
-    // windows resolves environment names case-insensitively, which this query inherits.
+    // resolves the environment name case-insensitively
     const DWORD needed = GetEnvironmentVariableW(wideName.c_str(), nullptr, 0);
     if (needed == 0)
     {
@@ -182,7 +182,7 @@ std::vector<std::pair<std::string, std::string>> ProcessRunner::environment()
         const std::wstring entry = cursor;
         cursor += entry.size() + 1;
 
-        // windows seeds the block with drive pseudo-variables like "=c:" that have no usable name.
+        // skips the drive pseudo-variables that have no usable name
         const std::size_t equals = entry.find(L'=');
         if (equals == std::wstring::npos || equals == 0)
         {

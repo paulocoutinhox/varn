@@ -186,7 +186,7 @@ void PocoClientExchange::ensureTlsClientInitialized()
     static std::once_flag sslOnce;
     std::call_once(sslOnce, []
                    {
-        // the default handler rejects invalid certificates so strict sessions actually fail closed.
+        // the default handler rejects invalid certificates so strict sessions actually fail closed
         Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> handler(new Poco::Net::RejectCertificateHandler(false));
         Poco::Net::SSLManager::instance().initializeClient(nullptr, handler, tlsClientContext(true)); });
 }

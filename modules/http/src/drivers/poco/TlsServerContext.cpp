@@ -24,7 +24,7 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts)
 
     static Poco::Crypto::OpenSSLInitializer openSslInitializer;
 
-    // a modern suite of forward-secret aead ciphers, leaving tls 1.3 to negotiate its own.
+    // a modern suite of forward-secret aead ciphers, leaving tls 1.3 to negotiate its own
     constexpr const char* kCipherList =
         "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
         "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
@@ -32,7 +32,7 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts)
         "DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
 
 #if defined(_WIN32)
-    // windows tls uses one pkcs12 bundle instead of separate pem key and certificate paths.
+    // windows tls uses one pkcs12 bundle instead of separate pem key and certificate paths
     std::string pkcs12Path;
     if (pathLooksLikePkcs12(opts.certFile))
     {
@@ -66,14 +66,14 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts)
         kCipherList);
 #endif
 
-    // refuse the legacy protocols that modern deployments must not negotiate.
+    // refuse the legacy protocols that modern deployments must not negotiate
     context->requireMinimumProtocol(Poco::Net::Context::PROTO_TLSV1_2);
     return context;
 }
 
 void TlsServerContext::initializeSslManager(Poco::Net::Context::Ptr context)
 {
-    // the ssl manager is a process-global singleton whose default handlers are initialized once so a second server start does not clobber the first server's configuration, while each server still binds its own context to its socket so the global default only supplies the passphrase and invalid-cert handlers.
+    // the ssl manager is a process-global singleton whose default handlers are initialized once so a second server start does not clobber the first server's configuration, while each server still binds its own context to its socket so the global default only supplies the passphrase and invalid-cert handlers
     static std::once_flag onceFlag;
     std::call_once(onceFlag, [&context]
                    {

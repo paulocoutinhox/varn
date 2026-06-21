@@ -1,10 +1,10 @@
--- configures the logger level, adds a file sink, and logs structured fields
+-- configures the logger level adds a file sink and logs structured fields
 local log = require("log")
 
 -- drop anything below info for this run
 log.setLevel("info")
 
--- this line is below the floor and is dropped
+-- this line is below the floor so it is dropped
 log.debug("starting up")
 
 -- also write every line to a file alongside stdout

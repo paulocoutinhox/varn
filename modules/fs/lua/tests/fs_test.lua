@@ -1,4 +1,4 @@
--- fs: write then read back a temp file and confirm the existence transitions.
+-- writes a temp file, reads it back, and checks existence around a remove
 local async = require("async")
 local fs = require("fs")
 

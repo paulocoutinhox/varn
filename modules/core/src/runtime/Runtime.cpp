@@ -10,7 +10,7 @@ using varn::lua::LuaEngine;
 
 namespace
 {
-// a dedicated pool sized for blocking i/o (http client, filesystem), so it never starves the cpu task pool.
+// size a dedicated pool for blocking i/o (http client, filesystem) so it never starves the cpu task pool
 constexpr std::size_t kIoThreads = 32;
 } // namespace
 
@@ -22,7 +22,7 @@ Runtime::Runtime(std::vector<std::string> args, std::size_t scriptArgIndex)
     , pool(std::thread::hardware_concurrency(), workLedger)
     , engine(std::make_unique<LuaEngine>(*this))
 {
-    // scriptArgIndex marks the entry in args that becomes Lua's arg[0] (later entries arg[1..], earlier arg[-1..]), and the notify hook is installed before any worker spins up so none can observe it unset.
+    // install the notify hook before any worker spins up so none can observe it unset
     workLedger->setNotify([this]
                           { loop.wake(); });
     pool.start();
@@ -55,7 +55,7 @@ int Runtime::finishAfterUserChunk(int loadRunExitCode)
         return loadRunExitCode;
     }
 
-    // an async entry may have already failed or completed synchronously before the loop starts.
+    // handle an async entry that already failed or completed synchronously before the loop starts
     if (unhandledError)
     {
         return 1;
@@ -156,7 +156,7 @@ void Runtime::stop()
     }
 
     loop.stop();
-    // with workers joined and the loop stopped, dropping any still-queued job releases its captured state such as AppState holding lua registry refs while the lua_State is still alive, rather than during member teardown after lua_close.
+    // drop still-queued jobs to release their captured state such as lua registry refs while the lua_State is still alive
     loop.clearPendingJobs();
 }
 

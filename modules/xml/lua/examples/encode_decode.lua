@@ -1,4 +1,4 @@
--- xml: build a document from the node model and parse it back.
+-- build a document from the node model and parse it back
 local xml = require("xml")
 
 local doc = xml.encode({

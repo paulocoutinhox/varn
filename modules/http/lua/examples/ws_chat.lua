@@ -1,16 +1,16 @@
--- websocket chat with rooms: each client joins a room and messages fan out to that room's members.
+-- websocket chat with rooms where each client joins a room and messages fan out to that room's members
 local http = require("http")
 
 local app = http.createApp()
 
--- a connection joins the room named in its query string, defaulting to "lobby".
+-- a connection joins the room named in its query string, defaulting to "lobby"
 app:ws("/chat", {
     open = function(conn)
         conn:join("lobby")
         conn:send("welcome to lobby")
     end,
     message = function(conn, data)
-        -- a "/join <room>" command moves the sender; anything else broadcasts to the lobby.
+        -- a "/join <room>" command moves the sender while anything else broadcasts to the lobby
         local room = data:match("^/join%s+(%S+)$")
         if room then
             conn:leave("lobby")
@@ -26,7 +26,7 @@ app:ws("/chat", {
     end,
 })
 
--- a notifications endpoint pushes to everyone on the path with app:wsBroadcast.
+-- a notifications endpoint pushes to everyone on the path with app:wsBroadcast
 app:ws("/notifications", {
     open = function(conn) conn:send("subscribed") end,
 })

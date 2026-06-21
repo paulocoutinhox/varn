@@ -1,4 +1,4 @@
--- json: encode a lua value to text and decode it back.
+-- encodes a lua value to text and decodes it back
 local json = require("json")
 
 local text = json.encode({ name = "varn", version = "1.0", tags = { "fast", "small" } })

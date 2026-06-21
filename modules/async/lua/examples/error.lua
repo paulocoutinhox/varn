@@ -1,4 +1,4 @@
--- shows that an error raised inside an awaited operation propagates and is catchable with pcall.
+-- an error raised inside an awaited operation propagates and is catchable with pcall
 local async = require("async")
 
 async.spawn(function()

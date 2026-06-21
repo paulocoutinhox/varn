@@ -1,4 +1,4 @@
--- exercises libc puts through the native ffi stack when that build links it
+-- calls libc puts through the native ffi stack
 local ffi = require("ffi")
 
 ffi.cdef [[

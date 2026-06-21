@@ -63,7 +63,7 @@ void Log::addFileSink(std::string_view path, bool rotating)
     SpdlogBridge::ensureLogger();
     const std::string file(path);
 
-    // rotating keeps five files of five megabytes and basic appends to one file.
+    // rotating keeps five files of five megabytes while basic appends to one file
     std::shared_ptr<spdlog::sinks::sink> sink;
     if (rotating)
     {
@@ -76,7 +76,7 @@ void Log::addFileSink(std::string_view path, bool rotating)
 
     spdlog::default_logger()->sinks().push_back(std::move(sink));
 
-    // flush each record once a file sink exists so readers see it immediately and nothing is lost on a crash.
+    // flush each record so readers see it immediately
     spdlog::default_logger()->flush_on(spdlog::level::trace);
 }
 

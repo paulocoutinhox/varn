@@ -40,7 +40,7 @@ int luaUrlDecode(lua_State* L)
 }
 } // namespace
 
-// lua surface wrapping the raw wire primitive into an ergonomic response plus query/json options.
+// lua surface wrapping the raw wire primitive into an ergonomic response plus query/json options
 static const char* const kClientPrelude = R"lua(
 local client = ...
 local requestRaw = client.requestRaw
@@ -203,7 +203,7 @@ void HttpClientModule::readHeadersTable(lua_State* L, int absIndex, std::map<std
     lua_pushnil(L);
     while (lua_next(L, absIndex) != 0)
     {
-        // coerce a copy of the key so lua_next still sees the original on the next step.
+        // coerce a copy of the key so lua_next still sees the original on the next step
         lua_pushvalue(L, -2);
         std::size_t keyLen = 0;
         std::size_t valLen = 0;
@@ -266,7 +266,7 @@ int HttpClientModule::luaClientRequest(lua_State* L)
 
     lua_pop(L, 1);
 
-    // tls verification is on by default, with insecure as an explicit opt-in escape hatch for dev certs.
+    // tls verification is on by default, with insecure as an explicit opt-in escape hatch for dev certs
     lua_getfield(L, 1, "verifyTls");
     if (lua_isboolean(L, -1))
     {
@@ -317,7 +317,7 @@ int HttpClientModule::luaClientRequest(lua_State* L)
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape and terminate the process.
+            // a worker thread must never let an exception escape and terminate the process
             promise->reject("[HttpClientModule] The request failed with a non-standard error.");
         } });
 #endif
@@ -334,7 +334,7 @@ void HttpClientModule::installPrelude(lua_State* L)
         luaL_error(L, "[HttpClientModule] The client prelude failed to compile: %s", message ? message : "");
     }
 
-    // pass the client table currently on top of the stack to the prelude as its single argument.
+    // pass the client table currently on top of the stack to the prelude as its single argument
     lua_pushvalue(L, -2);
     if (lua_pcall(L, 1, 0, 0) != LUA_OK)
     {
@@ -355,7 +355,7 @@ void HttpClientModule::registerClient(lua_State* L)
 
     lua_newtable(L);
 
-    // the raw primitive returns a promise resolving to the VARN/1 wire string and the prelude layers ergonomics over it.
+    // the raw primitive returns a promise resolving to the VARN/1 wire string and the prelude layers ergonomics over it
     lua_pushcfunction(L, &HttpClientModule::luaClientRequest);
     lua_setfield(L, -2, "requestRaw");
 

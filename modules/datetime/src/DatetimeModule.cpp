@@ -129,7 +129,7 @@ int64_t shiftInstant(int64_t millis, int years, int months, long long days, long
 
     const date::year_month_day ymd = date::year_month_day{dp} + date::years{years} + date::months{months};
 
-    // adding months or years can land on a day the target month does not have, so snap to its last day.
+    // snaps to the last day when the shifted month is shorter
     const date::sys_days shiftedDay = ymd.ok() ? date::sys_days{ymd} : date::sys_days{ymd.year() / ymd.month() / date::last};
 
     const TimePoint result = shiftedDay + timeOfDay + date::days{static_cast<int>(days)} + std::chrono::hours{hours} + std::chrono::minutes{minutes} + std::chrono::seconds{seconds} + Millis{millisDelta};

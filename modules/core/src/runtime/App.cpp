@@ -30,7 +30,7 @@ void onWorkerSignal(int)
 
 void resetChildSignals()
 {
-    // a worker terminates on the parent's shutdown signal rather than inheriting the supervisor handler.
+    // restore default signal handlers so a worker terminates on the parent's shutdown signal
     signal(SIGINT, SIG_DFL);
     signal(SIGTERM, SIG_DFL);
 }
@@ -77,7 +77,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
         workers.push_back(pid);
     }
 
-    // sigaction without SA_RESTART so the blocking waitpid below returns EINTR on a shutdown signal instead of restarting.
+    // install handlers without SA_RESTART so the blocking waitpid returns EINTR on a shutdown signal
     struct sigaction action = {};
     action.sa_handler = onWorkerSignal;
     sigemptyset(&action.sa_mask);
@@ -85,7 +85,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
     sigaction(SIGINT, &action, nullptr);
     sigaction(SIGTERM, &action, nullptr);
 
-    // restart any worker that exits unexpectedly, and stop on the first shutdown signal.
+    // restart any worker that exits unexpectedly and stop on the first shutdown signal
     while (!gWorkerShutdown)
     {
         int status = 0;
@@ -167,7 +167,7 @@ int App::run(int argc, char** argv)
         args.emplace_back(argv[i]);
     }
 
-    // the chunk, either the script path or the -e source, becomes arg[0] and arguments after it arg[1..].
+    // set the chunk (script path or -e source) as arg[0] and arguments after it as arg[1..]
     const std::size_t scriptArgIndex = eval ? 2 : 1;
     const std::string chunk = eval ? argv[2] : argv[1];
 

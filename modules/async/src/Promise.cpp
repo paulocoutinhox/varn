@@ -171,7 +171,7 @@ int Promise::prepareAwait(lua_State* L)
 
 void Promise::runPendingResumes()
 {
-    // the runtime is shutting down and the lua state is gone, so skip the resume.
+    // skips the resume when the runtime is stopped and the lua state is gone
     if (runtime.stopped())
     {
         return;

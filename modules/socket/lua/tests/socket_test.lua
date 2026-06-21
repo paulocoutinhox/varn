@@ -1,11 +1,11 @@
--- socket: an in-process tcp echo server round-trips a payload back to a client.
+-- an in-process tcp echo server round-trips a payload back to a client
 local async = require("async")
 local socket = require("socket")
 
 local host = "127.0.0.1"
 local port = 9911
 
--- server: accept one client, echo a prefixed message, then shut down.
+-- server accepts one client, echoes a prefixed message, then shuts down
 async.spawn(function()
     local listener, lerr = socket.tcp.listen(host, port, 16):await()
     assert(not lerr, lerr)
@@ -21,7 +21,7 @@ async.spawn(function()
     listener:close():await()
 end)
 
--- client: connect once the listener is bound, send, and verify the echo.
+-- client connects once the listener is bound, sends, and verifies the echo
 async.run(function()
     async.sleep(50):await()
 

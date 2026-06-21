@@ -1,7 +1,7 @@
--- xml: standalone module — node-model round-trip and aggressive security checks.
+-- standalone module node-model round-trip and security checks
 local xml = require("xml")
 
--- decode: name, attributes, ordered children, text
+-- decode exposes name, attributes, ordered children, and text
 local node = xml.decode('<root id="1" lang="en"><item>hi</item><item>bye</item></root>')
 assert(node.name == "root", "root name")
 assert(node.attributes.id == "1" and node.attributes.lang == "en", "attributes")
@@ -24,26 +24,26 @@ assert(xml.encode({ name = "bad name!", text = "x" }):find("<bad_name_", 1, true
 -- pretty printing
 assert(xml.encode({ name = "a", children = { { name = "b", text = "c" } } }, { pretty = true }):find("\n"), "pretty newline")
 
--- SECURITY: XXE must never read local files
+-- XXE must never read local files
 local xxe = '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'
 local ok, res = pcall(xml.decode, xxe)
 if ok then
     assert(not (res.text or ""):find("root:"), "XXE must not expose /etc/passwd")
 end
 
--- SECURITY: billion laughs must not expand (no memory blowup / no crash)
+-- billion laughs must not expand (no memory blowup or crash)
 pcall(xml.decode,
     '<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY a "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">]><lolz>&a;</lolz>')
 
--- SECURITY: deep nesting must not overflow the stack (depth-capped)
+-- deep nesting must not overflow the stack (depth-capped)
 assert(pcall(xml.decode, string.rep("<a>", 600) .. string.rep("</a>", 600)), "deep nesting bounded")
 
--- SECURITY: malformed / non-xml / empty input is rejected
+-- malformed, non-xml, and empty input is rejected
 assert(not pcall(xml.decode, "<unclosed>"), "unclosed rejected")
 assert(not pcall(xml.decode, "not xml at all"), "non-xml rejected")
 assert(not pcall(xml.decode, ""), "empty rejected")
 
--- SECURITY: encode requires a node table
+-- encode requires a node table
 assert(not pcall(xml.encode, "string"), "encode rejects non-table")
 
 print("xml ok")

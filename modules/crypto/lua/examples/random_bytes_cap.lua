@@ -1,4 +1,4 @@
--- shows randomBytes drawing a large requested size and rejecting a negative count.
+-- shows randomBytes drawing a large requested size and rejecting a negative count
 local crypto = require("crypto")
 
 local bytes = crypto.randomBytes(1024 * 1024)

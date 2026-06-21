@@ -1,11 +1,11 @@
--- socket: a unix-domain echo server round-trips a payload, and the tls client surface is exercised.
+-- a unix-domain echo server round-trips a payload and the tls client surface is exercised
 local async = require("async")
 local socket = require("socket")
 
 local path = os.tmpname() .. ".sock"
 os.remove(path)
 
--- server: accept one client over a unix socket, echo a prefixed message, then shut down.
+-- server accepts one client over a unix socket, echoes a prefixed message, then shuts down
 async.spawn(function()
     local listener, lerr = socket.unix.listen(path, 16):await()
     assert(not lerr, lerr)
@@ -21,7 +21,7 @@ async.spawn(function()
     listener:close():await()
 end)
 
--- client: connect to the unix path, send, and verify the echo round-trip.
+-- client connects to the unix path, sends, and verifies the echo round-trip
 async.run(function()
     async.sleep(50):await()
 
@@ -36,7 +36,7 @@ async.run(function()
     conn:close():await()
     os.remove(path)
 
-    -- tls surface exists and rejects cleanly against a port with no listener.
+    -- tls surface exists and rejects cleanly against a port with no listener
     assert(type(socket.tls.connect) == "function", "socket.tls.connect must be a function")
 
     local tlsConn, tlsErr = socket.tls.connect("127.0.0.1", 9, { timeoutMs = 500 }):await()

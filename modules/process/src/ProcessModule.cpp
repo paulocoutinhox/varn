@@ -32,7 +32,7 @@ void pushEnvTable(lua_State* L)
 
 void pushArgvTable(lua_State* L, Runtime& rt)
 {
-    // normalize the lua arg convention into a 1-based array of the script arguments only.
+    // builds a 1-based array of the script arguments only
     const auto& args = rt.args();
     const std::size_t base = rt.scriptArgIndex();
 
@@ -54,7 +54,7 @@ int ProcessModule::luaExec(lua_State* L)
 {
     std::string command = varn::lua::LuaHelpers::checkString(L, 1);
 
-    // a null byte truncates the command at the os boundary, so reject it rather than run a different command than was asked for.
+    // rejects a command containing a null byte
     if (command.find('\0') != std::string::npos)
     {
         return luaL_error(L, "[ProcessModule] A command must not contain a null byte.");
@@ -102,7 +102,7 @@ int ProcessModule::luaGetenv(lua_State* L)
         return 1;
     }
 
-    // fall back to the optional default, which is nil when the caller omits it.
+    // falls back to the optional default argument
     lua_settop(L, 2);
     return 1;
 }

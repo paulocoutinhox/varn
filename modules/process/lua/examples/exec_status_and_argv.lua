@@ -1,4 +1,4 @@
--- runs a successful and a failing command, then prints env, cwd, and argv.
+-- runs a successful and a failing command and prints env, cwd, and argv
 local async = require("async")
 local process = require("process")
 

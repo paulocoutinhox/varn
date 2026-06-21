@@ -46,7 +46,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
     fs::create_directories(destDir);
     const fs::path destRoot = fs::canonical(fs::absolute(destDir));
 
-    // bound the entry count and the total expansion so a zip bomb cannot exhaust disk or inodes.
+    // bounds the entry count and total expansion against zip bombs
     constexpr zip_uint64_t kMaxEntries = 100000;
     constexpr std::uint64_t kMaxTotalBytes = 2ull * 1024 * 1024 * 1024;
 
@@ -76,7 +76,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
         const fs::path outFile = destRoot / nm;
         const fs::path parentDir = outFile.parent_path();
 
-        // confirm containment before creating anything, so a pre-existing symlink cannot redirect mkdir outside the root.
+        // confirms containment before creating directories so a symlink cannot redirect mkdir outside the root
         const fs::path canonParent = fs::weakly_canonical(parentDir);
         if (!ZipPath::isSubpath(destRoot, canonParent))
         {
@@ -98,7 +98,7 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             throw std::runtime_error("[ZipModule] An entry inside the archive could not be opened.");
         }
 
-        // a pre-existing symlink at the target name would redirect the write outside the root, so refuse to follow it.
+        // refuses to follow a pre-existing symlink at the target name
         if (fs::is_symlink(outFile))
         {
             zip_fclose(zf);
@@ -263,7 +263,7 @@ int ZipModule::luaExtract(lua_State* L)
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape: that would terminate the process.
+            // contains any non-standard exception so it cannot escape the worker thread
             promise->reject("[ZipModule] The operation failed with a non-standard error.");
         } });
     Promise::push(L, promise);
@@ -316,7 +316,7 @@ int ZipModule::luaCreate(lua_State* L)
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape: that would terminate the process.
+            // contains any non-standard exception so it cannot escape the worker thread
             promise->reject("[ZipModule] The operation failed with a non-standard error.");
         } });
     Promise::push(L, promise);
@@ -348,7 +348,7 @@ int ZipModule::luaList(lua_State* L)
         } catch (const std::exception& ex) {
             promise->reject(ex.what());
         } catch (...) {
-            // a worker thread must never let an exception escape: that would terminate the process.
+            // contains any non-standard exception so it cannot escape the worker thread
             promise->reject("[ZipModule] The operation failed with a non-standard error.");
         } });
     Promise::push(L, promise);

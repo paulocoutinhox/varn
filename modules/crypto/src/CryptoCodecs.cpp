@@ -9,11 +9,11 @@ namespace varn::crypto::codecs
 
 namespace
 {
-// fixed base64 alphabets, indexed directly during encode without any per-character branching.
+// fixed base64 alphabets indexed directly during encode without any per-character branching
 constexpr char kBase64Std[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 constexpr char kBase64Url[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-// reverse lookup tables map each input byte to its 6-bit value, or to a sentinel for non-alphabet bytes.
+// reverse lookup tables map each input byte to its 6-bit value or to a sentinel for non-alphabet bytes
 constexpr signed char kSkip = -1;
 constexpr signed char kPad = -2;
 
@@ -25,7 +25,7 @@ std::array<signed char, 256> makeBase64Reverse()
         table[static_cast<std::size_t>(i)] = kSkip;
     }
 
-    // accept both alphabets on decode so a standard or url-safe string is read interchangeably.
+    // accept both alphabets on decode so a standard or url-safe string is read interchangeably
     table[static_cast<unsigned char>('+')] = 62;
     table[static_cast<unsigned char>('/')] = 63;
     table[static_cast<unsigned char>('-')] = 62;
@@ -78,7 +78,7 @@ std::string base64Encode(std::string_view data, bool urlSafe, bool padding)
     const std::size_t remainder = data.size() % 3;
 
     std::string out;
-    // reserve the exact output size up front so the tight loop never reallocates.
+    // reserve the exact output size up front so the tight loop never reallocates
     const std::size_t tailChars = remainder == 0 ? 0 : (padding ? 4 : remainder + 1);
     out.resize(fullGroups * 4 + tailChars);
 
@@ -127,7 +127,7 @@ std::string base64Decode(std::string_view data)
     const std::array<signed char, 256>& rev = base64Reverse();
 
     std::string out;
-    // four input characters become three output bytes, so this never over-reserves by more than two bytes.
+    // four input characters become three output bytes so this never over-reserves by more than two bytes
     out.reserve((data.size() / 4) * 3 + 3);
 
     std::uint32_t accum = 0;
@@ -147,7 +147,7 @@ std::string base64Decode(std::string_view data)
             continue;
         }
 
-        // any alphabet character after padding has begun is a malformed stream.
+        // any alphabet character after padding has begun is a malformed stream
         if (sawPad)
         {
             throw std::runtime_error("[CryptoPrimitives] The base64 input has data after padding.");
@@ -162,7 +162,7 @@ std::string base64Decode(std::string_view data)
         }
     }
 
-    // a valid stream leaves at most the discarded high bits of a partial group, never a full unused byte.
+    // a valid stream leaves at most the discarded high bits of a partial group never a full unused byte
     if (bits >= 6)
     {
         throw std::runtime_error("[CryptoPrimitives] The base64 input has an invalid length.");

@@ -1,4 +1,4 @@
--- creates a small archive and unpacks it, verifying the entry round-trips.
+-- creates a small archive and extracts it, verifying the entry round-trips
 local async = require("async")
 local fs = require("fs")
 local zip = require("zip")

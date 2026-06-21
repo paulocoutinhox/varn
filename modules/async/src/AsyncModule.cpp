@@ -15,11 +15,11 @@ namespace varn::async
 
 using varn::runtime::Runtime;
 
-// lua prelude attaching promise combinators on top of sleep/spawn/await/promise.
+// lua prelude attaching promise combinators on top of sleep/spawn/await/promise
 static const char* const kCombinatorPrelude = R"lua(
 local async = ...
 
--- yield the current coroutine until predicate() returns true, polling on the loop.
+-- yields the current coroutine until predicate() returns true, polling on the loop
 local function waitUntil(predicate)
     while not predicate() do
         async.sleep(1):await()
@@ -250,7 +250,7 @@ int AsyncModule::luaSleep(lua_State* L)
         emscripten_sleep(static_cast<unsigned int>(ms));
         promise->resolve("ok"); });
 #else
-    // schedule on the loop timer so the sleep does not occupy a worker thread for its whole duration.
+    // schedules the resolve on the loop timer
     rt.mainLoop().postDelayed(ms, [promise]
                               { promise->resolve("ok"); });
 #endif
@@ -279,7 +279,7 @@ int AsyncModule::entryBody(lua_State* L)
 {
     const lua_KContext ctx = lua_toboolean(L, lua_upvalueindex(2)) ? 1 : 0;
 
-    // run the user function under a protected call that survives await yields so an uncaught error is reported once.
+    // runs the user function under a protected call that survives await yields
     lua_pushvalue(L, lua_upvalueindex(1));
     const int status = lua_pcallk(L, 0, 0, 0, ctx, &AsyncModule::entryContinuation);
     return entryContinuation(L, status, ctx);
@@ -310,7 +310,7 @@ int AsyncModule::startEntry(lua_State* L, bool stopLoopOnSuccess)
         return luaL_error(L, "%s", message ? message : "[AsyncModule] The task could not be started.");
     }
 
-    // once the entry yields the promise machinery owns the coroutine, so release our ref in every case.
+    // releases the thread ref held during startup
     luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
     return 0;
 }
@@ -320,7 +320,7 @@ int AsyncModule::promiseContinuation(lua_State* L, int status, lua_KContext ctx)
     (void)ctx;
     auto& rt = luaRuntime(L);
 
-    // the promise userdata lives as an upvalue of this coroutine, so the raw pointer stays valid here.
+    // reads the promise userdata from the coroutine upvalue
     lua_pushvalue(L, lua_upvalueindex(2));
     Promise* promise = Promise::check(L, -1);
     lua_pop(L, 1);
@@ -332,7 +332,7 @@ int AsyncModule::promiseContinuation(lua_State* L, int status, lua_KContext ctx)
         return 0;
     }
 
-    // capture the function result in the registry so it survives every await, and unref it when the promise is gone.
+    // captures the function result in the registry and unrefs it when the promise is gone
     lua_pushvalue(L, -1);
     const int valueRef = luaL_ref(L, LUA_REGISTRYINDEX);
     Runtime* runtime = &rt;
@@ -352,7 +352,7 @@ int AsyncModule::promiseContinuation(lua_State* L, int status, lua_KContext ctx)
 
 int AsyncModule::promiseBody(lua_State* L)
 {
-    // run the user function under a protected call that survives await yields so its outcome settles the promise once.
+    // runs the user function under a protected call that survives await yields
     lua_pushvalue(L, lua_upvalueindex(1));
     const int status = lua_pcallk(L, 0, 1, 0, 0, &AsyncModule::promiseContinuation);
     return promiseContinuation(L, status, 0);
@@ -385,7 +385,7 @@ int AsyncModule::luaPromise(lua_State* L)
         return luaL_error(L, "%s", message ? message : "async.promise: the task could not be started.");
     }
 
-    // once the body yields the promise machinery owns the coroutine, so release our ref in every case.
+    // releases the thread ref held during startup
     luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
 
     Promise::push(L, promise);
@@ -404,7 +404,7 @@ int AsyncModule::luaDeferred(lua_State* L)
     auto& rt = luaRuntime(L);
     auto promise = std::make_shared<Promise>(rt);
 
-    // return the awaitable alongside a one-shot resolve function that wakes it from elsewhere.
+    // returns the awaitable alongside a one-shot resolve function
     Promise::push(L, promise);
     lua_pushvalue(L, -1);
     lua_pushcclosure(L, &AsyncModule::luaResolveDeferred, 1);
@@ -453,7 +453,7 @@ void AsyncModule::installCombinators(lua_State* L)
         luaL_error(L, "[AsyncModule] The combinator prelude failed to compile: %s", message ? message : "");
     }
 
-    // pass the module table currently on top of the stack to the prelude as its single argument.
+    // passes the module table on top of the stack to the prelude as its single argument
     lua_pushvalue(L, -2);
     if (lua_pcall(L, 1, 0, 0) != LUA_OK)
     {

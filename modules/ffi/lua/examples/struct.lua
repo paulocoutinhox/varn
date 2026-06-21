@@ -1,4 +1,4 @@
--- declares a c struct, attaches methods with metatype, and inspects its layout with typeof, sizeof, offsetof, and istype, using only standard c types so it needs no optional library.
+-- declares a c struct, attaches methods with metatype, and inspects its layout with typeof, sizeof, offsetof, and istype
 local ffi = require("ffi")
 
 ffi.cdef [[

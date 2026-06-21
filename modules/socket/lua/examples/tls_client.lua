@@ -1,4 +1,4 @@
--- self-contained tls example: open a verified tls connection and speak a minimal http request over it
+-- opens a verified tls connection and speaks a minimal http request over it
 local async = require("async")
 local socket = require("socket")
 

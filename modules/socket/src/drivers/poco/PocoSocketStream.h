@@ -28,7 +28,7 @@ inline void closeManagedSocket(varn::runtime::EventLoop& loop, const Poco::Net::
         return;
     }
 
-    // the loop is already stopped at shutdown, so the fd can be closed here with no thread to race.
+    // closes the fd directly when the loop is stopped at shutdown
     try
     {
         socket.impl()->close();

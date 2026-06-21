@@ -32,7 +32,7 @@ public:
 
     static std::mutex& mutex()
     {
-        // worker threads and the loop thread share the sink, so this guards them.
+        // guards the sink shared by worker threads and the loop thread
         static std::mutex sink;
         return sink;
     }

@@ -25,7 +25,7 @@ std::string drainPipe(int fd)
     std::string out;
     std::array<char, 65536> chunk{};
 
-    // read until eof so the capture is binary-safe and never bounded by a fixed buffer.
+    // reads until eof
     while (true)
     {
         const ssize_t got = ::read(fd, chunk.data(), chunk.size());
@@ -92,7 +92,7 @@ ProcessResult ProcessRunner::exec(const std::string& command)
 
     if (pid == 0)
     {
-        // child: wire the write ends onto stdout/stderr and run the command through the shell.
+        // wires the write ends onto stdout and stderr and runs the command through the shell
         ::dup2(outPipe[1], STDOUT_FILENO);
         ::dup2(errPipe[1], STDERR_FILENO);
         ::close(outPipe[0]);
@@ -108,7 +108,7 @@ ProcessResult ProcessRunner::exec(const std::string& command)
         ::_exit(127);
     }
 
-    // parent: close the write ends so the reads see eof once the child exits.
+    // closes the write ends so the reads see eof once the child exits
     closeFd(outPipe[1]);
     closeFd(errPipe[1]);
 
@@ -129,7 +129,7 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     }
     else if (WIFSIGNALED(status))
     {
-        // report a signalled exit the way a shell does, as 128 plus the signal number.
+        // reports a signalled exit as 128 plus the signal number
         result.code = 128 + WTERMSIG(status);
     }
 

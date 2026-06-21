@@ -1,4 +1,4 @@
--- walks sqlite create and select with native ffi bindings then exits explicitly, with the library name resolved per platform through platform.libraryFilename.
+-- runs sqlite create and select through native ffi bindings with the library name resolved by platform.libraryFilename
 
 local ffi = require("ffi")
 local platform = require("platform")

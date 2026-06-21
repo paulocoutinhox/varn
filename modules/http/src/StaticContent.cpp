@@ -19,7 +19,7 @@ bool StaticContent::isHiddenComponent(const std::string& name)
 
 std::string StaticContent::httpDate(std::filesystem::file_time_type fileTime)
 {
-    // map the file clock onto the system clock, since not every standard library offers clock_cast.
+    // map the file clock onto the system clock, since not every standard library offers clock_cast
     const auto systemTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
         fileTime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
     const std::time_t seconds = std::chrono::system_clock::to_time_t(systemTime);
@@ -145,10 +145,10 @@ bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response
     response.setHeader("ETag", etag);
     response.setHeader("Last-Modified", lastModified);
     response.setHeader("Accept-Ranges", "bytes");
-    // static responses bypass the middleware chain, so set the sniffing guard here.
+    // static responses bypass the middleware chain, so set the sniffing guard here
     response.setHeader("X-Content-Type-Options", "nosniff");
 
-    // a matching validator means the client already holds this exact file so send no representation, with the entity tag taking precedence over the modification date per rfc 9110.
+    // a matching validator means the client already holds this exact file so send no representation, with the entity tag taking precedence over the modification date per rfc 9110
     if (headerValue(request, "If-None-Match") == etag ||
         (headerValue(request, "If-None-Match").empty() && headerValue(request, "If-Modified-Since") == lastModified))
     {
@@ -159,10 +159,10 @@ bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response
 
     response.setHeader("Content-Type", MimeTypes::forPath(path.string()));
 
-    // a head request advertises the headers and length without the transport reading any bytes.
+    // a head request advertises the headers and length without the transport reading any bytes
     const bool headersOnly = request.method == "HEAD";
 
-    // only single ranges are supported, so a multi-range request is ignored and the full body is sent.
+    // only single ranges are supported, so a multi-range request is ignored and the full body is sent
     const std::string range = headerValue(request, "Range");
     if (!range.empty() && range.find(',') == std::string::npos)
     {
@@ -201,14 +201,14 @@ void StaticContent::serveListing(HttpResponse& response, const std::filesystem::
     for (const auto& entry : std::filesystem::directory_iterator(dir, ec))
     {
         const std::string name = entry.path().filename().string();
-        // keep hidden entries out of the listing for the same reason they are not served.
+        // keep hidden entries out of the listing for the same reason they are not served
         if (isHiddenComponent(name))
         {
             continue;
         }
 
         const std::string suffix = entry.is_directory(ec) ? "/" : "";
-        // the visible label is html-escaped while the href is url-encoded to survive special chars.
+        // the visible label is html-escaped while the href is url-encoded to survive special chars
         const std::string label = htmlEscape(name + suffix);
         const std::string href = htmlEscape(urlEncodePath(name + suffix));
         html << "<li><a href=\"" << href << "\">" << label << "</a></li>";

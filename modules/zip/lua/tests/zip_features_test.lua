@@ -1,4 +1,4 @@
--- zip: exercises create/list/extract round-trips, multiple and nested entries, and reachable caps.
+-- exercises create/list/extract round-trips, multiple and nested entries, and reachable caps
 local async = require("async")
 
 local dir = assert(os.getenv("VARN_TEST_DIR"), "VARN_TEST_DIR is not set; run tests with: python3 varn.py test")
@@ -15,11 +15,11 @@ async.run(function()
     f:write("zip-features\n")
     f:close()
 
-    -- an empty source file is a valid regular file and must round-trip too.
+    -- writes an empty source file as a valid regular file
     local ef = assert(io.open(empty, "w"), "cannot create empty fixture")
     ef:close()
 
-    -- create an archive with multiple entries, including nested paths and an empty member.
+    -- creates an archive with multiple entries including nested paths and an empty member
     local _, createErr = zip.create(archive, {
         { file = src, entry = "top.txt" },
         { file = src, entry = "nested/deep/inside.txt" },
@@ -27,7 +27,7 @@ async.run(function()
     }):await()
     assert(not createErr, createErr)
 
-    -- list returns every entry name back unsanitized for the caller.
+    -- lists every entry name
     local entries, listErr = zip.list(archive):await()
     assert(not listErr, listErr)
     assert(type(entries) == "table" and #entries == 3, "expected three entries")
@@ -40,7 +40,7 @@ async.run(function()
     assert(names["nested/deep/inside.txt"], "nested entry listed")
     assert(names["empty.txt"], "empty entry listed")
 
-    -- extract reproduces the tree and the original contents byte for byte.
+    -- extracts the tree and verifies the original contents byte for byte
     local _, extractErr = zip.extract(archive, outDir):await()
     assert(not extractErr, extractErr)
 
@@ -53,14 +53,14 @@ async.run(function()
     assert(eo:read("*a") == "", "empty member should be empty")
     eo:close()
 
-    -- an empty entries list is rejected synchronously, before any promise is created.
+    -- rejects an empty entries list synchronously
     assert(not pcall(zip.create, archive, {}), "empty entries list rejected")
 
-    -- an unsafe entry name is rejected at create time, never written to the archive.
+    -- rejects an unsafe entry name at create time
     local _, unsafeErr = zip.create(archive, { { file = src, entry = "../escape.txt" } }):await()
     assert(unsafeErr, "unsafe create entry rejected")
 
-    -- listing a missing archive returns an error, not a crash.
+    -- returns an error when listing a missing archive
     local _, missingErr = zip.list(dir .. "/zip_feat_missing.zip"):await()
     assert(missingErr, "missing archive list errors")
 

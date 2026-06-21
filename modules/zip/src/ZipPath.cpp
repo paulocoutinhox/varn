@@ -12,7 +12,7 @@ bool ZipPath::entryPathSafe(std::string_view entry)
         return false;
     }
 
-    // reject posix/unc absolute paths and windows drive-qualified names (e.g. "C:\evil").
+    // rejects posix/unc absolute paths and windows drive-qualified names
     if (entry.front() == '/' || entry.front() == '\\')
     {
         return false;
@@ -23,7 +23,7 @@ bool ZipPath::entryPathSafe(std::string_view entry)
         return false;
     }
 
-    // reject ".." only as a whole path component, so legitimate names like "a..b.txt" are kept.
+    // rejects ".." only as a whole path component
     std::size_t start = 0;
     for (std::size_t i = 0; i <= entry.size(); ++i)
     {
@@ -46,7 +46,7 @@ bool ZipPath::isSubpath(const fs::path& baseCanon, const fs::path& candidateCano
     std::error_code ec;
     const fs::path rel = fs::relative(candidateCanon, baseCanon, ec);
 
-    // an unrelatable path (different root or mount) yields an empty result, which the guard must treat as unsafe.
+    // treats an unrelatable path (different root or mount) as unsafe
     if (ec || rel.empty())
     {
         return false;

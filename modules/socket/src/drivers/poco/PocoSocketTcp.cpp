@@ -86,7 +86,7 @@ void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::s
 
     socket.setBlocking(false);
 
-    // the write watcher and the optional timeout race to settle the connect, so the first to fire wins and the other becomes a no-op.
+    // the write watcher and the optional timeout race to settle the connect and the first to fire wins
     auto settled = std::make_shared<bool>(false);
     auto shared = std::make_shared<ConnectCallback>(std::move(callback));
 

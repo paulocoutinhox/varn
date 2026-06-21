@@ -22,7 +22,7 @@ std::string FsStorage::readAll(const std::string& path)
         throw std::runtime_error("[FsStorage] The file could not be opened for reading.");
     }
 
-    // read the whole file into memory without an artificial size cap.
+    // read the whole file into memory in chunks
     std::string out;
     char chunk[65536];
     while (file)
@@ -37,7 +37,7 @@ std::string FsStorage::readAll(const std::string& path)
         out.append(chunk, static_cast<std::size_t>(got));
     }
 
-    // a read fault leaves badbit set without eofbit, so a truncated result is reported instead of returned silently.
+    // report a read fault instead of returning a truncated result
     if (file.bad())
     {
         throw std::runtime_error("[FsStorage] The file could not be read.");
@@ -97,7 +97,7 @@ FsStat FsStorage::stat(const std::string& path)
 {
     std::error_code ec;
 
-    // use symlink_status so a symlink is reported as a symlink rather than its target.
+    // read symlink status without following the target
     const std::filesystem::file_status linkStatus = std::filesystem::symlink_status(path, ec);
     if (ec || linkStatus.type() == std::filesystem::file_type::not_found)
     {
@@ -127,7 +127,7 @@ FsStat FsStorage::stat(const std::string& path)
     const auto fileTime = std::filesystem::last_write_time(path, ec);
     if (!ec)
     {
-        // map the file clock onto the system clock so the result is epoch seconds, since not every standard library offers clock_cast.
+        // map the file clock onto the system clock to get epoch seconds
         const auto systemTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
             fileTime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
         result.mtime = static_cast<std::int64_t>(std::chrono::system_clock::to_time_t(systemTime));
@@ -208,7 +208,7 @@ std::string FsStorage::mkdtemp(const std::string& prefix)
     std::mt19937_64 generator(device());
     std::uniform_int_distribution<std::uint64_t> distribution;
 
-    // probe random suffixes until create_directory wins the race for an unused name.
+    // probe random suffixes until create_directory claims an unused name
     for (int attempt = 0; attempt < 256; ++attempt)
     {
         const std::string suffix = std::to_string(distribution(generator));
@@ -246,13 +246,13 @@ public:
         stream.read(buffer.data(), static_cast<std::streamsize>(maxBytes));
         const std::streamsize got = stream.gcount();
 
-        // a read fault leaves badbit set without eofbit, so a short read from a real error is reported instead of returned silently.
+        // report a read fault instead of returning a short read
         if (stream.bad())
         {
             throw std::runtime_error("[FsStorage] The file handle could not be read.");
         }
 
-        // clear eof and fail so the handle stays usable and a read past the end simply yields an empty string.
+        // clear eof and fail bits to keep the handle usable
         stream.clear();
         buffer.resize(static_cast<std::size_t>(got));
         return buffer;

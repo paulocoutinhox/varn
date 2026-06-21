@@ -1,4 +1,4 @@
--- process: run a successful and a failing command, then probe env and cwd.
+-- runs a successful and a failing command and probes env and cwd
 local async = require("async")
 local process = require("process")
 
