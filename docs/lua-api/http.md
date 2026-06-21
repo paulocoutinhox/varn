@@ -566,6 +566,8 @@ the browser build, the client uses the host's `fetch`).
 
 Each handler runs inline on the loop thread the moment its request is parsed, with no per-request
 hand-off, and the Lua runtime collects garbage generationally so the short-lived objects a request
-creates are reclaimed cheaply. On plaintext connections static files are sent with the kernel's
+creates are reclaimed cheaply. The request object passed to a `createServer` handler materializes its
+fields through a metatable, so a handler that reads only `req.path` never pays to build the headers,
+cookies, or query. On plaintext connections static files are sent with the kernel's
 `sendfile`, going straight from the file to the socket without a copy through user space — over TLS
 the payload must be encrypted in user space, so it streams through the normal buffer.

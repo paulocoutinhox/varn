@@ -1338,7 +1338,7 @@ private:
             return;
         }
 
-        handler(request, response);
+        handler(std::move(request), response);
     }
 
     static std::string headerValue(const std::vector<std::pair<std::string, std::string>>& headers, const std::string& name)

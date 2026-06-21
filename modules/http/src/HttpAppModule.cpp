@@ -85,9 +85,6 @@ struct WsRoute
     std::vector<std::string> allowedOrigins;
 };
 
-// caps an assembled websocket message so a fragmented stream cannot exhaust memory.
-constexpr std::size_t kWsMaxMessageBytes = 1u << 20;
-
 // shared between the transport thread that owns the socket and the main loop that runs lua callbacks.
 struct AppState
 {
@@ -2860,7 +2857,7 @@ int HttpApp::luaAppListen(lua_State* L)
 
     Runtime& rt = *state->runtime;
 
-    auto handler = [state](const HttpRequest& request, std::shared_ptr<HttpResponse> response)
+    auto handler = [state](HttpRequest request, std::shared_ptr<HttpResponse> response)
     {
         // contain a native exception from the dispatcher here and answer 500, since it would otherwise unwind out of the event loop and abort the whole process.
         try

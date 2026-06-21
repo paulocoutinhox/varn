@@ -62,7 +62,7 @@ struct HttpServerOptions
     long long requestTimeoutMs = 30000;
 };
 
-using HttpHandler = std::function<void(const HttpRequest&, std::shared_ptr<HttpResponse>)>;
+using HttpHandler = std::function<void(HttpRequest, std::shared_ptr<HttpResponse>)>;
 
 class WebSocketConnection
 {
