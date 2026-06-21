@@ -60,6 +60,7 @@ Every module is independent and used through `require`, so you pull in only what
 | 🧩 `ffi` | Call functions from native libraries |
 | 🖥️ `platform` | System, architecture, processor, and path information |
 | ⚙️ `process` | Run commands and read the environment, working directory, and arguments |
+| 🕒 `datetime` | Parse, format, and do calendar arithmetic on instants, with ISO-8601 and fixed offsets |
 | 📝 `log` | Leveled, structured logging to the console or a file |
 
 Full feature reference: [docs/lua-api.md](docs/lua-api.md).
@@ -74,7 +75,6 @@ Pure-Lua components built on top of the modules. Drop one in and `require` it.
 | 🔴 `redis` | Redis client with full command coverage and pipelining |
 | 🔧 `env` | Load `.env` files and read typed environment variables |
 | ✅ `validate` | Validate tables against a schema with clear error messages |
-| 🕒 `datetime` | Parse, format, and do arithmetic on dates and times |
 | 🧪 `test` | A tiny test runner with `describe`/`it` and expectations |
 | 🔁 `retry` | Retry with backoff and simple interval scheduling |
 

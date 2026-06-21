@@ -75,7 +75,7 @@ are tagged **[Essential]** (real apps get painful without it), **[Important]** (
 - **[Important]** **config/env** — `.env` loading + typed `env.get("PORT", 8080)` / `env.require(...)`. *small*
 - **[Important]** **validation** — schema validation for request bodies (FastAPI/zod/joi territory),
   pairing with `http` + `json`; removes the most-repeated handler boilerplate. *medium*
-- **[Important]** **datetime** — parse/format/arithmetic/ISO-8601/timezones; Lua's `os.date` is weak. *medium*
+- **[Done]** **datetime** — native module backed by date.h: ISO-8601 parse/format, calendar arithmetic, field access, start/end of unit, and fixed-offset rendering.
 - **[Important]** **test** — `describe`/`it` + assertions + a runner, to dogfood the suite. *medium*
 - **[Nice]** **retry/backoff** and a **scheduler/cron** (interval/repeat) helper. *small*
 
@@ -86,6 +86,6 @@ are tagged **[Essential]** (real apps get painful without it), **[Important]** (
 3. http-client JSON/query ergonomics — stop hand-parsing the wire.
 4. `config/env` component — `.env` and typed config.
 5. `async` combinators — parallel calls.
-6. `datetime` and `validation` components.
+6. `validation` component.
 7. gzip compression (`http`).
 8. `process.exec`.

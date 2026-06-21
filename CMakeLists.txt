@@ -87,7 +87,7 @@ endif()
 # modules: core first, then the public api and features. each declares its sources, driver,
 # and dependency needs.
 foreach(_varn_module
-    core api platform log async fs crypto json xml zip socket http ffi process)
+    core api platform log async fs crypto json xml zip socket http ffi process datetime)
     include("${VARN_ROOT}/modules/${_varn_module}/${_varn_module}.cmake")
 endforeach()
 

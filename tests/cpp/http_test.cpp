@@ -5,7 +5,7 @@
 #include "HttpRange.h"
 #include "HttpText.h"
 #include "HttpToken.h"
-#include "HttpUrlForm.h"
+#include "HttpUrl.h"
 
 #include <gtest/gtest.h>
 
@@ -162,15 +162,15 @@ TEST(Token, CsrfTokenIsBoundToSecretAndSession)
 
 TEST(UrlDecode, DecodesPercentAndPlusSequences)
 {
-    EXPECT_EQ(HttpUrlForm::urlDecode("a+b"), "a b");
-    EXPECT_EQ(HttpUrlForm::urlDecode("%41%42"), "AB");
-    EXPECT_EQ(HttpUrlForm::urlDecode("100%25"), "100%");
+    EXPECT_EQ(HttpUrl::decode("a+b"), "a b");
+    EXPECT_EQ(HttpUrl::decode("%41%42"), "AB");
+    EXPECT_EQ(HttpUrl::decode("100%25"), "100%");
 }
 
 TEST(UrlDecode, LeavesMalformedEscapesLiteral)
 {
-    EXPECT_EQ(HttpUrlForm::urlDecode("%ZZ"), "%ZZ");
-    EXPECT_EQ(HttpUrlForm::urlDecode("trailing%4"), "trailing%4");
+    EXPECT_EQ(HttpUrl::decode("%ZZ"), "%ZZ");
+    EXPECT_EQ(HttpUrl::decode("trailing%4"), "trailing%4");
 }
 
 TEST(Multipart, ExtractsBoundaryIncludingQuotedAndTrailingForms)

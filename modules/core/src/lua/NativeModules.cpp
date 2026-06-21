@@ -3,6 +3,7 @@
 #include "varn/async/AsyncModule.h"
 #include "varn/async/Promise.h"
 #include "varn/crypto/CryptoModule.h"
+#include "varn/datetime/DatetimeModule.h"
 #include "varn/ffi/FfiModule.h"
 #include "varn/fs/FsModule.h"
 #include "varn/http/HttpServerModule.h"
@@ -25,6 +26,7 @@ void NativeModuleRegistry::installAll(lua_State* L)
     ffi::FfiModule::install(L);
     log::LogModule::install(L);
     crypto::CryptoModule::install(L);
+    datetime::DatetimeModule::install(L);
     json::JsonModule::install(L);
     xml::XmlModule::install(L);
     platform::PlatformModule::install(L);

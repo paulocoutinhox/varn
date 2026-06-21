@@ -19,6 +19,7 @@ its full API and every runnable example. The examples also live next to each mod
 | [🧩 `ffi`](lua-api/ffi.md) | Call functions from native libraries |
 | [🖥️ `platform`](lua-api/platform.md) | System, architecture, processor, and path information |
 | [⚙️ `process`](lua-api/process.md) | Run commands and read the environment, working directory, and arguments |
+| [🕒 `datetime`](lua-api/datetime.md) | Parse, format, and do calendar arithmetic on instants, with ISO-8601 and fixed offsets |
 | [📝 `log`](lua-api/log.md) | Leveled logging with debug, info, warn, and error |
 
 ## The `arg` global

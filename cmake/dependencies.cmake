@@ -172,6 +172,19 @@ if(VARN_NEEDS_NLOHMANN)
     )
 endif()
 
+# date.h backs the datetime module with calendar arithmetic and iso-8601 parsing and formatting.
+if(VARN_NEEDS_DATE)
+    CPMAddPackage(
+        NAME date
+        VERSION 3.0.4
+        GITHUB_REPOSITORY HowardHinnant/date
+        GIT_TAG v3.0.4
+        OPTIONS
+            "BUILD_TZ_LIB OFF"
+            "ENABLE_DATE_TESTING OFF"
+    )
+endif()
+
 # pugixml backs the xml PUGIXML driver.
 if(VARN_NEEDS_PUGIXML)
     CPMAddPackage(
