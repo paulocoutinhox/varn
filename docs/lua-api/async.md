@@ -6,6 +6,7 @@ Coroutine-based concurrency over the event loop. Async functions return promises
 - `async.spawn(fn)` → run `fn` as a background coroutine that can `:await()` promises.
 - `async.run(fn)` → run `fn` as the program's async entry point. The process exits when it returns, or with a non-zero status if an uncaught error escapes.
 - `async.promise(fn)` → run `fn` as a coroutine and return a promise that resolves with its return value, or rejects with its error.
+- `async.deferred()` → returns a promise plus a one-shot `resolve` function; calling `resolve()` settles the promise from elsewhere on the event loop. The building block for connection pools, semaphores, and other event-driven waits.
 
 ## Combinators
 

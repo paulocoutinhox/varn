@@ -41,6 +41,15 @@ async.run(function()
     assert(missing.status == 404, "missing path status wrong")
     assert(missing.ok == false, "missing path ok flag wrong")
 
+    -- the generic request() drives any method from one options table and parses like get/post.
+    local viaRequest = http.client.request({
+        url = base .. "/echo",
+        method = "POST",
+        json = { value = 7 },
+    }):await()
+    assert(viaRequest.ok, "request() not ok")
+    assert(viaRequest.json().received == 7, "request() json body not round-tripped")
+
     -- the raw primitive still returns the unparsed VARN/1 wire for low-level callers.
     local wire = http.client.requestRaw({ url = base .. "/greet" }):await()
     assert(wire:match("^VARN/1 200 "), "raw wire framing changed")

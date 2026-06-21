@@ -15,6 +15,9 @@ assert(json.encode({}) == "{}", "empty table is an object")
 assert(json.encode({ 1, 2, 3 }) == "[1,2,3]", "sequence is an array")
 assert(json.encode({ a = 1 }) == '{"a":1}', "map is an object")
 
+-- a table with non-contiguous integer keys is an object, not an array.
+assert(json.encode({ [1] = "a", [3] = "c" }) == '{"1":"a","3":"c"}', "sparse keys are an object")
+
 -- nested objects and arrays mix in a single value.
 assert(json.encode({ a = { 1, 2, { x = true } } }) == '{"a":[1,2,{"x":true}]}', "mixed nesting")
 

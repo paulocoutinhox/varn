@@ -24,5 +24,7 @@ async.run(function()
     local cwd = process.cwd()
     assert(type(cwd) == "string" and #cwd > 0, "cwd should be a non-empty string")
 
+    assert(type(process.argv) == "table", "argv should be a table")
+
     print("process ok")
 end)

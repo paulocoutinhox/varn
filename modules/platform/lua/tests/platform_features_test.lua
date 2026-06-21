@@ -13,6 +13,11 @@ assert(type(arch) == "string" and #arch > 0, "arch")
 local knownArch = { arm64 = true, x86_64 = true, wasm32 = true, arm = true, x86 = true }
 assert(knownArch[arch], "arch should be one of the documented identifiers")
 
+-- hostVersion is a non-empty semver string baked in at configure time.
+local hostVersion = platform.hostVersion()
+assert(type(hostVersion) == "string" and #hostVersion > 0, "hostVersion")
+assert(hostVersion:match("^%d+%.%d+%.%d+"), "hostVersion should be semver x.y.z")
+
 -- cpu count must be a positive integer.
 local cpus = platform.cpuCount()
 assert(type(cpus) == "number" and cpus >= 1, "cpuCount should be at least one")

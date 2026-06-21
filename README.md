@@ -116,6 +116,8 @@ Varn **leads every route**, the database and cache included. Its MySQL client sp
 | ⏳ Async and promises | [docs/async.md](docs/async.md) |
 | 🔒 Safety notes | [docs/security.md](docs/security.md) |
 | 🔥 Stress testing | [docs/stress-test.md](docs/stress-test.md) |
+| 🐳 Docker | [docs/docker.md](docs/docker.md) |
+| 🧭 Platform availability | [docs/platform-availability.md](docs/platform-availability.md) |
 | 🧭 Roadmap | [docs/roadmap.md](docs/roadmap.md) |
 
 ## 💜 Support

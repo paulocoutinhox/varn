@@ -135,6 +135,14 @@ admin:get("/panel", function(ctx)
     ctx:json({ user = ctx.state.user.sub, role = ctx.state.user.role })
 end)
 
+-- an authenticated area behind jwt auth that only checks a user is present, not a role.
+local account = app:group("/account")
+account:use(http.jwtAuth({ secret = "topsecret" }))
+account:use(http.requireAuth())
+account:get("/me", function(ctx)
+    ctx:json({ user = ctx.state.user.sub })
+end)
+
 -- an api group protected by an api key and a rate limit.
 local api = app:group("/api")
 api:use(http.apiKey({ header = "X-API-Key", keys = { "demo-key" } }))
@@ -276,6 +284,11 @@ async.run(function()
     local _, panelBody = parseWire(get("/admin/panel", { ["Authorization"] = "Bearer " .. token }))
     assert(jsonField(panelBody, "role") == "admin", "jwtAuth admin access failed")
     assert(parseWire(get("/admin/panel")) == 401, "jwtAuth missing token not rejected")
+
+    -- requireAuth admits any authenticated user and denies a request with no token.
+    local _, accountBody = parseWire(get("/account/me", { ["Authorization"] = "Bearer " .. token }))
+    assert(jsonField(accountBody, "user") == "u1", "requireAuth authenticated access failed")
+    assert(parseWire(get("/account/me")) == 401, "requireAuth missing token not rejected")
 
     -- the api key gates the api group.
     assert(parseWire(get("/api/me", { ["X-API-Key"] = "demo-key" })) == 200, "api key valid rejected")

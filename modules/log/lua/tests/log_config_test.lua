@@ -44,4 +44,21 @@ assert(content:find("n=7", 1, true), "numeric structured field should be present
 
 os.remove(path)
 
+-- the rotating variant also writes a readable file with the logged content.
+local rpath = dir .. "/log_config_rotating_test.log"
+os.remove(rpath)
+log.toFile(rpath, true)
+
+local rmarker = "varn-log-rotating-marker-" .. tostring(os.time())
+log.info(rmarker, { sink = "rotating" })
+
+local rfile = assert(io.open(rpath, "rb"), "rotating log file should exist after toFile")
+local rcontent = rfile:read("*a")
+rfile:close()
+
+assert(rcontent:find(rmarker, 1, true), "logged marker should be present in the rotating file")
+assert(rcontent:find("sink=rotating", 1, true), "structured field should be present in the rotating file")
+
+os.remove(rpath)
+
 print("log config ok")

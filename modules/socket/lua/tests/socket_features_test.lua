@@ -62,5 +62,16 @@ async.run(function()
     assert(datagram.port == udpServerPort, "unexpected sender port: " .. tostring(datagram.port))
     udp:close():await()
 
+    -- close while accept is pending: a listener with no incoming connection releases the pending accept on close.
+    local idle, ierr = socket.tcp.listen(host, 9831):await()
+    assert(not ierr, ierr)
+    async.spawn(function()
+        async.sleep(40):await()
+        idle:close():await()
+    end)
+    local accepted, aerr = idle:accept():await()
+    assert(accepted == nil, "accept on a closed listener should not resolve to a socket")
+    assert(aerr, "accept released by close should report an error")
+
     print("socket features ok")
 end)

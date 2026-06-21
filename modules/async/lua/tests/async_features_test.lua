@@ -53,6 +53,18 @@ async.run(function()
     end
     assert(table.concat(order, ",") == "a,b,c", "shorter delays should finish first")
 
+    -- deferred returns a pending promise plus a one-shot resolve function that settles it from elsewhere.
+    local deferredPromise, resolveDeferred = async.deferred()
+    assert(type(resolveDeferred) == "function", "deferred should return a resolve function")
+    assert(deferredPromise:isDone() == false, "a fresh deferred promise should be pending")
+    async.spawn(function()
+        async.sleep(1):await()
+        resolveDeferred()
+    end)
+    local deferredValue = deferredPromise:await()
+    assert(deferredValue == "ok", "awaiting a resolved deferred promise should return its value")
+    assert(deferredPromise:isDone() == true, "a resolved deferred promise should report done")
+
     -- an error raised inside an awaited helper propagates and is catchable with pcall.
     local function failing()
         async.sleep(1):await()

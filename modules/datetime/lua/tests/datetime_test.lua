@@ -18,6 +18,17 @@ assert(frac:millis() % 1000 == 123, "fractional millis")
 assert(datetime.fromFields({ year = 2026, month = 6, day = 21, hour = 12, minute = 30 })
     == datetime.parse("2026-06-21T12:30:00Z"), "fromFields equals parse")
 
+-- fromUnix and fromMillis build instants from a timestamp and round-trip.
+assert(datetime.fromUnix(1750509045):iso() == "2025-06-21T12:30:45Z", "fromUnix")
+assert(datetime.fromUnix(1750509045):unix() == 1750509045, "unix round-trip")
+assert(datetime.fromMillis(1750509045123):iso() == "2025-06-21T12:30:45.123Z", "fromMillis keeps millis")
+assert(datetime.fromMillis(1750509045123):millis() == 1750509045123, "millis round-trip")
+assert(datetime.fromUnix(1750509045) == datetime.fromMillis(1750509045000), "fromUnix equals fromMillis")
+
+-- fromFields reads the wall clock at a fixed offset and normalizes to utc.
+assert(datetime.fromFields({ year = 2026, month = 6, day = 21, hour = 14, minute = 30, offset = 120 })
+    == datetime.parse("2026-06-21T12:30:00Z"), "fromFields with offset")
+
 -- field access.
 local f = datetime.parse("2026-06-21T12:30:45Z"):fields()
 assert(f.year == 2026 and f.month == 6 and f.day == 21, "date fields")
@@ -43,6 +54,12 @@ assert(datetime.parse("2026-06-21T12:00:00Z"):add({ hours = 25 }):iso() == "2026
 local base = datetime.parse("2026-06-21T12:00:00Z")
 assert(base:add({ days = 3, hours = 5 }):subtract({ days = 3, hours = 5 }) == base, "add then subtract is identity")
 
+-- strftime-style formatting in utc and at a fixed offset.
+local fmt = datetime.parse("2026-06-21T08:05:09Z")
+assert(fmt:format("%Y-%m-%d %H:%M:%S") == "2026-06-21 08:05:09", "format pads fields")
+assert(fmt:format("%A %B %j") == "Sunday June 172", "format names and yearday")
+assert(fmt:format("%H:%M", 90) == "09:35", "format shifts by the offset")
+
 -- diff in plain and calendar units.
 local later = datetime.parse("2026-03-15")
 local earlier = datetime.parse("2026-01-10")
@@ -52,6 +69,15 @@ assert(earlier:diffIn(later, "months") == -2, "diff is signed")
 assert(datetime.parse("2026-06-21"):diffIn(datetime.parse("2020-06-21"), "years") == 6, "6 years apart")
 assert(datetime.parse("2026-06-21T01:00:00Z"):diff(datetime.parse("2026-06-21T00:00:00Z")) == 3600, "diff in seconds")
 
+-- the remaining diffIn units are exact and truncate toward zero.
+local hi = datetime.parse("2026-06-21T12:34:56.789Z")
+local lo = datetime.parse("2026-06-20T10:00:00Z")
+assert(hi:diffIn(lo, "millis") == 95696789, "diff in millis")
+assert(hi:diffIn(lo, "seconds") == 95696, "diff in seconds unit")
+assert(hi:diffIn(lo, "minutes") == 1594, "diff in minutes truncates")
+assert(hi:diffIn(lo, "hours") == 26, "diff in hours truncates")
+assert(datetime.parse("2026-07-05"):diffIn(datetime.parse("2026-06-21"), "weeks") == 2, "diff in weeks")
+
 -- start and end of a unit.
 local m = datetime.parse("2026-06-21T12:30:45.500Z")
 assert(m:startOf("day"):iso() == "2026-06-21T00:00:00Z", "start of day")
@@ -59,7 +85,15 @@ assert(m:endOf("day"):iso() == "2026-06-21T23:59:59.999Z", "end of day")
 assert(m:startOf("month"):iso() == "2026-06-01T00:00:00Z", "start of month")
 assert(m:endOf("month"):iso() == "2026-06-30T23:59:59.999Z", "end of month")
 assert(m:startOf("year"):iso() == "2026-01-01T00:00:00Z", "start of year")
+assert(m:endOf("year"):iso() == "2026-12-31T23:59:59.999Z", "end of year")
 assert(m:startOf("week"):iso() == "2026-06-15T00:00:00Z", "iso week starts monday")
+assert(m:endOf("week"):iso() == "2026-06-21T23:59:59.999Z", "iso week ends sunday")
+assert(m:startOf("hour"):iso() == "2026-06-21T12:00:00Z", "start of hour")
+assert(m:endOf("hour"):iso() == "2026-06-21T12:59:59.999Z", "end of hour")
+assert(m:startOf("minute"):iso() == "2026-06-21T12:30:00Z", "start of minute")
+assert(m:endOf("minute"):iso() == "2026-06-21T12:30:59.999Z", "end of minute")
+assert(m:startOf("second"):iso() == "2026-06-21T12:30:45Z", "start of second drops millis")
+assert(m:endOf("second"):iso() == "2026-06-21T12:30:45.999Z", "end of second")
 
 -- fixed-offset rendering keeps the same instant but shifts the wall clock.
 local noon = datetime.parse("2026-06-21T12:00:00Z")
