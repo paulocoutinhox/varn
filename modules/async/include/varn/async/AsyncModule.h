@@ -30,6 +30,8 @@ private:
     static int luaPromise(lua_State* L);
     static int promiseBody(lua_State* L);
     static int promiseContinuation(lua_State* L, int status, lua_KContext ctx);
+    static int luaDeferred(lua_State* L);
+    static int luaResolveDeferred(lua_State* L);
     static int luaOpen(lua_State* L);
 
     static void installCombinators(lua_State* L);

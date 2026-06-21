@@ -14,6 +14,17 @@ CONNECTIONS=${CONNECTIONS:-50}
 DURATION=${DURATION:-5s}
 WORKERS=${WORKERS:-1}
 PORT_BASE=${PORT_BASE:-38010}
+ROUTES=${ROUTES:-"/plaintext /json /db /cache"}
+
+# database and cache endpoints, inherited by every server process.
+export MYSQL_HOST=${MYSQL_HOST:-127.0.0.1}
+export MYSQL_PORT=${MYSQL_PORT:-3306}
+export MYSQL_USER=${MYSQL_USER:-bench}
+export MYSQL_PASSWORD=${MYSQL_PASSWORD:-benchpass}
+export MYSQL_DB=${MYSQL_DB:-bench}
+export REDIS_HOST=${REDIS_HOST:-127.0.0.1}
+export REDIS_PORT=${REDIS_PORT:-6379}
+export POOL_SIZE=${POOL_SIZE:-16}
 
 command -v wrk >/dev/null 2>&1 || { echo "wrk not found (brew install wrk / apt install wrk)"; exit 1; }
 
@@ -31,7 +42,7 @@ bench_server() {
   done
   if [ "$ready" -ne 1 ]; then printf "%-10s %-11s %14s   (did not start — /tmp/bench_%s.log)\n" "$name" "-" "FAIL" "$name"; pkill -f "$marker" 2>/dev/null; return; fi
   sleep 0.5
-  for route in /plaintext /json; do
+  for route in $ROUTES; do
     local out; out=$(wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" --latency "http://127.0.0.1:${port}${route}" 2>&1)
     local rps lat p99
     rps=$(echo "$out" | awk '/Requests\/sec/{print $2}')

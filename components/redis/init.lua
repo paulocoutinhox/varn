@@ -244,7 +244,9 @@ local function dial(options, host, port)
         error("[Redis] Connect to " .. host .. ":" .. port .. " failed: " .. tostring(err), 0)
     end
 
-    local client = setmetatable({ sock = sock, reader = Reader.new(sock) }, Client)
+    -- dead must be a real field: __index turns any missing key into a command, so without it the very
+    -- first `self.dead` check would dispatch a bogus command and read as truthy.
+    local client = setmetatable({ sock = sock, reader = Reader.new(sock), dead = false }, Client)
 
     local ok, handshakeError = pcall(function()
         -- authenticate before anything else so a wrong credential fails fast.

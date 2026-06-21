@@ -15,6 +15,40 @@ A reproducible comparison benchmark lives under [bench/](../bench/): the same `/
 
 Varn serves about **2.5× the requests of Node per core** (and ~2.5× Python) and scales near-linearly with `VARN_WORKERS` (147k → 452k across four cores). Each runtime is at its best with no framework: the Node baseline is raw `http`, and the Python one is a raw ASGI app on uvicorn with `uvloop`+`httptools`. Run it locally with `bash bench/run.sh`, or on Linux through Docker with `bash bench/docker-bench.sh`. A Mac's allocator and `kqueue` penalize every allocation-heavy server, so local macOS numbers understate production — measure on Linux.
 
+## 🗄️ With a database and cache (MySQL + Redis)
+
+A second, more real-world scenario adds two routes: `/db` reads a random row from MySQL and `/cache`
+runs a Redis `INCR`, each over a pooled, non-blocking connection. The reproducible stack is in
+[bench/](../bench/): `bash bench/docker-bench.sh` brings up MySQL (a seeded 10k-row table) and Redis and
+drives Varn, Node (`mysql2`/`ioredis`) and Python (`aiomysql`/`redis.asyncio`) on one network.
+
+Varn reaches MySQL through a **native protocol client written over its async socket** — no
+`libmysqlclient` — authenticating with `mysql_native_password` and running `COM_QUERY`. Both MySQL and
+Redis go through a shared connection [`pool`](../components/pool) that hands a free connection to each
+request and blocks the rest on an event-driven wait until one is released, so one process keeps many
+queries in flight. This mirrors the async, pooled model the Node and Python drivers use.
+
+Measured on Linux (one process each, `wrk -t4 -c256`), requests per second:
+
+| Scenario | Varn | Node | Python |
+|----------|-----:|-----:|-------:|
+| plaintext | **115k** | 53k | 48k |
+| json | **111k** | 47k | 45k |
+| db (MySQL `SELECT`) | **13.9k** | 10.8k | 11.2k |
+| cache (Redis `INCR`) | 15.4k | **36.3k** | 16.0k |
+
+Varn **leads on `/db`** — about 1.3× Node and Python — even though it parses the MySQL wire in Lua,
+because the whole path stays non-blocking and pooled on the C++ event loop. Its **tail latency is far
+tighter** too: `/db` p99 is 25 ms versus Node's 427 ms, and `/plaintext` p99 is 4 ms versus Node's
+132 ms, since there is no GC pausing the loop. The one route Varn trails is **`/cache`**, where
+`ioredis` auto-pipelines many commands onto one connection; Varn issues one command per pooled
+connection per round trip (on par with Python's `redis.asyncio`). Pipelining the redis client is the
+open optimization there. Reproduce all of this with `bash bench/docker-bench.sh`.
+
+> Run the bench on a real network, not a Docker-Desktop port-forward: the host→container proxy on
+> macOS/Windows adds milliseconds per round trip and disproportionately penalizes whichever client does
+> more round trips, which inverts the `/db` result. The numbers above are from the in-network Docker run.
+
 ## 📦 Install k6
 
 ```bash

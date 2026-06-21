@@ -95,7 +95,16 @@ The same `/plaintext` and `/json` routes with no framework on any side, driven b
 | 4 workers, plaintext | **452k req/s** | 199k | 201k |
 | 4 workers, json | **410k req/s** | 184k | 186k |
 
-About **2.5× the throughput of Node and Python per core**, scaling near-linearly with `VARN_WORKERS`. Reproduce it with `bash bench/run.sh`, or on Linux through Docker with `bash bench/docker-bench.sh`. Method and caveats: [docs/stress-test.md](docs/stress-test.md).
+About **2.5× the throughput of Node and Python per core**, scaling near-linearly with `VARN_WORKERS`.
+
+It holds up on real work too. A second benchmark adds `/db` (a MySQL `SELECT`) and `/cache` (a Redis `INCR`), each over a pooled, non-blocking connection — Varn's MySQL client speaks the wire protocol natively over its async socket:
+
+| Scenario | Varn | Node | Python |
+|----------|-----:|-----:|-------:|
+| db (MySQL `SELECT`) | **13.9k req/s** | 10.8k | 11.2k |
+| cache (Redis `INCR`) | 15.4k | **36.3k** | 16.0k |
+
+Varn **leads on the database route** (~1.3× Node/Python) with far tighter tail latency — `/db` p99 of 25 ms against Node's 427 ms, since no GC pauses the loop. It trails only on `/cache`, where `ioredis` auto-pipelines. Reproduce it with `bash bench/run.sh`, or on Linux through Docker with `bash bench/docker-bench.sh`. Method and caveats: [docs/stress-test.md](docs/stress-test.md).
 
 ## 📚 Documentation
 

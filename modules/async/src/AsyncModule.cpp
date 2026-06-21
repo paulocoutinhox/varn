@@ -392,6 +392,25 @@ int AsyncModule::luaPromise(lua_State* L)
     return 1;
 }
 
+int AsyncModule::luaResolveDeferred(lua_State* L)
+{
+    Promise* promise = Promise::check(L, lua_upvalueindex(1));
+    promise->resolve("ok");
+    return 0;
+}
+
+int AsyncModule::luaDeferred(lua_State* L)
+{
+    auto& rt = luaRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    // return the awaitable alongside a one-shot resolve function that wakes it from elsewhere.
+    Promise::push(L, promise);
+    lua_pushvalue(L, -1);
+    lua_pushcclosure(L, &AsyncModule::luaResolveDeferred, 1);
+    return 2;
+}
+
 int AsyncModule::luaSpawn(lua_State* L)
 {
     return startEntry(L, false);
@@ -417,6 +436,9 @@ int AsyncModule::luaOpen(lua_State* L)
 
     lua_pushcfunction(L, &AsyncModule::luaPromise);
     lua_setfield(L, -2, "promise");
+
+    lua_pushcfunction(L, &AsyncModule::luaDeferred);
+    lua_setfield(L, -2, "deferred");
 
     installCombinators(L);
 

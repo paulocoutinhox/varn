@@ -16,10 +16,14 @@ for i = 1, 4 do
 end
 `;
 
-// runnable examples tuned for the browser build, omitting crypto and ffi which are unavailable in wasm.
-const EXAMPLES: ReadonlyArray<{ label: string; code: string }> = [
-  { label: "Lua — fibonacci", code: DEFAULT_LUA },
+type Example = { module: string; label: string; code: string };
+
+// examples grouped by module so the demo mirrors what is available in the browser build.
+// crypto exposes its essential subset here; ffi and the http server are native-only.
+const EXAMPLES: ReadonlyArray<Example> = [
+  { module: "Lua", label: "Lua — fibonacci", code: DEFAULT_LUA },
   {
+    module: "Lua",
     label: "Lua — strings & patterns",
     code: `local text = "varn: fast, small, embeddable"
 
@@ -33,6 +37,7 @@ print("commas:", select(2, text:gsub(",", "")))
 `,
   },
   {
+    module: "Lua",
     label: "Lua — tables & iteration",
     code: `local fruits = { "apple", "banana", "cherry" }
 
@@ -51,6 +56,42 @@ end
 `,
   },
   {
+    module: "Lua",
+    label: "Lua — error handling",
+    code: `-- pcall turns a runtime error into a value you can inspect
+local ok, err = pcall(function()
+  error("something went wrong")
+end)
+print("ok:", ok)
+print("err:", err)
+
+local divided, result = pcall(function(a, b)
+  return a / b
+end, 10, 2)
+print("divided:", divided, "result:", result)
+`,
+  },
+  {
+    module: "datetime",
+    label: "datetime — parse, format, math",
+    code: `local datetime = require("datetime")
+
+local d = datetime.parse("2026-06-21T12:30:00Z")
+print("iso:", d:iso())
+print("weekday:", d:weekdayName(), "day of year:", d:fields().yearday)
+
+-- calendar-aware arithmetic clamps to the end of a short month
+print("jan 31 + 1 month:", datetime.parse("2026-01-31"):add({ months = 1 }):iso())
+
+-- diffs in plain or calendar units
+print("days apart:", datetime.parse("2026-03-15"):diffIn(datetime.parse("2026-01-10"), "days"))
+
+-- render the same instant at a fixed utc offset
+print("in +05:30:", d:iso(330))
+`,
+  },
+  {
+    module: "json",
     label: "json — encode & decode",
     code: `local json = require("json")
 
@@ -66,6 +107,7 @@ print(json.encode({ user = { id = 1, roles = { "admin" } } }, { pretty = true })
 `,
   },
   {
+    module: "xml",
     label: "xml — encode & decode",
     code: `local xml = require("xml")
 
@@ -88,43 +130,26 @@ print("first child:", node.children[1].name, node.children[1].text)
 `,
   },
   {
-    label: "platform — system info",
-    code: `local p = require("platform")
+    module: "crypto",
+    label: "crypto — digests, hmac, codecs, uuid",
+    code: `local crypto = require("crypto")
 
-print("os", p.os())
-print("arch", p.arch())
-print("cpus", p.cpuCount())
-print("pointer bytes", p.pointerSize())
-print("endianness", p.endianness())
-print("host version", p.hostVersion())
+print("sha256:", crypto.digest("SHA256", "varn"))
+print("sha512:", crypto.digest("SHA512", "varn"):sub(1, 32) .. "…")
+print("hmac:", crypto.hmac("SHA256", "secret-key", "message"))
+
+print("base64:", crypto.base64Encode("hello, varn"))
+print("hex:", crypto.hexEncode("abc"))
+
+print("uuid v4:", crypto.uuidV4())
+print("uuid v7:", crypto.uuidV7())
+print("random:", crypto.hexEncode(crypto.randomBytes(8)))
+
+-- AES-GCM, scrypt and PBKDF2 are native-only and raise in the browser build.
 `,
   },
   {
-    label: "log — levels",
-    code: `local log = require("log")
-
-log.debug("debug", 1)
-log.info("info", "hello")
-log.warn("careful")
-log.error("boom", { code = 7 })
-
-print("log lines were emitted")
-`,
-  },
-  {
-    label: "async — sleep & spawn",
-    code: `local async = require("async")
-
-print("start")
-async.spawn(function()
-  print("task started")
-  async.sleep(1500):await()
-  print("task woke up after 1500ms")
-end)
-print("main chunk returned first")
-`,
-  },
-  {
+    module: "fs",
     label: "fs — read & write (MEMFS)",
     code: `local async = require("async")
 local fs = require("fs")
@@ -138,6 +163,7 @@ end)
 `,
   },
   {
+    module: "zip",
     label: "zip — create & list",
     code: `local async = require("async")
 local zip = require("zip")
@@ -160,22 +186,34 @@ end)
 `,
   },
   {
-    label: "pcall — error handling",
-    code: `-- pcall turns a runtime error into a value you can inspect
-local ok, err = pcall(function()
-  error("something went wrong")
-end)
-print("ok:", ok)
-print("err:", err)
+    module: "async",
+    label: "async — sleep & spawn",
+    code: `local async = require("async")
 
-local divided, result = pcall(function(a, b)
-  return a / b
-end, 10, 2)
-print("divided:", divided, "result:", result)
+print("start")
+async.spawn(function()
+  print("task started")
+  async.sleep(1500):await()
+  print("task woke up after 1500ms")
+end)
+print("main chunk returned first")
 `,
   },
   {
-    label: "http.client — fetch",
+    module: "http",
+    label: "http — url encode & decode",
+    code: `local http = require("http")
+
+-- percent-encoding works in every build, including the browser
+local q = http.urlEncode("a b & c=d/e")
+print("encoded:", q)
+print("decoded:", http.urlDecode(q))
+print("form plus:", http.urlDecode("name=jo%C3%A3o+silva"))
+`,
+  },
+  {
+    module: "http",
+    label: "http — client fetch",
     code: `local async = require("async")
 local http = require("http")
 
@@ -188,6 +226,32 @@ async.spawn(function()
 
   print("status:", resp.status)
 end)
+`,
+  },
+  {
+    module: "log",
+    label: "log — levels",
+    code: `local log = require("log")
+
+log.debug("debug", 1)
+log.info("info", "hello")
+log.warn("careful")
+log.error("boom", { code = 7 })
+
+print("log lines were emitted")
+`,
+  },
+  {
+    module: "platform",
+    label: "platform — system info",
+    code: `local p = require("platform")
+
+print("os", p.os())
+print("arch", p.arch())
+print("cpus", p.cpuCount())
+print("pointer bytes", p.pointerSize())
+print("endianness", p.endianness())
+print("host version", p.hostVersion())
 `,
   },
 ];
@@ -224,7 +288,7 @@ function mount(): void {
     el(
       "p",
       "max-w-2xl text-sm leading-relaxed text-zinc-400",
-      "Runs Lua in a Web Worker with Asyncify so you can stop long loops. Output is captured from print().",
+      "Runs Lua in a Web Worker with Asyncify so you can stop long loops. Pick an example, grouped by the module it exercises, to try what is available in the browser build. Output is captured from print().",
     ),
   );
 
@@ -237,11 +301,21 @@ function mount(): void {
   const exampleSelect = document.createElement("select");
   exampleSelect.className =
     "flex-1 rounded-lg border border-zinc-800 bg-zinc-950/80 px-2 py-1.5 text-sm text-zinc-200 outline-none transition focus:border-cyan-600/60";
+
+  const moduleGroups = new Map<string, HTMLOptGroupElement>();
   for (const ex of EXAMPLES) {
+    let group = moduleGroups.get(ex.module);
+    if (!group) {
+      group = document.createElement("optgroup");
+      group.label = ex.module;
+      moduleGroups.set(ex.module, group);
+      exampleSelect.appendChild(group);
+    }
+
     const opt = document.createElement("option");
     opt.value = ex.label;
     opt.textContent = ex.label;
-    exampleSelect.appendChild(opt);
+    group.appendChild(opt);
   }
   exampleRow.appendChild(exampleSelect);
   editorCard.appendChild(exampleRow);
