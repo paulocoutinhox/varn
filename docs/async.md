@@ -35,6 +35,9 @@ end)
 - `async.sleep(ms)` returns a promise that resolves after `ms` milliseconds without blocking.
 - `async.spawn(fn)` runs `fn` as a background coroutine so it can `:await()` promises. Any error that escapes `fn` ends the process with a non-zero exit code.
 - `async.run(fn)` runs `fn` as the program's async entry point. The process exits cleanly when `fn` returns, or with a non-zero status if an uncaught error escapes. Use it at the top level of a script instead of `async.spawn` when you want the script to end with `fn`.
+- `async.promise(fn)` runs `fn` as a coroutine and returns a promise that resolves with its return value or rejects with its error. Use it to turn an async helper into something the rest of your code can `:await()`.
+
+Combinators build on these primitives and each return a promise: `async.all`, `async.allSettled`, `async.race`, `async.any`, `async.timeout`, and `async.mapLimit`. See [lua-api/async.md](lua-api/async.md) for their exact contracts.
 
 ```lua
 local async = require("async")

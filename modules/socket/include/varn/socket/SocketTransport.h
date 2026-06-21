@@ -62,7 +62,10 @@ public:
     SocketTransport() = delete;
 
     static void connectAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, int timeoutMs, ConnectCallback callback);
+    static void connectTlsAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, int timeoutMs, bool verify, ConnectCallback callback);
+    static void connectUnixAsync(varn::runtime::Runtime& runtime, const std::string& path, ConnectCallback callback);
     static std::shared_ptr<TcpListener> listen(varn::runtime::Runtime& runtime, const std::string& host, int port, int backlog);
+    static std::shared_ptr<TcpListener> listenUnix(varn::runtime::Runtime& runtime, const std::string& path, int backlog);
     static std::shared_ptr<UdpSocket> bindUdp(varn::runtime::Runtime& runtime, const std::string& host, int port);
 };
 

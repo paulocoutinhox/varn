@@ -55,6 +55,7 @@ constexpr const char* kGroupMeta = "varn.HttpGroup";
 constexpr const char* kRouteMeta = "varn.HttpRoute";
 constexpr const char* kContextMeta = "varn.HttpContext";
 constexpr const char* kWsConnMeta = "varn.HttpWsConn";
+constexpr const char* kSseMeta = "varn.HttpSse";
 
 struct Group
 {
@@ -85,6 +86,14 @@ struct WsRoute
     std::vector<std::string> allowedOrigins;
 };
 
+// one live websocket connection tracked in the app so broadcasts and rooms can reach it without a use-after-free.
+struct WsConnRecord
+{
+    std::weak_ptr<WebSocketConnection> conn;
+    std::string path;
+    std::vector<std::string> rooms;
+};
+
 // shared between the transport thread that owns the socket and the main loop that runs lua callbacks.
 struct AppState
 {
@@ -108,6 +117,7 @@ struct AppState
     std::vector<int> requestHooks;
     std::vector<int> responseHooks;
     std::vector<WsRoute> wsRoutes;
+    std::unordered_map<const WebSocketConnection*, WsConnRecord> wsConnections;
     int configRef = LUA_NOREF;
 
     ~AppState()
@@ -207,6 +217,13 @@ struct ContextUserdata
 struct WsConnUserdata
 {
     std::shared_ptr<WebSocketConnection> conn;
+    std::weak_ptr<AppState> app;
+    std::string path;
+};
+
+struct SseUserdata
+{
+    std::shared_ptr<HttpResponse> response;
 };
 
 struct Target
@@ -246,6 +263,14 @@ public:
     static int luaContextFile(lua_State* L);
     static int luaContextJson(lua_State* L);
     static int luaContextXml(lua_State* L);
+    static int luaContextCache(lua_State* L);
+    static int luaContextEtag(lua_State* L);
+    static int luaContextAccepts(lua_State* L);
+    static int luaContextSse(lua_State* L);
+    static int luaSseSend(lua_State* L);
+    static int luaSseComment(lua_State* L);
+    static int luaSseClose(lua_State* L);
+    static int luaSseGc(lua_State* L);
     static int luaContextIndex(lua_State* L);
     static int luaContextGc(lua_State* L);
     static int terminalNotFound(lua_State* L);
@@ -286,8 +311,12 @@ public:
     static WsConnUserdata* checkWsConn(lua_State* L);
     static int luaWsSend(lua_State* L);
     static int luaWsClose(lua_State* L);
+    static int luaWsJoin(lua_State* L);
+    static int luaWsLeave(lua_State* L);
     static int luaWsGc(lua_State* L);
-    static void pushWsConn(lua_State* L, std::shared_ptr<WebSocketConnection> conn);
+    static int luaWsBroadcast(lua_State* L);
+    static int luaWsBroadcastRoom(lua_State* L);
+    static void pushWsConn(lua_State* L, std::shared_ptr<WebSocketConnection> conn, const std::shared_ptr<AppState>& app, const std::string& path);
     static void callWsCallback(const std::shared_ptr<AppState>& app, int ref, int connRef);
     static void callWsMessage(const std::shared_ptr<AppState>& app, int ref, int connRef, const std::string& data);
     static void handleWebSocketUpgrade(const std::shared_ptr<AppState>& app, const HttpRequest& request, const std::shared_ptr<WebSocketConnection>& conn);
@@ -944,6 +973,215 @@ int HttpApp::luaContextXml(lua_State* L)
 }
 #endif
 
+int HttpApp::luaContextCache(lua_State* L)
+{
+    auto* context = checkContext(L);
+
+    // a number is shorthand for a public max-age and a table spells out the directives.
+    if (lua_isinteger(L, 2) || lua_isnumber(L, 2))
+    {
+        context->response->setHeader("Cache-Control", "public, max-age=" + std::to_string(static_cast<long long>(luaL_checkinteger(L, 2))));
+        lua_pushvalue(L, 1);
+        return 1;
+    }
+
+    luaL_checktype(L, 2, LUA_TTABLE);
+
+    std::vector<std::string> directives;
+
+    const bool isPrivate = optBool(L, 2, "private", false);
+    directives.push_back(isPrivate ? "private" : "public");
+
+    if (optBool(L, 2, "noStore", false))
+    {
+        directives.push_back("no-store");
+    }
+
+    if (optBool(L, 2, "noCache", false))
+    {
+        directives.push_back("no-cache");
+    }
+
+    if (optBool(L, 2, "mustRevalidate", false))
+    {
+        directives.push_back("must-revalidate");
+    }
+
+    lua_getfield(L, 2, "maxAge");
+    if (lua_isnumber(L, -1))
+    {
+        directives.push_back("max-age=" + std::to_string(static_cast<long long>(lua_tointeger(L, -1))));
+    }
+
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "sMaxAge");
+    if (lua_isnumber(L, -1))
+    {
+        directives.push_back("s-maxage=" + std::to_string(static_cast<long long>(lua_tointeger(L, -1))));
+    }
+
+    lua_pop(L, 1);
+
+    std::string value;
+    for (std::size_t i = 0; i < directives.size(); ++i)
+    {
+        if (i > 0)
+        {
+            value += ", ";
+        }
+
+        value += directives[i];
+    }
+
+    context->response->setHeader("Cache-Control", value);
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
+int HttpApp::luaContextEtag(lua_State* L)
+{
+    auto* context = checkContext(L);
+    std::string tag = LuaHelpers::checkString(L, 2);
+
+    // quote a bare value so the header is a well-formed entity tag, leaving a weak or already-quoted one alone.
+    const bool weak = tag.rfind("W/", 0) == 0;
+    const std::string core = weak ? tag.substr(2) : tag;
+    if (core.size() < 2 || core.front() != '"' || core.back() != '"')
+    {
+        tag = (weak ? "W/\"" : "\"") + core + "\"";
+    }
+
+    context->response->setHeader("ETag", tag);
+
+    // a matching If-None-Match short-circuits to 304 so the client reuses its cached copy and a later json or html call is a no-op on the finished response.
+    const std::string ifNoneMatch = requestHeaderCI(L, "If-None-Match");
+    if (!ifNoneMatch.empty() && (ifNoneMatch == "*" || ifNoneMatch.find(tag) != std::string::npos))
+    {
+        context->response->setStatus(304);
+        context->response->end("");
+    }
+
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
+int HttpApp::luaContextAccepts(lua_State* L)
+{
+    checkContext(L);
+    const int argc = lua_gettop(L);
+    const std::string accept = HttpText::toLower(requestHeaderCI(L, "Accept"));
+
+    // an explicit listing of an offered type always wins over a wildcard fallback.
+    for (int i = 2; i <= argc; ++i)
+    {
+        std::string offered = HttpText::toLower(LuaHelpers::checkString(L, i));
+
+        // a bare token like "json" or "html" matches the media subtype while a full type matches exactly.
+        const bool full = offered.find('/') != std::string::npos;
+        if (full ? accept.find(offered) != std::string::npos : accept.find("/" + offered) != std::string::npos)
+        {
+            lua_pushvalue(L, i);
+            return 1;
+        }
+    }
+
+    // a missing or wildcard Accept header takes anything, so the first offered type is returned.
+    if ((accept.empty() || accept.find("*/*") != std::string::npos) && argc >= 2)
+    {
+        lua_pushvalue(L, 2);
+        return 1;
+    }
+
+    lua_pushnil(L);
+    return 1;
+}
+
+int HttpApp::luaSseSend(lua_State* L)
+{
+    auto* writer = static_cast<SseUserdata*>(luaL_checkudata(L, 1, kSseMeta));
+    std::string event;
+    std::string data;
+
+    // the two-argument form names the event and the one-argument form sends a default-event message.
+    if (lua_gettop(L) >= 3)
+    {
+        event = LuaHelpers::checkString(L, 2);
+        data = LuaHelpers::optionalString(L, 3, "");
+    }
+    else
+    {
+        data = LuaHelpers::optionalString(L, 2, "");
+    }
+
+    std::string frame;
+    if (!event.empty())
+    {
+        frame += "event: " + event + "\n";
+    }
+
+    // a multi-line payload is split so each physical line carries its own data field, as the spec requires.
+    std::size_t start = 0;
+    for (;;)
+    {
+        const std::size_t newline = data.find('\n', start);
+        const std::string line = data.substr(start, newline == std::string::npos ? std::string::npos : newline - start);
+        frame += "data: " + line + "\n";
+        if (newline == std::string::npos)
+        {
+            break;
+        }
+
+        start = newline + 1;
+    }
+
+    frame += "\n";
+    writer->response->writeChunk(frame);
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
+int HttpApp::luaSseComment(lua_State* L)
+{
+    auto* writer = static_cast<SseUserdata*>(luaL_checkudata(L, 1, kSseMeta));
+    const std::string text = LuaHelpers::optionalString(L, 2, "");
+
+    // a comment line is the conventional heartbeat that keeps the stream and any proxies alive.
+    writer->response->writeChunk(": " + text + "\n\n");
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
+int HttpApp::luaSseClose(lua_State* L)
+{
+    auto* writer = static_cast<SseUserdata*>(luaL_checkudata(L, 1, kSseMeta));
+    writer->response->endChunked();
+    return 0;
+}
+
+int HttpApp::luaSseGc(lua_State* L)
+{
+    auto* writer = static_cast<SseUserdata*>(luaL_checkudata(L, 1, kSseMeta));
+    writer->~SseUserdata();
+    return 0;
+}
+
+int HttpApp::luaContextSse(lua_State* L)
+{
+    auto* context = checkContext(L);
+
+    context->response->setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    context->response->setHeader("Cache-Control", "no-cache");
+    context->response->beginChunked();
+
+    void* memory = lua_newuserdatauv(L, sizeof(SseUserdata), 0);
+    new (memory) SseUserdata{context->response};
+
+    luaL_getmetatable(L, kSseMeta);
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
 int HttpApp::luaContextIndex(lua_State* L)
 {
     luaL_checkudata(L, 1, kContextMeta);
@@ -1049,6 +1287,30 @@ int HttpApp::luaContextIndex(lua_State* L)
     if (std::strcmp(key, "file") == 0)
     {
         lua_pushcfunction(L, &luaContextFile);
+        return 1;
+    }
+
+    if (std::strcmp(key, "cache") == 0)
+    {
+        lua_pushcfunction(L, &luaContextCache);
+        return 1;
+    }
+
+    if (std::strcmp(key, "etag") == 0)
+    {
+        lua_pushcfunction(L, &luaContextEtag);
+        return 1;
+    }
+
+    if (std::strcmp(key, "accepts") == 0)
+    {
+        lua_pushcfunction(L, &luaContextAccepts);
+        return 1;
+    }
+
+    if (std::strcmp(key, "sse") == 0)
+    {
+        lua_pushcfunction(L, &luaContextSse);
         return 1;
     }
 
@@ -2278,17 +2540,58 @@ int HttpApp::luaWsClose(lua_State* L)
     return 0;
 }
 
+int HttpApp::luaWsJoin(lua_State* L)
+{
+    auto* userdata = checkWsConn(L);
+    const std::string room = LuaHelpers::checkString(L, 2);
+
+    if (auto app = userdata->app.lock())
+    {
+        const auto entry = app->wsConnections.find(userdata->conn.get());
+        if (entry != app->wsConnections.end())
+        {
+            std::vector<std::string>& rooms = entry->second.rooms;
+            if (std::find(rooms.begin(), rooms.end(), room) == rooms.end())
+            {
+                rooms.push_back(room);
+            }
+        }
+    }
+
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
+int HttpApp::luaWsLeave(lua_State* L)
+{
+    auto* userdata = checkWsConn(L);
+    const std::string room = LuaHelpers::checkString(L, 2);
+
+    if (auto app = userdata->app.lock())
+    {
+        const auto entry = app->wsConnections.find(userdata->conn.get());
+        if (entry != app->wsConnections.end())
+        {
+            std::vector<std::string>& rooms = entry->second.rooms;
+            rooms.erase(std::remove(rooms.begin(), rooms.end(), room), rooms.end());
+        }
+    }
+
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
 int HttpApp::luaWsGc(lua_State* L)
 {
     auto* userdata = checkWsConn(L);
-    userdata->conn.~shared_ptr<WebSocketConnection>();
+    userdata->~WsConnUserdata();
     return 0;
 }
 
-void HttpApp::pushWsConn(lua_State* L, std::shared_ptr<WebSocketConnection> conn)
+void HttpApp::pushWsConn(lua_State* L, std::shared_ptr<WebSocketConnection> conn, const std::shared_ptr<AppState>& app, const std::string& path)
 {
     void* memory = lua_newuserdatauv(L, sizeof(WsConnUserdata), 0);
-    new (memory) WsConnUserdata{std::move(conn)};
+    new (memory) WsConnUserdata{std::move(conn), app, path};
     luaL_getmetatable(L, kWsConnMeta);
     lua_setmetatable(L, -2);
 }
@@ -2381,17 +2684,22 @@ void HttpApp::handleWebSocketUpgrade(const std::shared_ptr<AppState>& app, const
     conn->accept();
 
     lua_State* L = app->luaMain;
-    pushWsConn(L, conn);
+    pushWsConn(L, conn, app, request.path);
     const int connRef = luaL_ref(L, LUA_REGISTRYINDEX);
+
+    // track the live connection so broadcasts and rooms can reach it, using a weak_ptr that never keeps it alive past close.
+    app->wsConnections.emplace(conn.get(), WsConnRecord{conn, request.path, {}});
 
     callWsCallback(app, route->openRef, connRef);
 
     const int messageRef = route->messageRef;
     const int closeRef = route->closeRef;
+    const WebSocketConnection* key = conn.get();
     conn->onMessage([app, messageRef, connRef](const std::string& data)
                     { callWsMessage(app, messageRef, connRef, data); });
-    conn->onClose([app, closeRef, connRef]()
+    conn->onClose([app, closeRef, connRef, key]()
                   {
+        app->wsConnections.erase(key);
         callWsCallback(app, closeRef, connRef);
         luaL_unref(app->luaMain, LUA_REGISTRYINDEX, connRef); });
 }
@@ -2442,6 +2750,60 @@ int HttpApp::luaWs(lua_State* L)
     app->state->wsRoutes.push_back(std::move(route));
 
     lua_pushvalue(L, 1);
+    return 1;
+}
+
+int HttpApp::luaWsBroadcast(lua_State* L)
+{
+    auto* app = checkApp(L);
+    const std::string path = LuaHelpers::checkString(L, 2);
+    std::size_t length = 0;
+    const char* raw = luaL_checklstring(L, 3, &length);
+    const std::string message(raw, length);
+
+    int delivered = 0;
+    for (const auto& [key, record] : app->state->wsConnections)
+    {
+        if (record.path != path)
+        {
+            continue;
+        }
+
+        if (auto conn = record.conn.lock())
+        {
+            conn->send(message);
+            ++delivered;
+        }
+    }
+
+    lua_pushinteger(L, delivered);
+    return 1;
+}
+
+int HttpApp::luaWsBroadcastRoom(lua_State* L)
+{
+    auto* app = checkApp(L);
+    const std::string room = LuaHelpers::checkString(L, 2);
+    std::size_t length = 0;
+    const char* raw = luaL_checklstring(L, 3, &length);
+    const std::string message(raw, length);
+
+    int delivered = 0;
+    for (const auto& [key, record] : app->state->wsConnections)
+    {
+        if (std::find(record.rooms.begin(), record.rooms.end(), room) == record.rooms.end())
+        {
+            continue;
+        }
+
+        if (auto conn = record.conn.lock())
+        {
+            conn->send(message);
+            ++delivered;
+        }
+    }
+
+    lua_pushinteger(L, delivered);
     return 1;
 }
 
@@ -2968,6 +3330,27 @@ void HttpApp::createMetatables(lua_State* L)
         lua_setfield(L, -2, "send");
         lua_pushcfunction(L, &luaWsClose);
         lua_setfield(L, -2, "close");
+        lua_pushcfunction(L, &luaWsJoin);
+        lua_setfield(L, -2, "join");
+        lua_pushcfunction(L, &luaWsLeave);
+        lua_setfield(L, -2, "leave");
+        lua_setfield(L, -2, "__index");
+    }
+
+    lua_pop(L, 1);
+
+    if (luaL_newmetatable(L, kSseMeta))
+    {
+        lua_pushcfunction(L, &luaSseGc);
+        lua_setfield(L, -2, "__gc");
+
+        lua_newtable(L);
+        lua_pushcfunction(L, &luaSseSend);
+        lua_setfield(L, -2, "send");
+        lua_pushcfunction(L, &luaSseComment);
+        lua_setfield(L, -2, "comment");
+        lua_pushcfunction(L, &luaSseClose);
+        lua_setfield(L, -2, "close");
         lua_setfield(L, -2, "__index");
     }
 
@@ -3019,6 +3402,10 @@ void HttpApp::createMetatables(lua_State* L)
         lua_setfield(L, -2, "route");
         lua_pushcfunction(L, &luaWs);
         lua_setfield(L, -2, "ws");
+        lua_pushcfunction(L, &luaWsBroadcast);
+        lua_setfield(L, -2, "wsBroadcast");
+        lua_pushcfunction(L, &luaWsBroadcastRoom);
+        lua_setfield(L, -2, "wsBroadcastRoom");
         lua_pushcfunction(L, &luaPlugin);
         lua_setfield(L, -2, "plugin");
         lua_pushcfunction(L, &luaModule);

@@ -115,9 +115,9 @@ int luaRequestGc(lua_State* L)
     return 0;
 }
 
-// the request is owned by this userdata so its fields are pushed only when the handler reads them, and it survives across an await.
 void pushRequestUserdata(lua_State* L, HttpRequest&& request)
 {
+    // the request is owned by this userdata so its fields are pushed only when the handler reads them, and it survives across an await.
     void* memory = lua_newuserdatauv(L, sizeof(HttpRequest), 0);
     new (memory) HttpRequest(std::move(request));
     luaL_getmetatable(L, kRequestMeta);
@@ -583,6 +583,11 @@ HttpServerOptions HttpServerModule::readListenOptions(lua_State* L, int index)
         }
     }
 
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "compress");
+    if (lua_isboolean(L, -1))
+        options.compress = lua_toboolean(L, -1) != 0;
     lua_pop(L, 1);
 
     return options;

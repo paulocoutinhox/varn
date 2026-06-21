@@ -4,8 +4,10 @@
 #include "varn/lua/LuaHelpers.h"
 #include "varn/runtime/Runtime.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace varn::fs
 {
@@ -174,6 +176,185 @@ int luaFileOpen(lua_State* L)
     return 1;
 }
 
+int luaStat(lua_State* L)
+{
+    std::string path = checkPath(L, 1);
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, path = std::move(path)]
+                     {
+        try
+        {
+            FsStat info = FsStorage::stat(path);
+            promise->resolveCustom([info](lua_State* lua)
+                                   {
+                lua_createtable(lua, 0, 5);
+                lua_pushinteger(lua, static_cast<lua_Integer>(info.size));
+                lua_setfield(lua, -2, "size");
+                lua_pushinteger(lua, static_cast<lua_Integer>(info.mtime));
+                lua_setfield(lua, -2, "mtime");
+                lua_pushboolean(lua, info.isDir);
+                lua_setfield(lua, -2, "isDir");
+                lua_pushboolean(lua, info.isFile);
+                lua_setfield(lua, -2, "isFile");
+                lua_pushboolean(lua, info.isSymlink);
+                lua_setfield(lua, -2, "isSymlink"); });
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int luaReaddir(lua_State* L)
+{
+    std::string path = checkPath(L, 1);
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, path = std::move(path)]
+                     {
+        try
+        {
+            std::vector<std::string> names = FsStorage::readdir(path);
+            promise->resolveCustom([names = std::move(names)](lua_State* lua)
+                                   {
+                lua_createtable(lua, static_cast<int>(names.size()), 0);
+                for (std::size_t i = 0; i < names.size(); ++i)
+                {
+                    lua_pushlstring(lua, names[i].data(), names[i].size());
+                    lua_rawseti(lua, -2, static_cast<lua_Integer>(i + 1));
+                } });
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int luaRename(lua_State* L)
+{
+    std::string from = checkPath(L, 1);
+    std::string to = checkPath(L, 2);
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, from = std::move(from), to = std::move(to)]
+                     {
+        try
+        {
+            FsStorage::rename(from, to);
+            promise->resolve("ok");
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int luaCopy(lua_State* L)
+{
+    std::string from = checkPath(L, 1);
+    std::string to = checkPath(L, 2);
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, from = std::move(from), to = std::move(to)]
+                     {
+        try
+        {
+            FsStorage::copy(from, to);
+            promise->resolve("ok");
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int luaAppend(lua_State* L)
+{
+    std::string path = checkPath(L, 1);
+    std::size_t len = 0;
+    const char* raw = luaL_checklstring(L, 2, &len);
+    std::string data(raw, len);
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, path = std::move(path), data = std::move(data)]
+                     {
+        try
+        {
+            FsStorage::append(path, data);
+            promise->resolve("ok");
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int luaMkdtemp(lua_State* L)
+{
+    std::string prefix = checkPath(L, 1);
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, prefix = std::move(prefix)]
+                     {
+        try
+        {
+            promise->resolve(FsStorage::mkdtemp(prefix));
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
 void createHandleMetatable(lua_State* L)
 {
     if (luaL_newmetatable(L, kFsHandleMeta))
@@ -316,6 +497,24 @@ int FsModule::luaOpen(lua_State* L)
 
     lua_pushcfunction(L, &luaFileOpen);
     lua_setfield(L, -2, "open");
+
+    lua_pushcfunction(L, &luaStat);
+    lua_setfield(L, -2, "stat");
+
+    lua_pushcfunction(L, &luaReaddir);
+    lua_setfield(L, -2, "readdir");
+
+    lua_pushcfunction(L, &luaRename);
+    lua_setfield(L, -2, "rename");
+
+    lua_pushcfunction(L, &luaCopy);
+    lua_setfield(L, -2, "copy");
+
+    lua_pushcfunction(L, &luaAppend);
+    lua_setfield(L, -2, "append");
+
+    lua_pushcfunction(L, &luaMkdtemp);
+    lua_setfield(L, -2, "mkdtemp");
 
     return 1;
 }

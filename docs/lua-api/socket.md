@@ -1,12 +1,25 @@
 # 🔌 socket
 
-Async TCP and UDP sockets. Every operation returns a promise.
+Async TCP, TLS, UDP, and unix-domain sockets. Every operation returns a promise.
 
 ## TCP
 
 - `socket.tcp.connect(host, port, timeoutMs?)` → promise resolving to a socket. With `timeoutMs` set, a connect that does not complete in time rejects instead of waiting for the OS connect timeout; without it the OS default applies.
 - `socket.tcp.listen(host, port, backlog?)` → promise resolving to a listener (`backlog` defaults to `64`).
 - Socket: `sock:send(data)`, `sock:receive(maxBytes?)` (default `65536`), and `sock:close()` all return promises.
+- Listener: `listener:accept()` (resolves to a socket) and `listener:close()`.
+
+## TLS
+
+- `socket.tls.connect(host, port, opts?)` → promise resolving to a secure socket with the same `send`/`receive`/`close` surface as a TCP socket. The connection completes the TLS handshake before resolving.
+- `opts` is an optional table: `timeoutMs` bounds the connect like the TCP variant, and `insecure = true` skips certificate verification.
+- Certificates are verified against the system trust store by default; an invalid certificate rejects the connect. Use `insecure = true` only for self-signed endpoints under your control.
+- TLS requires a build with TLS enabled; otherwise `socket.tls.connect` rejects with a clear error.
+
+## Unix-domain
+
+- `socket.unix.connect(path)` → promise resolving to a socket connected to the filesystem path, with the same `send`/`receive`/`close` surface.
+- `socket.unix.listen(path, backlog?)` → promise resolving to a listener (`backlog` defaults to `64`) bound to the path. The path must not already exist; remove a stale socket file before listening.
 - Listener: `listener:accept()` (resolves to a socket) and `listener:close()`.
 
 ## UDP
@@ -107,6 +120,59 @@ async.spawn(function()
 end)
 ```
 
+### `unix_echo.lua`
+
+```lua
+-- unix-domain echo service over a filesystem path
+
+local async = require("async")
+local socket = require("socket")
+
+local path = os.getenv("VARN_SOCKET_PATH") or "/tmp/varn-echo.sock"
+os.remove(path)
+
+async.spawn(function()
+    local listener, lerr = socket.unix.listen(path, 128):await()
+    if lerr then
+        error(lerr)
+    end
+    print("unix echo listening on " .. path)
+    while true do
+        local client, aerr = listener:accept():await()
+        if aerr then
+            print("accept error:", aerr)
+            break
+        end
+        async.spawn(function()
+            local chunk = client:receive(4096):await()
+            client:send("You sent: " .. chunk):await()
+            client:close():await()
+        end)
+    end
+    listener:close():await()
+end)
+```
+
+### `tls_client.lua`
+
+```lua
+-- verified tls connection speaking a minimal http request over it
+
+local async = require("async")
+local socket = require("socket")
+
+async.run(function()
+    local conn, cerr = socket.tls.connect("example.com", 443, { timeoutMs = 5000 }):await()
+    if cerr then
+        error(cerr)
+    end
+    conn:send("GET / HTTP/1.0\r\nHost: example.com\r\nConnection: close\r\n\r\n"):await()
+    local reply = conn:receive(512):await()
+    print("tls status:", reply:match("^[^\r\n]*"))
+    conn:close():await()
+end)
+```
+
 ## Under the hood
 
-Built on the Poco C++ networking libraries, with every socket multiplexed on a single event-driven I/O thread so a blocked accept or receive never ties up a worker.
+Built on the Poco C++ networking libraries, with every socket multiplexed on a single event-driven I/O thread so a blocked accept or receive never ties up a worker. TLS connections use Poco's `SecureStreamSocket`, sharing the same non-blocking send/receive code path as plaintext TCP once the handshake completes.

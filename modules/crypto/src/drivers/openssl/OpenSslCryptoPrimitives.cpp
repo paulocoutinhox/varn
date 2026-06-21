@@ -1,6 +1,11 @@
 #include "varn/crypto/CryptoPrimitives.h"
 
+#include <array>
 #include <climits>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -14,8 +19,10 @@
 #include <openssl/rand.h>
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/core_names.h>
+#include <openssl/kdf.h>
 #else
 #include <openssl/hmac.h>
+#include <openssl/kdf.h>
 #endif
 #endif
 
@@ -242,6 +249,623 @@ std::string CryptoPrimitives::randomBytes(std::size_t count)
     }
 
     return bytes;
+}
+
+namespace
+{
+
+// fixed base64 alphabets, indexed directly during encode without any per-character branching.
+constexpr char kBase64Std[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+constexpr char kBase64Url[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+// reverse lookup tables map each input byte to its 6-bit value, or to a sentinel for non-alphabet bytes.
+constexpr signed char kSkip = -1;
+constexpr signed char kPad = -2;
+
+std::array<signed char, 256> makeBase64Reverse()
+{
+    std::array<signed char, 256> table{};
+    for (int i = 0; i < 256; ++i)
+    {
+        table[static_cast<std::size_t>(i)] = kSkip;
+    }
+
+    // accept both alphabets on decode so a standard or url-safe string is read interchangeably.
+    table[static_cast<unsigned char>('+')] = 62;
+    table[static_cast<unsigned char>('/')] = 63;
+    table[static_cast<unsigned char>('-')] = 62;
+    table[static_cast<unsigned char>('_')] = 63;
+    table[static_cast<unsigned char>('=')] = kPad;
+
+    for (int i = 0; i < 26; ++i)
+    {
+        table[static_cast<unsigned char>('A' + i)] = static_cast<signed char>(i);
+        table[static_cast<unsigned char>('a' + i)] = static_cast<signed char>(i + 26);
+    }
+
+    for (int i = 0; i < 10; ++i)
+    {
+        table[static_cast<unsigned char>('0' + i)] = static_cast<signed char>(i + 52);
+    }
+
+    return table;
+}
+
+const std::array<signed char, 256>& base64Reverse()
+{
+    static const std::array<signed char, 256> table = makeBase64Reverse();
+    return table;
+}
+
+int hexNibble(unsigned char c)
+{
+    if (c >= '0' && c <= '9')
+    {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f')
+    {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F')
+    {
+        return c - 'A' + 10;
+    }
+
+    return -1;
+}
+
+const EVP_MD* fetchDigest(const std::string& algo)
+{
+    const EVP_MD* md = EVP_get_digestbyname(algo.c_str());
+    if (md == nullptr)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The requested hash algorithm is not known.");
+    }
+
+    return md;
+}
+
+std::uint64_t scryptMaxMem(std::uint64_t costN, std::uint32_t blockR)
+{
+    // scrypt needs roughly 128*N*r bytes, so give it that plus headroom because the default ceiling rejects 32 MiB params.
+    return 128ULL * costN * static_cast<std::uint64_t>(blockR) * 2ULL;
+}
+
+bool constantTimeEqual(const unsigned char* a, const unsigned char* b, std::size_t len)
+{
+    // constant-time comparison so verifying a password or auth tag does not leak its bytes through timing.
+    unsigned char diff = 0;
+    for (std::size_t i = 0; i < len; ++i)
+    {
+        diff |= static_cast<unsigned char>(a[i] ^ b[i]);
+    }
+
+    return diff == 0;
+}
+
+} // namespace
+
+std::string CryptoPrimitives::base64Encode(std::string_view data, bool urlSafe, bool padding)
+{
+    const char* alphabet = urlSafe ? kBase64Url : kBase64Std;
+    const std::size_t fullGroups = data.size() / 3;
+    const std::size_t remainder = data.size() % 3;
+
+    std::string out;
+    // reserve the exact output size up front so the tight loop never reallocates.
+    const std::size_t tailChars = remainder == 0 ? 0 : (padding ? 4 : remainder + 1);
+    out.resize(fullGroups * 4 + tailChars);
+
+    const auto* in = reinterpret_cast<const unsigned char*>(data.data());
+    std::size_t si = 0;
+    std::size_t di = 0;
+    for (std::size_t g = 0; g < fullGroups; ++g)
+    {
+        const std::uint32_t triple = (static_cast<std::uint32_t>(in[si]) << 16) | (static_cast<std::uint32_t>(in[si + 1]) << 8) | static_cast<std::uint32_t>(in[si + 2]);
+        out[di] = alphabet[(triple >> 18) & 0x3F];
+        out[di + 1] = alphabet[(triple >> 12) & 0x3F];
+        out[di + 2] = alphabet[(triple >> 6) & 0x3F];
+        out[di + 3] = alphabet[triple & 0x3F];
+        si += 3;
+        di += 4;
+    }
+
+    if (remainder == 1)
+    {
+        const std::uint32_t triple = static_cast<std::uint32_t>(in[si]) << 16;
+        out[di] = alphabet[(triple >> 18) & 0x3F];
+        out[di + 1] = alphabet[(triple >> 12) & 0x3F];
+        if (padding)
+        {
+            out[di + 2] = '=';
+            out[di + 3] = '=';
+        }
+    }
+    else if (remainder == 2)
+    {
+        const std::uint32_t triple = (static_cast<std::uint32_t>(in[si]) << 16) | (static_cast<std::uint32_t>(in[si + 1]) << 8);
+        out[di] = alphabet[(triple >> 18) & 0x3F];
+        out[di + 1] = alphabet[(triple >> 12) & 0x3F];
+        out[di + 2] = alphabet[(triple >> 6) & 0x3F];
+        if (padding)
+        {
+            out[di + 3] = '=';
+        }
+    }
+
+    return out;
+}
+
+std::string CryptoPrimitives::base64Decode(std::string_view data, bool /*urlSafe*/)
+{
+    const std::array<signed char, 256>& rev = base64Reverse();
+
+    std::string out;
+    // four input characters become three output bytes, so this never over-reserves by more than two bytes.
+    out.reserve((data.size() / 4) * 3 + 3);
+
+    std::uint32_t accum = 0;
+    int bits = 0;
+    bool sawPad = false;
+    for (unsigned char c : data)
+    {
+        const signed char v = rev[c];
+        if (v == kSkip)
+        {
+            throw std::runtime_error("[CryptoPrimitives] The base64 input contains an invalid character.");
+        }
+
+        if (v == kPad)
+        {
+            sawPad = true;
+            continue;
+        }
+
+        // any alphabet character after padding has begun is a malformed stream.
+        if (sawPad)
+        {
+            throw std::runtime_error("[CryptoPrimitives] The base64 input has data after padding.");
+        }
+
+        accum = (accum << 6) | static_cast<std::uint32_t>(v);
+        bits += 6;
+        if (bits >= 8)
+        {
+            bits -= 8;
+            out.push_back(static_cast<char>((accum >> bits) & 0xFF));
+        }
+    }
+
+    // a valid stream leaves at most the discarded high bits of a partial group, never a full unused byte.
+    if (bits >= 6)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The base64 input has an invalid length.");
+    }
+
+    return out;
+}
+
+std::string CryptoPrimitives::hexEncode(std::string_view data)
+{
+    static const char* digits = "0123456789abcdef";
+
+    std::string out;
+    out.resize(data.size() * 2);
+
+    const auto* in = reinterpret_cast<const unsigned char*>(data.data());
+    std::size_t di = 0;
+    for (std::size_t i = 0; i < data.size(); ++i)
+    {
+        out[di] = digits[in[i] >> 4];
+        out[di + 1] = digits[in[i] & 0x0F];
+        di += 2;
+    }
+
+    return out;
+}
+
+std::string CryptoPrimitives::hexDecode(std::string_view data)
+{
+    if (data.size() % 2 != 0)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The hex input must have an even length.");
+    }
+
+    std::string out;
+    out.resize(data.size() / 2);
+
+    const auto* in = reinterpret_cast<const unsigned char*>(data.data());
+    for (std::size_t i = 0; i < out.size(); ++i)
+    {
+        const int hi = hexNibble(in[i * 2]);
+        const int lo = hexNibble(in[i * 2 + 1]);
+        if (hi < 0 || lo < 0)
+        {
+            throw std::runtime_error("[CryptoPrimitives] The hex input contains an invalid character.");
+        }
+
+        out[i] = static_cast<char>((hi << 4) | lo);
+    }
+
+    return out;
+}
+
+std::string CryptoPrimitives::uuidV4()
+{
+    unsigned char bytes[16];
+    if (RAND_bytes(bytes, sizeof(bytes)) != 1)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The uuid randomness could not be generated.");
+    }
+
+    // version 4 in the high nibble of byte 6 and the rfc 4122 variant in the high bits of byte 8.
+    bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0F) | 0x40);
+    bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3F) | 0x80);
+
+    static const char* digits = "0123456789abcdef";
+    std::string out;
+    out.resize(36);
+    std::size_t di = 0;
+    for (std::size_t i = 0; i < 16; ++i)
+    {
+        if (i == 4 || i == 6 || i == 8 || i == 10)
+        {
+            out[di++] = '-';
+        }
+
+        out[di++] = digits[bytes[i] >> 4];
+        out[di++] = digits[bytes[i] & 0x0F];
+    }
+
+    return out;
+}
+
+std::string CryptoPrimitives::uuidV7()
+{
+    unsigned char bytes[16];
+    if (RAND_bytes(bytes + 6, sizeof(bytes) - 6) != 1)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The uuid randomness could not be generated.");
+    }
+
+    // the first 48 bits hold a big-endian unix millisecond timestamp so the ids sort by creation time.
+    struct timespec ts;
+    timespec_get(&ts, TIME_UTC);
+    const std::uint64_t millis = static_cast<std::uint64_t>(ts.tv_sec) * 1000ULL + static_cast<std::uint64_t>(ts.tv_nsec) / 1000000ULL;
+    bytes[0] = static_cast<unsigned char>((millis >> 40) & 0xFF);
+    bytes[1] = static_cast<unsigned char>((millis >> 32) & 0xFF);
+    bytes[2] = static_cast<unsigned char>((millis >> 24) & 0xFF);
+    bytes[3] = static_cast<unsigned char>((millis >> 16) & 0xFF);
+    bytes[4] = static_cast<unsigned char>((millis >> 8) & 0xFF);
+    bytes[5] = static_cast<unsigned char>(millis & 0xFF);
+
+    // version 7 in the high nibble of byte 6 and the rfc 4122 variant in the high bits of byte 8.
+    bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0F) | 0x70);
+    bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3F) | 0x80);
+
+    static const char* digits = "0123456789abcdef";
+    std::string out;
+    out.resize(36);
+    std::size_t di = 0;
+    for (std::size_t i = 0; i < 16; ++i)
+    {
+        if (i == 4 || i == 6 || i == 8 || i == 10)
+        {
+            out[di++] = '-';
+        }
+
+        out[di++] = digits[bytes[i] >> 4];
+        out[di++] = digits[bytes[i] & 0x0F];
+    }
+
+    return out;
+}
+
+std::string CryptoPrimitives::pbkdf2(std::string_view password, std::string_view salt, std::size_t iterations, std::size_t keyLen, std::string_view algorithm)
+{
+    if (iterations == 0 || iterations > static_cast<std::size_t>(INT_MAX))
+    {
+        throw std::runtime_error("[CryptoPrimitives] The pbkdf2 iteration count is out of range.");
+    }
+
+    if (keyLen == 0 || keyLen > static_cast<std::size_t>(INT_MAX))
+    {
+        throw std::runtime_error("[CryptoPrimitives] The pbkdf2 key length is out of range.");
+    }
+
+    if (password.size() > static_cast<std::size_t>(INT_MAX) || salt.size() > static_cast<std::size_t>(INT_MAX))
+    {
+        throw std::runtime_error("[CryptoPrimitives] The pbkdf2 input is too large.");
+    }
+
+    const std::string algo = trimAlgo(algorithm);
+    const EVP_MD* md = fetchDigest(algo);
+
+    std::string out(keyLen, '\0');
+    if (PKCS5_PBKDF2_HMAC(password.data(),
+                          static_cast<int>(password.size()),
+                          reinterpret_cast<const unsigned char*>(salt.data()),
+                          static_cast<int>(salt.size()),
+                          static_cast<int>(iterations),
+                          md,
+                          static_cast<int>(keyLen),
+                          reinterpret_cast<unsigned char*>(out.data())) != 1)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The pbkdf2 key could not be derived.");
+    }
+
+    return out;
+}
+
+std::string CryptoPrimitives::hkdf(std::string_view key, std::string_view salt, std::string_view info, std::size_t keyLen, std::string_view algorithm)
+{
+    if (keyLen == 0 || keyLen > static_cast<std::size_t>(INT_MAX))
+    {
+        throw std::runtime_error("[CryptoPrimitives] The hkdf key length is out of range.");
+    }
+
+    const std::string algo = trimAlgo(algorithm);
+    const EVP_MD* md = fetchDigest(algo);
+
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
+    if (ctx == nullptr)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The hkdf context could not be created.");
+    }
+
+    std::string out(keyLen, '\0');
+    std::size_t outLen = keyLen;
+    bool ok = EVP_PKEY_derive_init(ctx) == 1;
+    ok = ok && EVP_PKEY_CTX_set_hkdf_md(ctx, md) == 1;
+    ok = ok && EVP_PKEY_CTX_set1_hkdf_salt(ctx, reinterpret_cast<const unsigned char*>(salt.data()), static_cast<int>(salt.size())) == 1;
+    ok = ok && EVP_PKEY_CTX_set1_hkdf_key(ctx, reinterpret_cast<const unsigned char*>(key.data()), static_cast<int>(key.size())) == 1;
+    ok = ok && EVP_PKEY_CTX_add1_hkdf_info(ctx, reinterpret_cast<const unsigned char*>(info.data()), static_cast<int>(info.size())) == 1;
+    ok = ok && EVP_PKEY_derive(ctx, reinterpret_cast<unsigned char*>(out.data()), &outLen) == 1;
+
+    EVP_PKEY_CTX_free(ctx);
+
+    if (!ok || outLen != keyLen)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The hkdf key could not be derived.");
+    }
+
+    return out;
+}
+
+std::string CryptoPrimitives::hashPassword(std::string_view password)
+{
+    // scrypt cost parameters chosen for an interactive login: N=2^15, r=8, p=1.
+    const std::uint64_t costN = 1ULL << 15;
+    const std::uint32_t blockR = 8;
+    const std::uint32_t parallelP = 1;
+    const std::size_t saltLen = 16;
+    const std::size_t hashLen = 32;
+
+    std::string salt(saltLen, '\0');
+    if (RAND_bytes(reinterpret_cast<unsigned char*>(salt.data()), static_cast<int>(saltLen)) != 1)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The password salt could not be generated.");
+    }
+
+    std::string hash(hashLen, '\0');
+    if (EVP_PBE_scrypt(password.data(),
+                       password.size(),
+                       reinterpret_cast<const unsigned char*>(salt.data()),
+                       saltLen,
+                       costN,
+                       blockR,
+                       parallelP,
+                       scryptMaxMem(costN, blockR),
+                       reinterpret_cast<unsigned char*>(hash.data()),
+                       hashLen) != 1)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The password hash could not be computed.");
+    }
+
+    // self-describing format: scrypt$N,r,p$base64Salt$base64Hash, base64 url-safe without padding.
+    std::ostringstream out;
+    out << "scrypt$" << costN << ',' << blockR << ',' << parallelP << '$'
+        << base64Encode(salt, true, false) << '$'
+        << base64Encode(hash, true, false);
+
+    return out.str();
+}
+
+bool CryptoPrimitives::verifyPassword(std::string_view password, std::string_view encoded)
+{
+    const std::string text(encoded);
+
+    // split the four dollar-delimited fields: algorithm, parameters, salt, hash.
+    const std::size_t p1 = text.find('$');
+    const std::size_t p2 = p1 == std::string::npos ? p1 : text.find('$', p1 + 1);
+    const std::size_t p3 = p2 == std::string::npos ? p2 : text.find('$', p2 + 1);
+    if (p1 == std::string::npos || p2 == std::string::npos || p3 == std::string::npos)
+    {
+        return false;
+    }
+
+    const std::string algo = text.substr(0, p1);
+    const std::string paramStr = text.substr(p1 + 1, p2 - p1 - 1);
+    const std::string saltStr = text.substr(p2 + 1, p3 - p2 - 1);
+    const std::string hashStr = text.substr(p3 + 1);
+    if (algo != "scrypt")
+    {
+        return false;
+    }
+
+    unsigned long long costN = 0;
+    unsigned long blockR = 0;
+    unsigned long parallelP = 0;
+    if (std::sscanf(paramStr.c_str(), "%llu,%lu,%lu", &costN, &blockR, &parallelP) != 3)
+    {
+        return false;
+    }
+
+    std::string salt;
+    std::string expected;
+    try
+    {
+        salt = base64Decode(saltStr, true);
+        expected = base64Decode(hashStr, true);
+    }
+    catch (const std::exception&)
+    {
+        return false;
+    }
+
+    if (expected.empty())
+    {
+        return false;
+    }
+
+    std::string actual(expected.size(), '\0');
+    if (EVP_PBE_scrypt(password.data(),
+                       password.size(),
+                       reinterpret_cast<const unsigned char*>(salt.data()),
+                       salt.size(),
+                       static_cast<std::uint64_t>(costN),
+                       static_cast<std::uint32_t>(blockR),
+                       static_cast<std::uint32_t>(parallelP),
+                       scryptMaxMem(static_cast<std::uint64_t>(costN), static_cast<std::uint32_t>(blockR)),
+                       reinterpret_cast<unsigned char*>(actual.data()),
+                       actual.size()) != 1)
+    {
+        return false;
+    }
+
+    return constantTimeEqual(reinterpret_cast<const unsigned char*>(actual.data()),
+                             reinterpret_cast<const unsigned char*>(expected.data()),
+                             expected.size());
+}
+
+std::string CryptoPrimitives::aesGcmEncrypt(std::string_view key, std::string_view plaintext)
+{
+    const std::size_t ivLen = 12;
+    const std::size_t tagLen = 16;
+
+    if (key.size() != 32)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The encryption key must be 32 bytes.");
+    }
+
+    if (plaintext.size() > static_cast<std::size_t>(INT_MAX))
+    {
+        throw std::runtime_error("[CryptoPrimitives] The plaintext is too large.");
+    }
+
+    unsigned char iv[12];
+    if (RAND_bytes(iv, static_cast<int>(ivLen)) != 1)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The encryption iv could not be generated.");
+    }
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (ctx == nullptr)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The cipher context could not be created.");
+    }
+
+    std::string cipher(plaintext.size(), '\0');
+    unsigned char tag[16];
+    int len = 0;
+    int cipherLen = 0;
+    bool ok = EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1;
+    ok = ok && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(ivLen), nullptr) == 1;
+    ok = ok && EVP_EncryptInit_ex(ctx, nullptr, nullptr, reinterpret_cast<const unsigned char*>(key.data()), iv) == 1;
+    if (ok && !plaintext.empty())
+    {
+        ok = EVP_EncryptUpdate(ctx,
+                               reinterpret_cast<unsigned char*>(cipher.data()),
+                               &len,
+                               reinterpret_cast<const unsigned char*>(plaintext.data()),
+                               static_cast<int>(plaintext.size())) == 1;
+        cipherLen = len;
+    }
+
+    ok = ok && EVP_EncryptFinal_ex(ctx, reinterpret_cast<unsigned char*>(cipher.data()) + cipherLen, &len) == 1;
+    cipherLen += len;
+    ok = ok && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, static_cast<int>(tagLen), tag) == 1;
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    if (!ok)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The plaintext could not be encrypted.");
+    }
+
+    // packed layout iv||tag||ciphertext so a single blob carries everything decrypt needs.
+    std::string out;
+    out.reserve(ivLen + tagLen + static_cast<std::size_t>(cipherLen));
+    out.append(reinterpret_cast<const char*>(iv), ivLen);
+    out.append(reinterpret_cast<const char*>(tag), tagLen);
+    out.append(cipher.data(), static_cast<std::size_t>(cipherLen));
+
+    return out;
+}
+
+std::string CryptoPrimitives::aesGcmDecrypt(std::string_view key, std::string_view blob)
+{
+    const std::size_t ivLen = 12;
+    const std::size_t tagLen = 16;
+
+    if (key.size() != 32)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The decryption key must be 32 bytes.");
+    }
+
+    if (blob.size() < ivLen + tagLen)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The encrypted blob is too short.");
+    }
+
+    const auto* raw = reinterpret_cast<const unsigned char*>(blob.data());
+    const unsigned char* iv = raw;
+    const unsigned char* tag = raw + ivLen;
+    const unsigned char* cipher = raw + ivLen + tagLen;
+    const std::size_t cipherLen = blob.size() - ivLen - tagLen;
+    if (cipherLen > static_cast<std::size_t>(INT_MAX))
+    {
+        throw std::runtime_error("[CryptoPrimitives] The encrypted blob is too large.");
+    }
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (ctx == nullptr)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The cipher context could not be created.");
+    }
+
+    std::string plain(cipherLen, '\0');
+    int len = 0;
+    int plainLen = 0;
+    bool ok = EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1;
+    ok = ok && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(ivLen), nullptr) == 1;
+    ok = ok && EVP_DecryptInit_ex(ctx, nullptr, nullptr, reinterpret_cast<const unsigned char*>(key.data()), iv) == 1;
+    if (ok && cipherLen > 0)
+    {
+        ok = EVP_DecryptUpdate(ctx,
+                               reinterpret_cast<unsigned char*>(plain.data()),
+                               &len,
+                               cipher,
+                               static_cast<int>(cipherLen)) == 1;
+        plainLen = len;
+    }
+
+    ok = ok && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, static_cast<int>(tagLen), const_cast<unsigned char*>(tag)) == 1;
+
+    // a non-positive final result means the authentication tag did not verify, so the blob is rejected.
+    const bool verified = ok && EVP_DecryptFinal_ex(ctx, reinterpret_cast<unsigned char*>(plain.data()) + plainLen, &len) > 0;
+    plainLen += len;
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    if (!verified)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The encrypted blob could not be authenticated.");
+    }
+
+    plain.resize(static_cast<std::size_t>(plainLen));
+    return plain;
 }
 
 } // namespace varn::crypto

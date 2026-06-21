@@ -49,17 +49,18 @@ Every module is independent and used through `require`, so you pull in only what
 
 | Module | What you get |
 |----------------|--------------|
-| 🌐 `http` | Web server and client, routing, middleware, WebSockets, and static file serving |
-| 🔌 `socket` | Network client and server connections |
-| ⏳ `async` | Background tasks, timers, and awaitable promises |
-| 📁 `fs` | Read and write files, check what already exists |
-| 🔐 `crypto` | Hashing, signatures, and secure random data |
+| 🌐 `http` | Web server and client, routing, middleware, WebSockets, SSE, and static files |
+| 🔌 `socket` | TCP, TLS, UDP, and unix-domain connections |
+| ⏳ `async` | Background tasks, timers, promises, and combinators |
+| 📁 `fs` | Read, write, stream, stat, and list files |
+| 🔐 `crypto` | Hashing, HMAC, password hashing, encryption, encoding, UUIDs, and secure random |
 | 🧾 `json` | Encode and decode JSON with a full Lua mapping |
 | 🧬 `xml` | Encode and decode XML with a full Lua mapping |
 | 🗜️ `zip` | Create, extract, and list archives |
 | 🧩 `ffi` | Call functions from native libraries |
 | 🖥️ `platform` | System, architecture, processor, and path information |
-| 📝 `log` | Leveled logging with debug, info, warn, and error |
+| ⚙️ `process` | Run commands and read the environment, working directory, and arguments |
+| 📝 `log` | Leveled, structured logging to the console or a file |
 
 Full feature reference: [docs/lua-api.md](docs/lua-api.md).
 
@@ -71,6 +72,11 @@ Pure-Lua components built on top of the modules. Drop one in and `require` it.
 |----------------|--------------|
 | 🗄️ `vdo` | PDO-style database access with drivers for SQLite, MySQL, and PostgreSQL |
 | 🔴 `redis` | Redis client with full command coverage and pipelining |
+| 🔧 `env` | Load `.env` files and read typed environment variables |
+| ✅ `validate` | Validate tables against a schema with clear error messages |
+| 🕒 `datetime` | Parse, format, and do arithmetic on dates and times |
+| 🧪 `test` | A tiny test runner with `describe`/`it` and expectations |
+| 🔁 `retry` | Retry with backoff and simple interval scheduling |
 
 Every component ships with runnable examples under `components/<component>/examples/`. Full component reference: [docs/components.md](docs/components.md).
 

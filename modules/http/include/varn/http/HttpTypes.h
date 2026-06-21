@@ -35,6 +35,11 @@ public:
     virtual void end(const std::string& body) = 0;
     virtual bool ended() const = 0;
     virtual void sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly);
+
+    virtual void beginChunked();
+    virtual void writeChunk(const std::string& chunk);
+    virtual void endChunked();
+    virtual bool streaming() const;
 };
 
 class HttpServer
@@ -60,6 +65,7 @@ struct HttpServerOptions
     int keepAliveTimeoutSeconds = 30;
     long long maxRequestBodyBytes = 16 * 1024 * 1024;
     long long requestTimeoutMs = 30000;
+    bool compress = true;
 };
 
 using HttpHandler = std::function<void(HttpRequest, std::shared_ptr<HttpResponse>)>;

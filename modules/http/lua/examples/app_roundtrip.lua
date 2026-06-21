@@ -27,7 +27,7 @@ end)
 app:listen({ host = "127.0.0.1", port = port })
 
 async.run(function()
-    local userStatus, userBody = parseWire(http.client.request({
+    local userStatus, userBody = parseWire(http.client.requestRaw({
         url = base .. "/users/7",
         method = "GET",
         headers = {},
@@ -37,7 +37,7 @@ async.run(function()
 
     -- the client needs an explicit Content-Length so the server reads the posted body.
     local payload = '{"name":"varn"}'
-    local echoStatus, echoBody = parseWire(http.client.request({
+    local echoStatus, echoBody = parseWire(http.client.requestRaw({
         url = base .. "/echo",
         method = "POST",
         headers = { ["Content-Type"] = "application/json", ["Content-Length"] = tostring(#payload) },

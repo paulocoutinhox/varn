@@ -1,7 +1,10 @@
 #include "varn/log/Log.h"
 
+#include <atomic>
+#include <fstream>
 #include <iostream>
 #include <mutex>
+#include <string>
 #include <string_view>
 
 namespace varn::log
@@ -26,17 +29,59 @@ public:
             return "?";
         }
     }
+
+    static std::mutex& mutex()
+    {
+        // worker threads and the loop thread share the sink, so this guards them.
+        static std::mutex sink;
+        return sink;
+    }
+
+    static std::atomic<int>& minLevel()
+    {
+        static std::atomic<int> level{static_cast<int>(Level::Debug)};
+        return level;
+    }
+
+    static std::ofstream& file()
+    {
+        static std::ofstream stream;
+        return stream;
+    }
 };
 
 void Log::emit(Level level, std::string_view message)
 {
-    // worker threads and the loop thread can log concurrently, so serialize to keep lines from interleaving.
-    static std::mutex sink;
-    std::lock_guard<std::mutex> lock(sink);
+    if (static_cast<int>(level) < StdoutBridge::minLevel().load())
+    {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(StdoutBridge::mutex());
     std::cout << '[' << StdoutBridge::levelTag(level) << "] ";
     std::cout.write(message.data(), static_cast<std::streamsize>(message.size()));
     std::cout << '\n'
               << std::flush;
+
+    std::ofstream& file = StdoutBridge::file();
+    if (file.is_open())
+    {
+        file << '[' << StdoutBridge::levelTag(level) << "] ";
+        file.write(message.data(), static_cast<std::streamsize>(message.size()));
+        file << '\n'
+             << std::flush;
+    }
+}
+
+void Log::setLevel(Level level)
+{
+    StdoutBridge::minLevel().store(static_cast<int>(level));
+}
+
+void Log::addFileSink(std::string_view path, bool /*rotating*/)
+{
+    std::lock_guard<std::mutex> lock(StdoutBridge::mutex());
+    StdoutBridge::file().open(std::string(path), std::ios::out | std::ios::app | std::ios::binary);
 }
 
 } // namespace varn::log

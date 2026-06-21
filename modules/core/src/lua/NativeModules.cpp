@@ -9,6 +9,7 @@
 #include "varn/json/JsonModule.h"
 #include "varn/log/LogModule.h"
 #include "varn/platform/PlatformModule.h"
+#include "varn/process/ProcessModule.h"
 #include "varn/socket/SocketModule.h"
 #include "varn/xml/XmlModule.h"
 #include "varn/zip/ZipModule.h"
@@ -27,6 +28,7 @@ void NativeModuleRegistry::installAll(lua_State* L)
     json::JsonModule::install(L);
     xml::XmlModule::install(L);
     platform::PlatformModule::install(L);
+    process::ProcessModule::install(L);
     zip::ZipModule::install(L);
     http::HttpServerModule::install(L);
     socket::SocketModule::install(L);

@@ -22,7 +22,7 @@ end
 async.spawn(function()
     local http = require("http")
     local url = os.getenv("VARN_HTTP_URL") or "https://httpbin.org/get"
-    local wire, err = http.client.request({
+    local wire, err = http.client.requestRaw({
         url = url,
         method = "GET",
         headers = {},

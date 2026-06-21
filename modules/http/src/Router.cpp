@@ -90,8 +90,29 @@ int Router::add(const std::string& method, const std::string& pattern)
     for (const std::string& token : splitPath(pattern))
     {
         Segment segment;
+
+        // a bare '*' captures the remaining path and surfaces it as the 'wildcard' param.
+        if (token == "*")
+        {
+            segment.isParam = true;
+            segment.isWildcard = true;
+            segment.text = "wildcard";
+            route.segments.push_back(std::move(segment));
+            continue;
+        }
+
         segment.isParam = token.front() == ':';
-        segment.text = segment.isParam ? token.substr(1) : token;
+        if (!segment.isParam)
+        {
+            segment.text = token;
+            route.segments.push_back(std::move(segment));
+            continue;
+        }
+
+        // a trailing '?' on a named param makes that segment optional.
+        segment.isOptional = token.back() == '?';
+        const std::size_t length = token.size() - 1 - (segment.isOptional ? 1 : 0);
+        segment.text = token.substr(1, length);
         route.segments.push_back(std::move(segment));
     }
 
@@ -116,56 +137,96 @@ void Router::setName(int routeId, const std::string& name)
     namedRoutes[name] = routeId;
 }
 
-bool Router::pathMatches(const Route& route, const std::vector<std::string>& parts, std::vector<RouteParam>& outParams) const
+bool Router::segmentMatchesPart(const Route& route, const Segment& segment, const std::string& part) const
 {
-    if (route.segments.size() != parts.size())
+    const auto constraint = route.constraints.find(segment.text);
+    if (constraint == route.constraints.end())
+    {
+        return true;
+    }
+
+    // cap the matched length so a crafted segment cannot trigger catastrophic backtracking.
+    if (part.size() > kMaxSegmentLength)
     {
         return false;
     }
 
-    for (std::size_t i = 0; i < parts.size(); ++i)
+    try
+    {
+        return std::regex_match(part, constraint->second);
+    }
+    catch (const std::exception&)
+    {
+        return false;
+    }
+}
+
+bool Router::pathMatches(const Route& route, const std::vector<std::string>& parts, std::vector<RouteParam>& outParams) const
+{
+    std::size_t partIndex = 0;
+
+    for (std::size_t i = 0; i < route.segments.size(); ++i)
     {
         const Segment& segment = route.segments[i];
 
-        if (!segment.isParam)
+        // a wildcard is the terminal segment and captures every remaining part joined by '/'.
+        if (segment.isWildcard)
         {
-            if (segment.text != parts[i])
+            std::string tail;
+            for (std::size_t j = partIndex; j < parts.size(); ++j)
             {
-                return false;
+                if (j > partIndex)
+                {
+                    tail += '/';
+                }
+
+                tail += parts[j];
             }
 
+            outParams.push_back(RouteParam{segment.text, tail});
+            return true;
+        }
+
+        // an optional param with no part left is simply skipped, leaving its value absent.
+        if (segment.isOptional && partIndex >= parts.size())
+        {
             continue;
         }
 
-        const auto constraint = route.constraints.find(segment.text);
-        if (constraint != route.constraints.end())
+        if (partIndex >= parts.size())
         {
-            // cap the matched length so a crafted segment cannot trigger catastrophic backtracking.
-            if (parts[i].size() > kMaxSegmentLength)
-            {
-                return false;
-            }
-
-            bool matched = false;
-            try
-            {
-                matched = std::regex_match(parts[i], constraint->second);
-            }
-            catch (const std::exception&)
-            {
-                matched = false;
-            }
-
-            if (!matched)
-            {
-                return false;
-            }
+            return false;
         }
 
-        outParams.push_back(RouteParam{segment.text, parts[i]});
+        const std::string& part = parts[partIndex];
+
+        if (!segment.isParam)
+        {
+            if (segment.text != part)
+            {
+                return false;
+            }
+
+            ++partIndex;
+            continue;
+        }
+
+        // an optional param yields its segment when the value fails its constraint rather than failing the route.
+        if (!segmentMatchesPart(route, segment, part))
+        {
+            if (segment.isOptional)
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        outParams.push_back(RouteParam{segment.text, part});
+        ++partIndex;
     }
 
-    return true;
+    return partIndex == parts.size();
 }
 
 MatchResult Router::match(const std::string& method, const std::string& path) const
@@ -257,20 +318,39 @@ std::optional<std::string> Router::buildUrl(const std::string& name, const std::
     std::string url;
     for (const Segment& segment : routes[entry->second].segments)
     {
-        url += '/';
-
         if (!segment.isParam)
         {
+            url += '/';
             url += segment.text;
             continue;
         }
 
         const auto value = params.find(segment.text);
+
+        // an optional or wildcard param simply drops out of the url when no value is supplied.
         if (value == params.end())
         {
+            if (segment.isOptional || segment.isWildcard)
+            {
+                continue;
+            }
+
             return std::nullopt;
         }
 
+        // a wildcard value carries its own '/' separators, so each part is encoded independently.
+        if (segment.isWildcard)
+        {
+            for (const std::string& part : splitPath(value->second))
+            {
+                url += '/';
+                url += urlEncodeSegment(part);
+            }
+
+            continue;
+        }
+
+        url += '/';
         url += urlEncodeSegment(value->second);
     }
 

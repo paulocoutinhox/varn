@@ -38,6 +38,11 @@ std::string PocoClientExchange::performHttp(
     Poco::Net::HTTPRequest request(method, path, Poco::Net::HTTPMessage::HTTP_1_1);
     applyHeaders(request, headers);
 
+    if (!body.empty())
+    {
+        request.setContentLength(static_cast<std::streamsize>(body.size()));
+    }
+
     std::ostream& os = session.sendRequest(request);
     if (!body.empty())
     {
@@ -69,6 +74,11 @@ std::string PocoClientExchange::performHttps(
 
     Poco::Net::HTTPRequest request(method, path, Poco::Net::HTTPMessage::HTTP_1_1);
     applyHeaders(request, headers);
+
+    if (!body.empty())
+    {
+        request.setContentLength(static_cast<std::streamsize>(body.size()));
+    }
 
     std::ostream& os = session.sendRequest(request);
     if (!body.empty())

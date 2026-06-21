@@ -18,6 +18,7 @@ its full API and every runnable example. The examples also live next to each mod
 | [🗜️ `zip`](lua-api/zip.md) | Create, extract, and list archives |
 | [🧩 `ffi`](lua-api/ffi.md) | Call functions from native libraries |
 | [🖥️ `platform`](lua-api/platform.md) | System, architecture, processor, and path information |
+| [⚙️ `process`](lua-api/process.md) | Run commands and read the environment, working directory, and arguments |
 | [📝 `log`](lua-api/log.md) | Leveled logging with debug, info, warn, and error |
 
 ## The `arg` global

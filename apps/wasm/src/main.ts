@@ -180,15 +180,13 @@ print("divided:", divided, "result:", result)
 local http = require("http")
 
 async.spawn(function()
-  local wire, err = http.client.request({ url = "https://httpbin.org/get" }):await()
+  local resp, err = http.client.get("https://httpbin.org/get"):await()
   if err then
     print("request failed:", err)
     return
   end
 
-  -- the response arrives as a VARN/1 <status> <length> wire string
-  local status = wire:match("^VARN/1 (%d+)")
-  print("status:", status)
+  print("status:", resp.status)
 end)
 `,
   },

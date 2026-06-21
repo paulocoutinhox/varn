@@ -21,6 +21,10 @@ public:
 
     static void emit(Level level, std::string_view message);
 
+    static void setLevel(Level level);
+
+    static void addFileSink(std::string_view path, bool rotating);
+
     static void line(std::string_view module, std::string message);
 
     static void error(std::string_view module, std::string message);

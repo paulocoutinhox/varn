@@ -32,7 +32,8 @@ If the handler returns without ending the response, the server sends `204 No Con
 `builder:listen(port)` or `builder:listen(options)` starts the server. The same options
 work for both `http.createServer` and `app:listen`: `host`, `port`, `publicDir`,
 `servePublic`, `directoryListing`, `requestTimeoutMs` (default 30000),
-`keepAliveTimeoutSeconds` (default 30), `maxQueued` (the accept backlog), `tls`, `certFile`,
+`keepAliveTimeoutSeconds` (default 30), `maxQueued` (the accept backlog), `compress` (gzip
+responses, default true), `tls`, `certFile`,
 `keyFile`. The environment variables `VARN_PORT`, `VARN_TLS_CERT`, and `VARN_TLS_KEY` override
 the matching options. When `servePublic` is on and `publicDir` is omitted, it defaults to
 `apps/lua/public`.
@@ -44,6 +45,62 @@ routes, path constraints, sessions, cookies, body parsing, file responses, WebSo
 built-in security middleware (`http.cors`, `http.securityHeaders`, `http.apiKey`,
 `http.rateLimit`, `http.csrf`, `http.jwtAuth`, `http.requireAuth`, `http.requireRole`, and
 `http.jwt.sign` / `http.jwt.verify`). The full tour is in the `app_full` example below.
+
+### Context response helpers
+
+Inside a handler `ctx` exposes, alongside `json`/`text`/`html`/`file`/`status`/`header`/`cookie`/`write`/`send`:
+
+- `ctx:cache(seconds)` or `ctx:cache(opts)` — set `Cache-Control`. A number is shorthand for
+  `public, max-age=<n>`. The options table understands `maxAge`, `sMaxAge`, `private` (default is
+  `public`), `noStore`, `noCache`, and `mustRevalidate`. Returns `ctx` for chaining.
+- `ctx:etag(value)` — set the `ETag` header (a bare value is quoted, a `W/` prefix is kept weak).
+  When the request's `If-None-Match` matches, it answers `304` and ends the response, so guard the
+  rest of the handler with `if ctx.req.headers["If-None-Match"] then return end`.
+- `ctx:accepts(type1, type2, ...)` — return the best match against the request `Accept` header, or
+  `nil` if none fit. A bare token like `"json"` or `"html"` matches the media subtype; a full type
+  like `"application/json"` matches exactly. A missing or `*/*` Accept header returns the first type.
+- `ctx:sse()` — switch the response to `text/event-stream` with `Cache-Control: no-cache` and return
+  a Server-Sent-Events writer:
+  - `stream:send(data)` — send a default-event message (multi-line data is split per line).
+  - `stream:send(event, data)` — send a named event.
+  - `stream:comment(text)` — send a comment line, the conventional heartbeat that keeps proxies open.
+  - `stream:close()` — end the stream.
+
+  The writer builds on chunked transfer encoding, so frames flush progressively rather than buffering.
+
+### Response compression
+
+When the request carries `Accept-Encoding: gzip` and the response body is a compressible type
+(`application/json`, `application/xml`, or any `text/*`) above 1 KB, the server gzips the body and
+sets `Content-Encoding: gzip` plus `Vary: Accept-Encoding`. Already-encoded or tiny bodies are left
+alone. Compression is on by default; pass `compress = false` to `listen` to disable it.
+
+### WebSocket broadcast and rooms
+
+Live connections are tracked per app so a handler can reach the others:
+
+- `app:wsBroadcast(path, message)` — send `message` to every open connection on that ws path and
+  return how many received it.
+- inside a ws handler, `conn:join(room)` / `conn:leave(room)` manage a connection's room membership.
+- `app:wsBroadcastRoom(room, message)` — send `message` to every connection in that room and return
+  the delivered count.
+
+Connections register on open and are removed on close, so broadcasts never touch a dead socket.
+
+### Routing patterns
+
+A path is a list of `/`-separated segments. A segment is either a literal, a named param, or
+a wildcard:
+
+- `:name` — a named param. Its value lands in `ctx.params.name`. Add a constraint with
+  `:where("name", "int" | "alpha" | "alnum" | "slug" | "uuid" | <regex>)`.
+- `:name?` — an **optional** param. The route matches whether or not that trailing segment is
+  present; when absent, `ctx.params.name` is `nil`. A constraint still applies when the segment
+  is present. Example: `/posts/:id?` matches both `/posts` and `/posts/42`.
+- `*` — a **wildcard** (catch-all) terminal segment. It captures the remaining path, including
+  any `/`, and exposes it as `ctx.params.wildcard`. An empty tail is allowed. Example:
+  `/files/*` matches `/files`, `/files/a`, and `/files/a/b/c.txt` (`wildcard` is
+  `"a/b/c.txt"`). `app:url(name, { wildcard = "a/b" })` rebuilds the url with the tail.
 
 ## Execution model
 
@@ -74,16 +131,56 @@ making progress — a slow or partial request, or a client reading its response 
 ## Client
 
 ```lua
-local wire = http.client.request({ url = "https://example.com" }):await()
+local async = require("async")
+async.run(function()
+    local http = require("http")
+    local resp = http.client.get("https://example.com/api", { query = { page = 2 } }):await()
+    if resp.ok then
+        print(resp.status, resp.json().title)
+    end
+end)
 ```
 
-`http.client.request(options)` returns a promise. Options: `url` (required), `method`
-(default `"GET"`), `headers` (table), `body` (string), `timeoutSeconds` (default `60`),
-`verifyTls` (default `true`), `insecure` (opt-out of TLS verification for dev certs),
-`maxResponseBytes` (default 64 MB).
+`http.client.request(options)`, `http.client.get(url, options?)` and
+`http.client.post(url, options?)` return a promise that resolves to a response table:
 
-On success it resolves to a wire string: `VARN/1 <status> <length>\n` followed by the raw
-body. On failure it rejects with a message.
+- `status` — the numeric HTTP status.
+- `ok` — `true` when `status < 400`.
+- `headers` — a table with lowercased keys. The current wire transport does not surface
+  response headers, so this is presently an empty table kept for forward compatibility.
+- `body` — the raw response body string.
+- `json()` — parses `body` as JSON on demand (requires the `json` module).
+
+Options: `url` (required for `request`), `method` (default `"GET"`), `headers` (table),
+`body` (string), `timeoutSeconds` (default `60`), `verifyTls` (default `true`), `insecure`
+(opt-out of TLS verification for dev certs), `maxResponseBytes` (default 64 MB), plus two
+ergonomic shortcuts:
+
+- `query = { k = v }` — appended to the url as a sorted, percent-encoded query string.
+- `json = value` — serialized with the `json` module and sent with
+  `Content-Type: application/json` (unless you set that header yourself).
+
+On failure the promise rejects with a message.
+
+For low-level access, `http.client.requestRaw(options)` resolves to the raw wire string
+`VARN/1 <status> <length>\n` followed by the body; the ergonomic surface is a thin wrapper
+over it.
+
+## URL encoding
+
+Percent-encoding helpers, available in every build including the browser:
+
+- `http.urlEncode(text)` → percent-encodes `text` for a URL. Every byte outside the RFC 3986
+  unreserved set (`A-Za-z0-9-_.~`) becomes `%XX`, so a space becomes `%20`. Use it for a query value
+  or a path segment. Binary-safe.
+- `http.urlDecode(text)` → reverses it, turning `%XX` back into bytes and a `+` into a space, so it
+  also decodes `application/x-www-form-urlencoded` data. Binary-safe.
+
+```lua
+local http = require("http")
+local q = http.urlEncode("hello world & more")  -- "hello%20world%20%26%20more"
+print(http.urlDecode(q))                         -- "hello world & more"
+```
 
 ## Examples
 
@@ -316,6 +413,99 @@ app:listen({
 })
 ```
 
+### `sse_server.lua`
+
+```lua
+-- server-sent events plus gzip: a live clock stream and a large json endpoint the server compresses.
+local http = require("http")
+local async = require("async")
+
+local app = http.createApp()
+
+app:get("/clock", function(ctx)
+    local stream = ctx:sse()
+    for _ = 1, 10 do
+        stream:send("tick", os.date("%H:%M:%S"))
+        stream:comment("keep-alive")
+        async.sleep(1000):await()
+    end
+    stream:close()
+end)
+
+-- a large json body is gzipped automatically when the client sends Accept-Encoding: gzip.
+app:get("/data", function(ctx)
+    local rows = {}
+    for i = 1, 500 do
+        rows[i] = { id = i, name = "row-" .. i }
+    end
+    ctx:json({ rows = rows })
+end)
+
+app:listen({ port = tonumber(os.getenv("VARN_PORT") or "3000"), compress = true })
+```
+
+### `ws_chat.lua`
+
+```lua
+-- websocket chat with rooms: each client joins a room and messages fan out to that room's members.
+local http = require("http")
+
+local app = http.createApp()
+
+app:ws("/chat", {
+    open = function(conn)
+        conn:join("lobby")
+        conn:send("welcome to lobby")
+    end,
+    message = function(conn, data)
+        local room = data:match("^/join%s+(%S+)$")
+        if room then
+            conn:leave("lobby")
+            conn:join(room)
+            conn:send("joined " .. room)
+            return
+        end
+        app:wsBroadcastRoom("lobby", data)
+    end,
+})
+
+-- a route can push to every subscriber of a ws path with app:wsBroadcast.
+app:ws("/notifications", { open = function(conn) conn:send("subscribed") end })
+app:get("/announce", function(ctx)
+    ctx:json({ delivered = app:wsBroadcast("/notifications", ctx.query.text or "ping") })
+end)
+
+app:listen({ port = tonumber(os.getenv("VARN_PORT") or "3000") })
+```
+
+### `cache_negotiation.lua`
+
+```lua
+-- caching and content negotiation: cache-control, etag revalidation, and api-vs-html from one route.
+local http = require("http")
+
+local app = http.createApp()
+
+app:get("/profile/:id", function(ctx)
+    ctx:cache({ maxAge = 300, private = true })
+    ctx:etag("profile-" .. ctx.params.id .. "-v3")
+    if ctx.req.headers["If-None-Match"] then
+        return
+    end
+    ctx:json({ id = ctx.params.id, name = "User " .. ctx.params.id })
+end)
+
+app:get("/report", function(ctx)
+    if ctx:accepts("html", "json") == "json" then
+        ctx:cache(60):json({ title = "Quarterly report", revenue = 1000 })
+    else
+        ctx:cache(60):html("<h1>Quarterly report</h1>")
+    end
+end)
+
+app:listen({ port = tonumber(os.getenv("VARN_PORT") or "3000") })
+```
+
 ### `client_request.lua`
 
 ```lua
@@ -343,7 +533,7 @@ end
 async.spawn(function()
     local http = require("http")
     local url = os.getenv("VARN_HTTP_URL") or "https://httpbin.org/get"
-    local wire, err = http.client.request({
+    local wire, err = http.client.requestRaw({
         url = url,
         method = "GET",
         headers = {},
@@ -355,6 +545,28 @@ async.spawn(function()
     local status, body = parseVarnWire(wire)
     print("status", status)
     print("body", body)
+end)
+```
+
+### `client_ergonomic.lua`
+
+```lua
+-- the ergonomic http client: get/post return a parsed response with status, ok, headers, body and json().
+local async = require("async")
+
+async.run(function()
+    local http = require("http")
+
+    -- a get with a query table appends a proper query string and parses the json response on demand.
+    local base = os.getenv("VARN_HTTP_URL") or "https://httpbin.org"
+    local resp = http.client.get(base .. "/get", { query = { name = "varn", lang = "en" } }):await()
+    print("get status", resp.status, "ok", resp.ok)
+    print("echoed name", resp.json().args.name)
+
+    -- a post with a json option serializes the body and sets Content-Type: application/json.
+    local posted = http.client.post(base .. "/post", { json = { value = 42, tags = { "a", "b" } } }):await()
+    print("post status", posted.status)
+    print("server saw json", posted.json().json.value)
 end)
 ```
 

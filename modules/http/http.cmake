@@ -19,6 +19,7 @@ endif()
 list(APPEND VARN_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 list(APPEND VARN_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/src/HttpTypes.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/HttpUrl.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/src/HttpClientModule.cpp"
 )
 
@@ -41,6 +42,7 @@ if(VARN_HTTP_SERVER_DRIVER STREQUAL "POCO")
     )
     set(VARN_NEEDS_POCO ON)
     set(VARN_NEEDS_LLHTTP ON)
+    set(VARN_NEEDS_ZLIB ON)
 else()
     list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/dummy/HttpServerModuleStub.cpp")
 endif()

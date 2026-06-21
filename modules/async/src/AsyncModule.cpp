@@ -15,6 +15,223 @@ namespace varn::async
 
 using varn::runtime::Runtime;
 
+// lua prelude attaching promise combinators on top of sleep/spawn/await/promise.
+static const char* const kCombinatorPrelude = R"lua(
+local async = ...
+
+-- yield the current coroutine until predicate() returns true, polling on the loop.
+local function waitUntil(predicate)
+    while not predicate() do
+        async.sleep(1):await()
+    end
+end
+
+function async.all(list)
+    return async.promise(function()
+        local count = #list
+        local results = {}
+        local remaining = count
+        local failed = false
+        local failure = nil
+
+        for index = 1, count do
+            local promise = list[index]
+            async.spawn(function()
+                local value, err = promise:await()
+                if err ~= nil then
+                    if not failed then
+                        failed = true
+                        failure = err
+                    end
+                else
+                    results[index] = value
+                end
+                remaining = remaining - 1
+            end)
+        end
+
+        waitUntil(function() return failed or remaining == 0 end)
+
+        if failed then
+            error(failure, 0)
+        end
+
+        return results
+    end)
+end
+
+function async.allSettled(list)
+    return async.promise(function()
+        local count = #list
+        local results = {}
+        local remaining = count
+
+        for index = 1, count do
+            local promise = list[index]
+            async.spawn(function()
+                local value, err = promise:await()
+                if err ~= nil then
+                    results[index] = { ok = false, error = err }
+                else
+                    results[index] = { ok = true, value = value }
+                end
+                remaining = remaining - 1
+            end)
+        end
+
+        waitUntil(function() return remaining == 0 end)
+
+        return results
+    end)
+end
+
+function async.race(list)
+    return async.promise(function()
+        local settled = false
+        local settledValue = nil
+        local settledError = nil
+
+        for index = 1, #list do
+            local promise = list[index]
+            async.spawn(function()
+                local value, err = promise:await()
+                if not settled then
+                    settled = true
+                    settledValue = value
+                    settledError = err
+                end
+            end)
+        end
+
+        waitUntil(function() return settled end)
+
+        if settledError ~= nil then
+            error(settledError, 0)
+        end
+
+        return settledValue
+    end)
+end
+
+function async.any(list)
+    return async.promise(function()
+        local count = #list
+        local resolved = false
+        local resolvedValue = nil
+        local remaining = count
+        local lastError = nil
+
+        for index = 1, count do
+            local promise = list[index]
+            async.spawn(function()
+                local value, err = promise:await()
+                if err ~= nil then
+                    lastError = err
+                elseif not resolved then
+                    resolved = true
+                    resolvedValue = value
+                end
+                remaining = remaining - 1
+            end)
+        end
+
+        waitUntil(function() return resolved or remaining == 0 end)
+
+        if resolved then
+            return resolvedValue
+        end
+
+        error(lastError or "async.any: all promises rejected", 0)
+    end)
+end
+
+function async.timeout(promise, ms)
+    return async.promise(function()
+        local settled = false
+        local timedOut = false
+        local value = nil
+        local failure = nil
+
+        async.spawn(function()
+            local result, err = promise:await()
+            if not settled then
+                settled = true
+                value = result
+                failure = err
+            end
+        end)
+
+        async.spawn(function()
+            async.sleep(ms):await()
+            if not settled then
+                settled = true
+                timedOut = true
+            end
+        end)
+
+        waitUntil(function() return settled end)
+
+        if timedOut then
+            error("async.timeout: promise did not settle within " .. tostring(ms) .. "ms", 0)
+        end
+
+        if failure ~= nil then
+            error(failure, 0)
+        end
+
+        return value
+    end)
+end
+
+function async.mapLimit(list, limit, fn)
+    return async.promise(function()
+        local count = #list
+        local results = {}
+        local nextIndex = 1
+        local inFlight = 0
+        local completed = 0
+        local failed = false
+        local failure = nil
+
+        local function startNext()
+            local index = nextIndex
+            nextIndex = nextIndex + 1
+            inFlight = inFlight + 1
+            async.spawn(function()
+                local value, err = fn(list[index]):await()
+                if err ~= nil then
+                    if not failed then
+                        failed = true
+                        failure = err
+                    end
+                else
+                    results[index] = value
+                end
+                inFlight = inFlight - 1
+                completed = completed + 1
+            end)
+        end
+
+        while not failed and nextIndex <= count and inFlight < limit do
+            startNext()
+        end
+
+        while completed < count and not failed do
+            async.sleep(1):await()
+            while not failed and nextIndex <= count and inFlight < limit do
+                startNext()
+            end
+        end
+
+        if failed then
+            error(failure, 0)
+        end
+
+        return results
+    end)
+end
+)lua";
+
 Runtime& AsyncModule::luaRuntime(lua_State* L)
 {
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
@@ -98,6 +315,83 @@ int AsyncModule::startEntry(lua_State* L, bool stopLoopOnSuccess)
     return 0;
 }
 
+int AsyncModule::promiseContinuation(lua_State* L, int status, lua_KContext ctx)
+{
+    (void)ctx;
+    auto& rt = luaRuntime(L);
+
+    // the promise userdata lives as an upvalue of this coroutine, so the raw pointer stays valid here.
+    lua_pushvalue(L, lua_upvalueindex(2));
+    Promise* promise = Promise::check(L, -1);
+    lua_pop(L, 1);
+
+    if (status != LUA_OK && status != LUA_YIELD)
+    {
+        const char* message = lua_tostring(L, -1);
+        promise->reject(message ? message : "async.promise: the task failed without a message.");
+        return 0;
+    }
+
+    // capture the function result in the registry so it survives every await, and unref it when the promise is gone.
+    lua_pushvalue(L, -1);
+    const int valueRef = luaL_ref(L, LUA_REGISTRYINDEX);
+    Runtime* runtime = &rt;
+    std::shared_ptr<int> refHolder(new int(valueRef), [runtime](int* ref)
+                                   {
+        if (!runtime->stopped())
+        {
+            luaL_unref(runtime->luaState(), LUA_REGISTRYINDEX, *ref);
+        }
+        delete ref; });
+
+    promise->resolveCustom([refHolder](lua_State* target)
+                           { lua_rawgeti(target, LUA_REGISTRYINDEX, *refHolder); });
+
+    return 0;
+}
+
+int AsyncModule::promiseBody(lua_State* L)
+{
+    // run the user function under a protected call that survives await yields so its outcome settles the promise once.
+    lua_pushvalue(L, lua_upvalueindex(1));
+    const int status = lua_pcallk(L, 0, 1, 0, 0, &AsyncModule::promiseContinuation);
+    return promiseContinuation(L, status, 0);
+}
+
+int AsyncModule::luaPromise(lua_State* L)
+{
+    luaL_checktype(L, 1, LUA_TFUNCTION);
+    auto& rt = luaRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    lua_State* thread = lua_newthread(L);
+    const int threadRef = luaL_ref(L, LUA_REGISTRYINDEX);
+
+    lua_pushvalue(L, 1);
+    lua_xmove(L, thread, 1);
+    Promise::push(thread, promise);
+    lua_pushcclosure(thread, &AsyncModule::promiseBody, 2);
+
+#if defined(__EMSCRIPTEN__)
+    lua_sethook(thread, nullptr, 0, 0);
+#endif
+
+    int nres = 0;
+    const int status = lua_resume(thread, L, 0, &nres);
+    if (status != LUA_OK && status != LUA_YIELD)
+    {
+        const char* message = lua_tostring(thread, -1);
+        luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
+        return luaL_error(L, "%s", message ? message : "async.promise: the task could not be started.");
+    }
+
+    // once the body yields the promise machinery owns the coroutine, so release our ref in every case.
+    luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
+
+    Promise::push(L, promise);
+    return 1;
+}
+
 int AsyncModule::luaSpawn(lua_State* L)
 {
     return startEntry(L, false);
@@ -121,7 +415,29 @@ int AsyncModule::luaOpen(lua_State* L)
     lua_pushcfunction(L, &AsyncModule::luaRun);
     lua_setfield(L, -2, "run");
 
+    lua_pushcfunction(L, &AsyncModule::luaPromise);
+    lua_setfield(L, -2, "promise");
+
+    installCombinators(L);
+
     return 1;
+}
+
+void AsyncModule::installCombinators(lua_State* L)
+{
+    if (luaL_loadstring(L, kCombinatorPrelude) != LUA_OK)
+    {
+        const char* message = lua_tostring(L, -1);
+        luaL_error(L, "[AsyncModule] The combinator prelude failed to compile: %s", message ? message : "");
+    }
+
+    // pass the module table currently on top of the stack to the prelude as its single argument.
+    lua_pushvalue(L, -2);
+    if (lua_pcall(L, 1, 0, 0) != LUA_OK)
+    {
+        const char* message = lua_tostring(L, -1);
+        luaL_error(L, "[AsyncModule] The combinator prelude failed to run: %s", message ? message : "");
+    }
 }
 
 void AsyncModule::install(lua_State* L)

@@ -4,6 +4,7 @@
 
 #include <lua.hpp>
 #include <string>
+#include <string_view>
 
 namespace varn::log
 {
@@ -16,9 +17,16 @@ void LogModule::emitAt(lua_State* L, Level level)
         return;
     }
 
+    // a trailing table is treated as structured fields appended as key=value.
+    int messageCount = n;
+    if (n >= 2 && lua_type(L, n) == LUA_TTABLE)
+    {
+        messageCount = n - 1;
+    }
+
     std::string combined;
     combined.reserve(64);
-    for (int i = 1; i <= n; ++i)
+    for (int i = 1; i <= messageCount; ++i)
     {
         if (i > 1)
         {
@@ -28,7 +36,28 @@ void LogModule::emitAt(lua_State* L, Level level)
         appendValue(L, i, combined, 0, false);
     }
 
+    if (messageCount < n)
+    {
+        appendFields(L, n, combined);
+    }
+
     Log::emit(level, combined);
+}
+
+void LogModule::appendFields(lua_State* L, int index, std::string& out)
+{
+    index = lua_absindex(L, index);
+
+    lua_pushnil(L);
+    while (lua_next(L, index) != 0)
+    {
+        out += ' ';
+        appendKey(L, -2, out);
+        out += '=';
+        appendValue(L, -1, out, 1, false);
+
+        lua_pop(L, 1);
+    }
 }
 
 void LogModule::appendValue(lua_State* L, int index, std::string& out, int depth, bool quoteStrings)
@@ -143,6 +172,46 @@ int LogModule::luaError(lua_State* L)
     return 0;
 }
 
+int LogModule::luaSetLevel(lua_State* L)
+{
+    size_t len = 0;
+    const char* name = luaL_checklstring(L, 1, &len);
+    const std::string_view level(name, len);
+
+    if (level == "debug")
+    {
+        Log::setLevel(Level::Debug);
+    }
+    else if (level == "info")
+    {
+        Log::setLevel(Level::Info);
+    }
+    else if (level == "warn")
+    {
+        Log::setLevel(Level::Warn);
+    }
+    else if (level == "error")
+    {
+        Log::setLevel(Level::Error);
+    }
+    else
+    {
+        return luaL_error(L, "log.setLevel expects one of: debug, info, warn, error");
+    }
+
+    return 0;
+}
+
+int LogModule::luaToFile(lua_State* L)
+{
+    size_t len = 0;
+    const char* path = luaL_checklstring(L, 1, &len);
+    const bool rotating = lua_toboolean(L, 2) != 0;
+
+    Log::addFileSink(std::string_view(path, len), rotating);
+    return 0;
+}
+
 int LogModule::luaOpen(lua_State* L)
 {
     lua_newtable(L);
@@ -158,6 +227,12 @@ int LogModule::luaOpen(lua_State* L)
 
     lua_pushcfunction(L, &LogModule::luaError);
     lua_setfield(L, -2, "error");
+
+    lua_pushcfunction(L, &LogModule::luaSetLevel);
+    lua_setfield(L, -2, "setLevel");
+
+    lua_pushcfunction(L, &LogModule::luaToFile);
+    lua_setfield(L, -2, "toFile");
 
     return 1;
 }

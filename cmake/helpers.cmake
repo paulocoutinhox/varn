@@ -72,6 +72,12 @@ function(varn_apply_usage target scope)
         endif()
     endif()
 
+    # zlib backs http response compression independently of the zip module.
+    if(VARN_NEEDS_ZLIB)
+        target_compile_definitions(${target} ${scope} VARN_HAVE_ZLIB=1)
+        target_link_libraries(${target} ${scope} ZLIB::ZLIB)
+    endif()
+
     # openssl is linked directly only when poco does not already bring it in for tls.
     if(VARN_ENABLE_TLS)
         if(NOT VARN_NEEDS_POCO)

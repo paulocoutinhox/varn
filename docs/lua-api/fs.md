@@ -10,6 +10,12 @@ Filesystem access. Reads and writes run off the main loop and return promises.
   - `handle:write(data)` → promise resolving to `"ok"`.
   - `handle:close()` → promise resolving to `"ok"`.
   Await each handle call before issuing the next, the same way you would with a Node file handle.
+- `fs.stat(path)` → promise resolving to a table `{size, mtime, isDir, isFile, isSymlink}`, or rejecting if the path is missing. `mtime` is epoch seconds; `size` is the byte count for files. A symlink is reported as a symlink while `isDir`/`isFile` follow the link to its target.
+- `fs.readdir(path)` → promise resolving to an array of entry names (just the names, not full paths).
+- `fs.rename(from, to)` → promise resolving to `"ok"`.
+- `fs.copy(from, to)` → promise resolving to `"ok"`. Overwrites the destination if it already exists.
+- `fs.append(path, data)` → promise resolving to `"ok"`. Opens the file in binary append mode, creating parent directories as needed.
+- `fs.mkdtemp(prefix)` → promise resolving to the path of a freshly created unique temporary directory whose name starts with `prefix`.
 
 Paths are not sandboxed; confine untrusted input before passing it here. A path containing a null byte is rejected rather than silently truncated.
 
@@ -39,6 +45,37 @@ async.spawn(function()
     assert(not fs.exists(tmp), "tmp should be removed")
 
     print("fs read/write/exists ok")
+end)
+```
+
+### `stat_readdir.lua`
+
+```lua
+-- demonstrates stat readdir append copy rename and mkdtemp under a temporary directory
+local async = require("async")
+local fs = require("fs")
+
+async.run(function()
+    local base = fs.mkdtemp("build/_fs_extra_"):await()
+
+    local file = base .. "/note.txt"
+    fs.writeFile(file, "hello"):await()
+
+    local info = fs.stat(file):await()
+    print("size:", info.size, "isFile:", info.isFile, "mtime:", info.mtime)
+
+    fs.append(file, " world"):await()
+    print("after append:", fs.readFile(file):await())
+
+    fs.copy(file, base .. "/copy.txt"):await()
+    fs.rename(base .. "/copy.txt", base .. "/renamed.txt"):await()
+
+    local names = fs.readdir(base):await()
+    table.sort(names)
+    print("entries:", table.concat(names, ", "))
+
+    fs.removeRecursive(base):await()
+    print("fs extra example ok")
 end)
 ```
 

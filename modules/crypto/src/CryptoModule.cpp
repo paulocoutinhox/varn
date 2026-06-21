@@ -125,6 +125,253 @@ int CryptoModule::luaEquals(lua_State* L)
     return 1;
 }
 
+int CryptoModule::luaBase64Encode(lua_State* L)
+{
+    const std::string data = varn::lua::LuaHelpers::checkString(L, 1);
+
+    try
+    {
+        const std::string out = CryptoPrimitives::base64Encode(data, false, true);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaBase64Decode(lua_State* L)
+{
+    const std::string data = varn::lua::LuaHelpers::checkString(L, 1);
+
+    try
+    {
+        const std::string out = CryptoPrimitives::base64Decode(data, false);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaBase64UrlEncode(lua_State* L)
+{
+    const std::string data = varn::lua::LuaHelpers::checkString(L, 1);
+
+    try
+    {
+        // url-safe alphabet without padding so the result is safe in urls and cookies.
+        const std::string out = CryptoPrimitives::base64Encode(data, true, false);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaBase64UrlDecode(lua_State* L)
+{
+    const std::string data = varn::lua::LuaHelpers::checkString(L, 1);
+
+    try
+    {
+        const std::string out = CryptoPrimitives::base64Decode(data, true);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaHexEncode(lua_State* L)
+{
+    const std::string data = varn::lua::LuaHelpers::checkString(L, 1);
+
+    try
+    {
+        const std::string out = CryptoPrimitives::hexEncode(data);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaHexDecode(lua_State* L)
+{
+    const std::string data = varn::lua::LuaHelpers::checkString(L, 1);
+
+    try
+    {
+        const std::string out = CryptoPrimitives::hexDecode(data);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaUuidV4(lua_State* L)
+{
+    try
+    {
+        const std::string out = CryptoPrimitives::uuidV4();
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaUuidV7(lua_State* L)
+{
+    try
+    {
+        const std::string out = CryptoPrimitives::uuidV7();
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaHashPassword(lua_State* L)
+{
+    const std::string password = varn::lua::LuaHelpers::checkString(L, 1);
+
+    try
+    {
+        const std::string out = CryptoPrimitives::hashPassword(password);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaVerifyPassword(lua_State* L)
+{
+    const std::string password = varn::lua::LuaHelpers::checkString(L, 1);
+    const std::string encoded = varn::lua::LuaHelpers::checkString(L, 2);
+
+    try
+    {
+        const bool ok = CryptoPrimitives::verifyPassword(password, encoded);
+        lua_pushboolean(L, ok ? 1 : 0);
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaEncrypt(lua_State* L)
+{
+    const std::string key = varn::lua::LuaHelpers::checkString(L, 1);
+    const std::string plaintext = varn::lua::LuaHelpers::checkString(L, 2);
+
+    try
+    {
+        const std::string out = CryptoPrimitives::aesGcmEncrypt(key, plaintext);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaDecrypt(lua_State* L)
+{
+    const std::string key = varn::lua::LuaHelpers::checkString(L, 1);
+    const std::string blob = varn::lua::LuaHelpers::checkString(L, 2);
+
+    try
+    {
+        const std::string out = CryptoPrimitives::aesGcmDecrypt(key, blob);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaPbkdf2(lua_State* L)
+{
+    const std::string password = varn::lua::LuaHelpers::checkString(L, 1);
+    const std::string salt = varn::lua::LuaHelpers::checkString(L, 2);
+    const lua_Integer iterations = luaL_checkinteger(L, 3);
+    const lua_Integer keyLen = luaL_checkinteger(L, 4);
+    const std::string algo = varn::lua::LuaHelpers::optionalString(L, 5, "SHA256");
+
+    if (iterations <= 0)
+    {
+        return luaL_error(L, "[CryptoModule] The pbkdf2 iteration count must be positive.");
+    }
+
+    if (keyLen <= 0)
+    {
+        return luaL_error(L, "[CryptoModule] The pbkdf2 key length must be positive.");
+    }
+
+    try
+    {
+        const std::string out = CryptoPrimitives::pbkdf2(password, salt, static_cast<std::size_t>(iterations), static_cast<std::size_t>(keyLen), algo);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
+int CryptoModule::luaHkdf(lua_State* L)
+{
+    const std::string key = varn::lua::LuaHelpers::checkString(L, 1);
+    const std::string salt = varn::lua::LuaHelpers::checkString(L, 2);
+    const std::string info = varn::lua::LuaHelpers::checkString(L, 3);
+    const lua_Integer keyLen = luaL_checkinteger(L, 4);
+    const std::string algo = varn::lua::LuaHelpers::optionalString(L, 5, "SHA256");
+
+    if (keyLen <= 0)
+    {
+        return luaL_error(L, "[CryptoModule] The hkdf key length must be positive.");
+    }
+
+    try
+    {
+        const std::string out = CryptoPrimitives::hkdf(key, salt, info, static_cast<std::size_t>(keyLen), algo);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
 int CryptoModule::luaOpen(lua_State* L)
 {
     lua_newtable(L);
@@ -140,6 +387,48 @@ int CryptoModule::luaOpen(lua_State* L)
 
     lua_pushcfunction(L, &CryptoModule::luaEquals);
     lua_setfield(L, -2, "equals");
+
+    lua_pushcfunction(L, &CryptoModule::luaBase64Encode);
+    lua_setfield(L, -2, "base64Encode");
+
+    lua_pushcfunction(L, &CryptoModule::luaBase64Decode);
+    lua_setfield(L, -2, "base64Decode");
+
+    lua_pushcfunction(L, &CryptoModule::luaBase64UrlEncode);
+    lua_setfield(L, -2, "base64UrlEncode");
+
+    lua_pushcfunction(L, &CryptoModule::luaBase64UrlDecode);
+    lua_setfield(L, -2, "base64UrlDecode");
+
+    lua_pushcfunction(L, &CryptoModule::luaHexEncode);
+    lua_setfield(L, -2, "hexEncode");
+
+    lua_pushcfunction(L, &CryptoModule::luaHexDecode);
+    lua_setfield(L, -2, "hexDecode");
+
+    lua_pushcfunction(L, &CryptoModule::luaUuidV4);
+    lua_setfield(L, -2, "uuidV4");
+
+    lua_pushcfunction(L, &CryptoModule::luaUuidV7);
+    lua_setfield(L, -2, "uuidV7");
+
+    lua_pushcfunction(L, &CryptoModule::luaHashPassword);
+    lua_setfield(L, -2, "hashPassword");
+
+    lua_pushcfunction(L, &CryptoModule::luaVerifyPassword);
+    lua_setfield(L, -2, "verifyPassword");
+
+    lua_pushcfunction(L, &CryptoModule::luaEncrypt);
+    lua_setfield(L, -2, "encrypt");
+
+    lua_pushcfunction(L, &CryptoModule::luaDecrypt);
+    lua_setfield(L, -2, "decrypt");
+
+    lua_pushcfunction(L, &CryptoModule::luaPbkdf2);
+    lua_setfield(L, -2, "pbkdf2");
+
+    lua_pushcfunction(L, &CryptoModule::luaHkdf);
+    lua_setfield(L, -2, "hkdf");
 
     return 1;
 }

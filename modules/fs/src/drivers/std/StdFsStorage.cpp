@@ -1,10 +1,15 @@
 #include "varn/fs/FsStorage.h"
 
+#include <chrono>
+#include <cstdint>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <random>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace varn::fs
 {
@@ -86,6 +91,137 @@ void FsStorage::removeRecursive(const std::string& path)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
     }
+}
+
+FsStat FsStorage::stat(const std::string& path)
+{
+    std::error_code ec;
+
+    // use symlink_status so a symlink is reported as a symlink rather than its target.
+    const std::filesystem::file_status linkStatus = std::filesystem::symlink_status(path, ec);
+    if (ec || linkStatus.type() == std::filesystem::file_type::not_found)
+    {
+        throw std::runtime_error("[FsStorage] The path does not exist.");
+    }
+
+    const std::filesystem::file_status status = std::filesystem::status(path, ec);
+    if (ec)
+    {
+        throw std::runtime_error("[FsStorage] " + ec.message() + ".");
+    }
+
+    FsStat result;
+    result.isDir = std::filesystem::is_directory(status);
+    result.isFile = std::filesystem::is_regular_file(status);
+    result.isSymlink = std::filesystem::is_symlink(linkStatus);
+
+    if (result.isFile)
+    {
+        result.size = std::filesystem::file_size(path, ec);
+        if (ec)
+        {
+            result.size = 0;
+        }
+    }
+
+    const auto fileTime = std::filesystem::last_write_time(path, ec);
+    if (!ec)
+    {
+        // map the file clock onto the system clock so the result is epoch seconds, since not every standard library offers clock_cast.
+        const auto systemTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+            fileTime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+        result.mtime = static_cast<std::int64_t>(std::chrono::system_clock::to_time_t(systemTime));
+    }
+
+    return result;
+}
+
+std::vector<std::string> FsStorage::readdir(const std::string& path)
+{
+    std::error_code ec;
+    std::filesystem::directory_iterator it(path, ec);
+    if (ec)
+    {
+        throw std::runtime_error("[FsStorage] " + ec.message() + ".");
+    }
+
+    std::vector<std::string> names;
+    for (const auto& entry : it)
+    {
+        names.push_back(entry.path().filename().string());
+    }
+
+    return names;
+}
+
+void FsStorage::rename(const std::string& from, const std::string& to)
+{
+    std::error_code ec;
+    std::filesystem::rename(from, to, ec);
+    if (ec)
+    {
+        throw std::runtime_error("[FsStorage] " + ec.message() + ".");
+    }
+}
+
+void FsStorage::copy(const std::string& from, const std::string& to)
+{
+    std::error_code ec;
+    std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec)
+    {
+        throw std::runtime_error("[FsStorage] " + ec.message() + ".");
+    }
+}
+
+void FsStorage::append(const std::string& path, const std::string& data)
+{
+    std::filesystem::path p(path);
+    if (p.has_parent_path())
+    {
+        std::filesystem::create_directories(p.parent_path());
+    }
+
+    std::ofstream file(path, std::ios::binary | std::ios::app);
+    if (!file)
+    {
+        throw std::runtime_error("[FsStorage] The file could not be opened for appending.");
+    }
+
+    file.write(data.data(), static_cast<std::streamsize>(data.size()));
+    file.flush();
+    if (!file)
+    {
+        throw std::runtime_error("[FsStorage] The file could not be appended.");
+    }
+}
+
+std::string FsStorage::mkdtemp(const std::string& prefix)
+{
+    std::filesystem::path base = prefix;
+    if (base.has_parent_path())
+    {
+        std::filesystem::create_directories(base.parent_path());
+    }
+
+    std::random_device device;
+    std::mt19937_64 generator(device());
+    std::uniform_int_distribution<std::uint64_t> distribution;
+
+    // probe random suffixes until create_directory wins the race for an unused name.
+    for (int attempt = 0; attempt < 256; ++attempt)
+    {
+        const std::string suffix = std::to_string(distribution(generator));
+        std::filesystem::path candidate = base.string() + suffix;
+
+        std::error_code ec;
+        if (std::filesystem::create_directory(candidate, ec) && !ec)
+        {
+            return candidate.string();
+        }
+    }
+
+    throw std::runtime_error("[FsStorage] A unique temporary directory could not be created.");
 }
 
 namespace

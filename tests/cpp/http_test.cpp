@@ -37,6 +37,74 @@ TEST(Router, IntConstraintAcceptsDigitsAndRejectsLetters)
     EXPECT_EQ(router.match("GET", "/users/abc").status, MatchStatus::NotFound);
 }
 
+TEST(Router, WildcardCapturesRemainingPathAsParam)
+{
+    Router router;
+    router.add("GET", "/files/*");
+
+    const MatchResult deep = router.match("GET", "/files/docs/2024/report.pdf");
+    ASSERT_EQ(deep.status, MatchStatus::Found);
+    ASSERT_EQ(deep.params.size(), 1u);
+    EXPECT_EQ(deep.params[0].name, "wildcard");
+    EXPECT_EQ(deep.params[0].value, "docs/2024/report.pdf");
+
+    // the wildcard also matches an empty tail.
+    const MatchResult empty = router.match("GET", "/files");
+    ASSERT_EQ(empty.status, MatchStatus::Found);
+    ASSERT_EQ(empty.params.size(), 1u);
+    EXPECT_EQ(empty.params[0].value, "");
+}
+
+TEST(Router, OptionalParamMatchesWithAndWithoutTheSegment)
+{
+    Router router;
+    router.add("GET", "/posts/:id?");
+
+    const MatchResult present = router.match("GET", "/posts/42");
+    ASSERT_EQ(present.status, MatchStatus::Found);
+    ASSERT_EQ(present.params.size(), 1u);
+    EXPECT_EQ(present.params[0].name, "id");
+    EXPECT_EQ(present.params[0].value, "42");
+
+    const MatchResult absent = router.match("GET", "/posts");
+    ASSERT_EQ(absent.status, MatchStatus::Found);
+    EXPECT_TRUE(absent.params.empty());
+}
+
+TEST(Router, OptionalParamHonorsItsConstraint)
+{
+    Router router;
+    const int route = router.add("GET", "/posts/:id?");
+    router.setConstraint(route, "id", "int");
+
+    EXPECT_EQ(router.match("GET", "/posts/7").status, MatchStatus::Found);
+    EXPECT_EQ(router.match("GET", "/posts").status, MatchStatus::Found);
+
+    // a present-but-invalid optional segment leaves a trailing part the route cannot consume.
+    EXPECT_EQ(router.match("GET", "/posts/abc").status, MatchStatus::NotFound);
+}
+
+TEST(Router, BuildsWildcardAndOptionalUrls)
+{
+    Router router;
+    const int files = router.add("GET", "/files/*");
+    router.setName(files, "files.show");
+    const int posts = router.add("GET", "/posts/:id?");
+    router.setName(posts, "posts.show");
+
+    const auto wildcardUrl = router.buildUrl("files.show", {{"wildcard", "a/b c/d"}});
+    ASSERT_TRUE(wildcardUrl.has_value());
+    EXPECT_EQ(*wildcardUrl, "/files/a/b%20c/d");
+
+    const auto withId = router.buildUrl("posts.show", {{"id", "9"}});
+    ASSERT_TRUE(withId.has_value());
+    EXPECT_EQ(*withId, "/posts/9");
+
+    const auto withoutId = router.buildUrl("posts.show", {});
+    ASSERT_TRUE(withoutId.has_value());
+    EXPECT_EQ(*withoutId, "/posts");
+}
+
 TEST(Router, ReportsMethodNotAllowedForAKnownPath)
 {
     Router router;

@@ -45,6 +45,8 @@ private:
     struct Segment
     {
         bool isParam = false;
+        bool isOptional = false;
+        bool isWildcard = false;
         std::string text;
     };
 
@@ -57,6 +59,7 @@ private:
     };
 
     bool pathMatches(const Route& route, const std::vector<std::string>& parts, std::vector<RouteParam>& outParams) const;
+    bool segmentMatchesPart(const Route& route, const Segment& segment, const std::string& part) const;
 
     static std::string urlEncodeSegment(const std::string& value);
     static std::vector<std::string> splitPath(const std::string& path);

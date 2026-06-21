@@ -53,7 +53,7 @@ endif()
 
 # zlib (ZLIB::ZLIB) resolves before poco so poco's bundled-zlib reuses this target instead of
 # defining its own, and libzip picks it up later through zlib-cmake's FindZLIB override.
-if(VARN_NEEDS_ZIP)
+if(VARN_NEEDS_ZIP OR VARN_NEEDS_ZLIB)
     CPMAddPackage(
         NAME zlib-cmake
         URL https://github.com/jimmy-park/zlib-cmake/archive/main.tar.gz

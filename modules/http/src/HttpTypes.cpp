@@ -29,4 +29,23 @@ void HttpResponse::sendFile(const std::string& path, std::uint64_t start, std::u
     end(body);
 }
 
+void HttpResponse::beginChunked()
+{
+}
+
+void HttpResponse::writeChunk(const std::string& chunk)
+{
+    write(chunk);
+}
+
+void HttpResponse::endChunked()
+{
+    end("");
+}
+
+bool HttpResponse::streaming() const
+{
+    return false;
+}
+
 } // namespace varn::http

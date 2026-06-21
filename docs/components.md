@@ -19,5 +19,10 @@ The bundled examples set this up from their own location, so they run from any d
 |-----------|-------------|
 | [🗄️ vdo](components/vdo.md) | PDO-style database access for SQLite, MySQL/MariaDB, and PostgreSQL |
 | [🧰 redis](components/redis.md) | Redis client speaking RESP2 over a single connection |
+| [🔧 env](components/env.md) | Load a `.env` file and read typed environment variables |
+| [✅ validate](components/validate.md) | Validate a table against a declarative schema |
+| [🕒 datetime](components/datetime.md) | Parse, format, and do arithmetic on ISO-8601 instants |
+| [🧪 test](components/test.md) | A tiny `describe` / `it` / `expect` test runner |
+| [🔁 retry](components/retry.md) | Retry-with-backoff plus interval and timeout scheduling |
 
 Each example lives next to its component under `components/<component>/examples/`.

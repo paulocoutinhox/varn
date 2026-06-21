@@ -14,6 +14,10 @@
 #include <cstring>
 #include <llhttp.h>
 
+#if defined(VARN_HAVE_ZLIB)
+#include <zlib.h>
+#endif
+
 #ifdef VARN_ENABLE_TLS
 #include "../poco/TlsServerContext.h"
 #include <Poco/Net/SecureServerSocket.h>
@@ -83,9 +87,9 @@ enum class FileSend
     Error
 };
 
-// hand up to count bytes from the open file straight to the socket without copying through user space, reporting the bytes moved in sent.
 FileSend sendFileToSocket(int socketFd, int fileFd, std::uint64_t offset, std::size_t count, std::size_t& sent)
 {
+    // hand up to count bytes from the open file straight to the socket without copying through user space, reporting the bytes moved in sent.
     sent = 0;
 
 #if defined(__linux__)
@@ -206,6 +210,57 @@ std::string sanitizeHeader(const std::string& value)
 
     return out;
 }
+
+constexpr std::size_t kCompressThreshold = 1024;
+
+#if defined(VARN_HAVE_ZLIB)
+
+bool gzipEncode(const std::string& input, std::string& output)
+{
+    // gzip a body with the standard 16+MAX_WBITS window so the output carries a gzip header rather than raw deflate.
+    z_stream stream{};
+    if (deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK)
+    {
+        return false;
+    }
+
+    stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(input.data()));
+    stream.avail_in = static_cast<uInt>(input.size());
+
+    output.clear();
+    output.resize(deflateBound(&stream, static_cast<uLong>(input.size())));
+
+    stream.next_out = reinterpret_cast<Bytef*>(output.data());
+    stream.avail_out = static_cast<uInt>(output.size());
+
+    const int result = deflate(&stream, Z_FINISH);
+    deflateEnd(&stream);
+
+    if (result != Z_STREAM_END)
+    {
+        return false;
+    }
+
+    output.resize(stream.total_out);
+    return true;
+}
+
+bool compressibleType(const std::string& contentType)
+{
+    // json, xml and any text/* payload compress well, whereas already-encoded media gains nothing.
+    std::string lowered = contentType;
+    Poco::toLowerInPlace(lowered);
+    return lowered.rfind("text/", 0) == 0 || lowered.rfind("application/json", 0) == 0 || lowered.rfind("application/xml", 0) == 0;
+}
+
+bool acceptsGzip(const std::string& acceptEncoding)
+{
+    std::string lowered = acceptEncoding;
+    Poco::toLowerInPlace(lowered);
+    return lowered.find("gzip") != std::string::npos;
+}
+
+#endif
 
 constexpr int kWsContinuation = 0x0;
 constexpr int kWsText = 0x1;
@@ -346,10 +401,11 @@ class HttpConnection;
 class ReactorResponse final : public HttpResponse
 {
 public:
-    ReactorResponse(std::shared_ptr<HttpConnection> conn, bool keepAlive, bool headersOnly)
+    ReactorResponse(std::shared_ptr<HttpConnection> conn, bool keepAlive, bool headersOnly, bool gzipAllowed)
         : connection(std::move(conn))
         , keepAlive(keepAlive)
         , headersOnly(headersOnly)
+        , gzipAllowed(gzipAllowed)
     {
     }
 
@@ -388,18 +444,32 @@ public:
     void end(const std::string& body) override;
     void sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly) override;
 
+    void beginChunked() override;
+    void writeChunk(const std::string& chunk) override;
+    void endChunked() override;
+
     bool ended() const override
     {
         return finished;
     }
 
+    bool streaming() const override
+    {
+        return chunkedMode;
+    }
+
 private:
     std::string buildHead(std::size_t contentLength, bool emitContentLength);
+    std::string chunkedHead();
+    void maybeCompress();
 
     std::shared_ptr<HttpConnection> connection;
     bool keepAlive;
     bool headersOnly;
+    bool gzipAllowed;
     bool finished = false;
+    bool chunkedMode = false;
+    bool chunkedHeadSent = false;
     int statusCode = 200;
     std::map<std::string, std::string> headerMap;
     std::vector<std::pair<std::string, std::string>> extraHeaders;
@@ -479,6 +549,31 @@ public:
         writeOffset = 0;
         lastWriteMs = nowMs();
         keepAlive = keepAliveAfter;
+        auto self = shared_from_this();
+        loop.watchWrite(socket, [self]() -> bool
+                        { return self->onWritable(); });
+    }
+
+    void submitStreamChunk(std::string data, bool keepAliveAfter, bool last)
+    {
+        // a streaming response appends each chunk to the unflushed tail and arms a single writer, only finishing the connection on the last chunk.
+        if (closed)
+        {
+            return;
+        }
+
+        writeBuffer.append(data);
+        streamingActive = !last;
+        keepAlive = keepAliveAfter;
+        lastWriteMs = nowMs();
+
+        // a writer is already draining the buffer, so the appended bytes ride along without a second queued handler.
+        if (streamWriteArmed)
+        {
+            return;
+        }
+
+        streamWriteArmed = true;
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool
                         { return self->onWritable(); });
@@ -707,6 +802,12 @@ private:
             return Io::Again;
         }
 
+        // a streaming response only watches the read side to learn the client left, ignoring any bytes it sends mid-stream.
+        if (streamingActive)
+        {
+            return Io::Again;
+        }
+
         readBuffer.append(buffer, static_cast<std::size_t>(received));
         return process() == Progress::Detached ? Io::Detached : Io::Again;
     }
@@ -844,6 +945,16 @@ private:
         // once the websocket handshake response is flushed the connection switches to reading client frames.
         if (wsMode)
         {
+            armRead();
+            return Io::Detached;
+        }
+
+        // a streaming response has flushed this chunk and waits for the next one while watching the read side for a client disconnect.
+        if (streamingActive)
+        {
+            writeBuffer.clear();
+            writeOffset = 0;
+            streamWriteArmed = false;
             armRead();
             return Io::Detached;
         }
@@ -1330,7 +1441,12 @@ private:
             return;
         }
 
-        auto response = std::make_shared<ReactorResponse>(shared_from_this(), keepAlive, request.method == "HEAD");
+        bool gzipAllowed = false;
+#if defined(VARN_HAVE_ZLIB)
+        gzipAllowed = options.compress && acceptsGzip(headerValue(request.headers, "Accept-Encoding"));
+#endif
+
+        auto response = std::make_shared<ReactorResponse>(shared_from_this(), keepAlive, request.method == "HEAD", gzipAllowed);
 
         // a matching public file is served ahead of the user handler and streamed off the loop.
         if (staticFiles && staticFiles->tryServe(request, *response))
@@ -1644,6 +1760,8 @@ private:
         fileRemaining = 0;
         closeFileFd();
         dispatched = false;
+        streamingActive = false;
+        streamWriteArmed = false;
         requestStartMs = nowMs();
     }
 
@@ -1671,6 +1789,8 @@ private:
     bool keepAlive = false;
     bool closed = false;
     bool dispatched = false;
+    bool streamingActive = false;
+    bool streamWriteArmed = false;
     long long requestStartMs = 0;
     long long lastWriteMs = 0;
 
@@ -1765,6 +1885,53 @@ std::string ReactorResponse::buildHead(std::size_t contentLength, bool emitConte
     return head;
 }
 
+void ReactorResponse::maybeCompress()
+{
+#if defined(VARN_HAVE_ZLIB)
+    if (!gzipAllowed || bodyBuffer.size() < kCompressThreshold)
+    {
+        return;
+    }
+
+    std::string contentType = "text/plain; charset=utf-8";
+    bool alreadyEncoded = false;
+    for (const auto& [name, value] : headerMap)
+    {
+        if (Poco::icompare(name, "content-type") == 0)
+        {
+            contentType = value;
+        }
+        else if (Poco::icompare(name, "content-encoding") == 0)
+        {
+            alreadyEncoded = true;
+        }
+    }
+
+    for (const auto& [name, value] : extraHeaders)
+    {
+        if (Poco::icompare(name, "content-encoding") == 0)
+        {
+            alreadyEncoded = true;
+        }
+    }
+
+    if (alreadyEncoded || !compressibleType(contentType))
+    {
+        return;
+    }
+
+    std::string compressed;
+    if (!gzipEncode(bodyBuffer, compressed) || compressed.size() >= bodyBuffer.size())
+    {
+        return;
+    }
+
+    bodyBuffer = std::move(compressed);
+    headerMap["Content-Encoding"] = "gzip";
+    extraHeaders.emplace_back("Vary", "Accept-Encoding");
+#endif
+}
+
 void ReactorResponse::end(const std::string& body)
 {
     if (finished)
@@ -1772,10 +1939,27 @@ void ReactorResponse::end(const std::string& body)
         return;
     }
 
+    // a streaming response finishes through its chunked terminator, so a stray end flushes the last data as a chunk instead of a framed body.
+    if (chunkedMode)
+    {
+        if (!body.empty())
+        {
+            writeChunk(body);
+        }
+
+        endChunked();
+        return;
+    }
+
     finished = true;
     bodyBuffer += body;
 
     const bool bodyless = statusCode == 204 || statusCode == 304;
+    if (!bodyless)
+    {
+        maybeCompress();
+    }
+
     std::string head = buildHead(bodyBuffer.size(), !bodyless);
 
     // a head request still advertises Content-Length but carries no body.
@@ -1785,6 +1969,81 @@ void ReactorResponse::end(const std::string& body)
     }
 
     connection->submitResponse(std::move(head), keepAlive);
+}
+
+void ReactorResponse::beginChunked()
+{
+    if (finished || chunkedMode)
+    {
+        return;
+    }
+
+    chunkedMode = true;
+}
+
+void ReactorResponse::writeChunk(const std::string& chunk)
+{
+    if (finished)
+    {
+        return;
+    }
+
+    if (!chunkedMode)
+    {
+        beginChunked();
+    }
+
+    std::string frame = chunkedHead();
+
+    // an empty write carries no chunk, since a zero-length chunk would terminate the stream early.
+    if (!chunk.empty() && !headersOnly)
+    {
+        std::ostringstream size;
+        size << std::hex << chunk.size();
+        frame += size.str();
+        frame += "\r\n";
+        frame += chunk;
+        frame += "\r\n";
+    }
+
+    if (!frame.empty())
+    {
+        connection->submitStreamChunk(std::move(frame), keepAlive, false);
+    }
+}
+
+void ReactorResponse::endChunked()
+{
+    if (finished)
+    {
+        return;
+    }
+
+    finished = true;
+
+    std::string frame = chunkedHead();
+    frame += "0\r\n\r\n";
+    connection->submitStreamChunk(std::move(frame), keepAlive, true);
+}
+
+std::string ReactorResponse::chunkedHead()
+{
+    if (chunkedHeadSent)
+    {
+        return std::string();
+    }
+
+    chunkedHeadSent = true;
+
+    // the head leads the stream once with chunked transfer encoding in place of a content length.
+    std::string head = buildHead(0, false);
+    if (head.size() >= 2)
+    {
+        head.erase(head.size() - 2);
+    }
+
+    head += "Transfer-Encoding: chunked\r\n\r\n";
+    return head;
 }
 
 void ReactorResponse::sendFile(const std::string& path, std::uint64_t start, std::uint64_t length, bool headersOnly)

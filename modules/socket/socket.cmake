@@ -13,7 +13,13 @@ if(VARN_SOCKET_DRIVER STREQUAL "POCO")
     list(APPEND VARN_SOURCES
         "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketTcp.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketUdp.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketUnix.cpp"
     )
+    if(VARN_ENABLE_TLS)
+        list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketTls.cpp")
+    else()
+        list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoSocketTlsStub.cpp")
+    endif()
     set(VARN_NEEDS_POCO ON)
 else()
     list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/dummy/DummySocketModule.cpp")

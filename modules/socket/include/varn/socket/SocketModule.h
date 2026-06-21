@@ -41,6 +41,9 @@ private:
     static int luaUdpSocketGc(lua_State* L);
     static int luaTcpConnect(lua_State* L);
     static int luaTcpListen(lua_State* L);
+    static int luaTlsConnect(lua_State* L);
+    static int luaUnixConnect(lua_State* L);
+    static int luaUnixListen(lua_State* L);
     static int luaUdpBind(lua_State* L);
     static int luaTcpSocketSend(lua_State* L);
     static int luaTcpSocketReceive(lua_State* L);

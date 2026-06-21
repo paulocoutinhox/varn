@@ -27,7 +27,12 @@ private:
     static int luaSleep(lua_State* L);
     static int luaSpawn(lua_State* L);
     static int luaRun(lua_State* L);
+    static int luaPromise(lua_State* L);
+    static int promiseBody(lua_State* L);
+    static int promiseContinuation(lua_State* L, int status, lua_KContext ctx);
     static int luaOpen(lua_State* L);
+
+    static void installCombinators(lua_State* L);
 };
 
 } // namespace varn::async

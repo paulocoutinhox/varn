@@ -7,6 +7,38 @@ Hashing, keyed hashing, and cryptographically secure random bytes.
 - `crypto.randomBytes(n)` → `n` random bytes as a string.
 - `crypto.equals(a, b)` → `true` if the two strings are equal, compared in constant time. Use this to verify a MAC, token, or any secret-derived value instead of `==`, which leaks bytes through timing.
 
+## Codecs
+
+Binary-safe, length-aware encoders and decoders. Decoding rejects malformed input with an error.
+
+- `crypto.base64Encode(data)` / `crypto.base64Decode(text)` → standard base64 with padding (`+/`, `=`).
+- `crypto.base64UrlEncode(data)` / `crypto.base64UrlDecode(text)` → URL-safe base64 (`-_`) with **no** padding. Decoding accepts either alphabet and optional padding.
+- `crypto.hexEncode(data)` / `crypto.hexDecode(text)` → lowercase hex. Decoding accepts upper or lower case and rejects odd-length or non-hex input.
+
+## Identifiers
+
+- `crypto.uuidV4()` → an RFC 4122 version 4 (random) UUID string, e.g. `"f47ac10b-58cc-4372-a567-0e02b2c3d479"`.
+- `crypto.uuidV7()` → an RFC 4122 version 7 (time-ordered) UUID string. The first 48 bits are a Unix-millisecond timestamp, so the values sort by creation time.
+
+## Passwords
+
+- `crypto.hashPassword(password)` → a self-describing hash string of the form `scrypt$N,r,p$salt$hash` (salt and hash are URL-safe base64). Uses OpenSSL scrypt with a fresh random salt and interactive cost parameters (N=2^15, r=8, p=1). Store the returned string as-is.
+- `crypto.verifyPassword(password, hash)` → `true` if `password` matches the stored `hash`, compared in constant time. Returns `false` (not an error) for a wrong password or a malformed hash string.
+
+## Authenticated encryption
+
+AES-256-GCM via OpenSSL. The key must be exactly 32 bytes (derive one with `crypto.pbkdf2`/`crypto.hkdf` or use `crypto.randomBytes(32)`).
+
+- `crypto.encrypt(key, plaintext)` → a binary blob laid out as `iv(12) || tag(16) || ciphertext`. A fresh random IV is generated per call.
+- `crypto.decrypt(key, blob)` → the plaintext, or an **error** if the authentication tag does not verify (wrong key or tampered blob).
+
+## Key derivation
+
+Both return raw key bytes. `algo` is optional and defaults to `"SHA256"`.
+
+- `crypto.pbkdf2(password, salt, iterations, keyLen, algo?)` → a `keyLen`-byte key derived with PBKDF2-HMAC.
+- `crypto.hkdf(key, salt, info, keyLen, algo?)` → a `keyLen`-byte key derived with HKDF (extract + expand).
+
 There is no artificial input-size limit — Varn runs your own code on your own machine, so hashing or generating large data is allowed (bounded only by memory and the platform's integer limits). Not available in the browser build.
 
 ## Examples
@@ -86,6 +118,40 @@ assert(#b32 == 32, "length")
 print("crypto.randomBytes ok")
 ```
 
+### `crypto_extra.lua`
+
+```lua
+-- codecs, uuids, password hashing, authenticated encryption, and key derivation.
+local crypto = require("crypto")
+
+-- codecs round-trip arbitrary binary data.
+assert(crypto.base64Decode(crypto.base64Encode("foo\0bar")) == "foo\0bar")
+assert(crypto.base64UrlDecode(crypto.base64UrlEncode("\251\255\190")) == "\251\255\190")
+assert(crypto.hexDecode(crypto.hexEncode("a\0b")) == "a\0b")
+
+-- identifiers.
+print("uuid v4:", crypto.uuidV4())
+print("uuid v7:", crypto.uuidV7())
+
+-- password storage.
+local stored = crypto.hashPassword("hunter2")
+assert(crypto.verifyPassword("hunter2", stored))
+assert(not crypto.verifyPassword("nope", stored))
+
+-- authenticated encryption.
+local key = crypto.randomBytes(32)
+local blob = crypto.encrypt(key, "attack at dawn")
+assert(crypto.decrypt(key, blob) == "attack at dawn")
+
+-- key derivation.
+local k1 = crypto.pbkdf2("password", "salt", 1, 32, "SHA256")
+assert(#k1 == 32)
+local k2 = crypto.hkdf(key, "", "session", 32, "SHA256")
+assert(#k2 == 32)
+
+print("crypto extra example ok")
+```
+
 ## Under the hood
 
-Hashes, HMAC, and random bytes are provided by OpenSSL.
+Hashes, HMAC, random bytes, base64/hex codecs, UUIDs, scrypt password hashing, AES-256-GCM, and PBKDF2/HKDF are all provided by OpenSSL.

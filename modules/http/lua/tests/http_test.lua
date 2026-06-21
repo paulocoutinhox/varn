@@ -21,7 +21,7 @@ http.createServer(function(req, res)
 end):listen({ host = "127.0.0.1", port = port })
 
 local function get(path)
-    return http.client.request({
+    return http.client.requestRaw({
         url = "http://127.0.0.1:" .. port .. path,
         method = "GET",
         headers = {},

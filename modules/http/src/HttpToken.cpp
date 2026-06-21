@@ -30,68 +30,22 @@ bool HttpToken::constantTimeEqual(const std::string& a, const std::string& b)
 
 std::string HttpToken::base64UrlEncode(const std::string& input)
 {
-    static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    std::string out;
-    int value = 0;
-    int bits = -6;
-    for (unsigned char c : input)
-    {
-        value = (value << 8) + c;
-        bits += 8;
-        while (bits >= 0)
-        {
-            out += table[(value >> bits) & 0x3F];
-            bits -= 6;
-        }
-    }
-
-    if (bits > -6)
-    {
-        out += table[((value << 8) >> (bits + 8)) & 0x3F];
-    }
-
-    return out;
+    return varn::crypto::CryptoPrimitives::base64Encode(input, true, false);
 }
 
 bool HttpToken::base64UrlDecode(const std::string& input, std::string& out)
 {
-    auto sextet = [](char c) -> int
+    try
     {
-        if (c >= 'A' && c <= 'Z')
-            return c - 'A';
-        if (c >= 'a' && c <= 'z')
-            return c - 'a' + 26;
-        if (c >= '0' && c <= '9')
-            return c - '0' + 52;
-        if (c == '-')
-            return 62;
-        if (c == '_')
-            return 63;
-        return -1;
-    };
-
-    out.clear();
-    int value = 0;
-    int bits = -8;
-    for (char c : input)
-    {
-        const int decoded = sextet(c);
-        if (decoded < 0)
-        {
-            // reject any character outside the base64url alphabet so malformed segments cannot decode.
-            return false;
-        }
-
-        value = (value << 6) + decoded;
-        bits += 6;
-        if (bits >= 0)
-        {
-            out += static_cast<char>((value >> bits) & 0xFF);
-            bits -= 8;
-        }
+        out = varn::crypto::CryptoPrimitives::base64Decode(input, true);
+        return true;
     }
-
-    return true;
+    catch (const std::exception&)
+    {
+        // reject any character outside the base64url alphabet so malformed segments cannot decode.
+        out.clear();
+        return false;
+    }
 }
 
 JwtVerifyOptions HttpToken::readJwtVerifyOptions(lua_State* L, int optsIdx)

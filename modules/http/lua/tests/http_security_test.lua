@@ -19,7 +19,7 @@ local function request(method, path, headers, body)
     if body then
         headers["Content-Length"] = tostring(#body)
     end
-    return http.client.request({
+    return http.client.requestRaw({
         url = base .. path,
         method = method,
         headers = headers,

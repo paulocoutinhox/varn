@@ -19,7 +19,7 @@ local function request(method, path, headers, body)
     if body then
         headers["Content-Length"] = tostring(#body)
     end
-    return http.client.request({
+    return http.client.requestRaw({
         url = base .. path,
         method = method,
         headers = headers,
@@ -61,6 +61,16 @@ end):name("users.show"):where("id", "int")
 
 app:get("/links", function(ctx)
     ctx:json({ url = app:url("users.show", { id = 42 }) })
+end)
+
+-- a wildcard route captures the remaining path under ctx.params.wildcard.
+app:get("/files/*", function(ctx)
+    ctx:json({ tail = ctx.params.wildcard })
+end)
+
+-- an optional param matches the route with or without its trailing segment.
+app:get("/posts/:id?", function(ctx)
+    ctx:json({ id = ctx.params.id or "none" })
 end)
 
 -- every verb resolves to its own handler.
@@ -188,6 +198,18 @@ async.run(function()
     -- the named route builds the expected url.
     local _, linksBody = parseWire(get("/links"))
     assert(linksBody:find("/users/42", 1, true), "named url build failed")
+
+    -- the wildcard route captures a deep tail and an empty tail alike.
+    local _, deepTail = parseWire(get("/files/docs/2024/report.pdf"))
+    assert(jsonField(deepTail, "tail") == "docs/2024/report.pdf", "wildcard deep tail failed")
+    local _, emptyTail = parseWire(get("/files"))
+    assert(jsonField(emptyTail, "tail") == "", "wildcard empty tail failed")
+
+    -- the optional param resolves with and without its segment.
+    local _, withId = parseWire(get("/posts/7"))
+    assert(jsonField(withId, "id") == "7", "optional param present failed")
+    local _, withoutId = parseWire(get("/posts"))
+    assert(jsonField(withoutId, "id") == "none", "optional param absent failed")
 
     -- the verbs each resolve to their own handler.
     assert(jsonField(select(2, parseWire(request("POST", "/verb"))), "verb") == "post", "post verb failed")
