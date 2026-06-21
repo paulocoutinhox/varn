@@ -23,13 +23,14 @@ Runtime& AsyncModule::luaRuntime(lua_State* L)
 int AsyncModule::luaSleep(lua_State* L)
 {
     auto& rt = luaRuntime(L);
-    auto ms = static_cast<int>(luaL_checkinteger(L, 1));
+    const lua_Integer requested = luaL_checkinteger(L, 1);
+    const long long ms = requested > 0 ? static_cast<long long>(requested) : 0;
     auto promise = std::make_shared<Promise>(rt);
 
 #if defined(__EMSCRIPTEN__)
     rt.taskPool().post([promise, ms]
                        {
-        emscripten_sleep(ms);
+        emscripten_sleep(static_cast<unsigned int>(ms));
         promise->resolve("ok"); });
 #else
     // schedule on the loop timer so the sleep does not occupy a worker thread for its whole duration.
@@ -61,7 +62,7 @@ int AsyncModule::entryBody(lua_State* L)
 {
     const lua_KContext ctx = lua_toboolean(L, lua_upvalueindex(2)) ? 1 : 0;
 
-    // run the user function under a protected call that survives await yields so an uncaught error becomes a single reported outcome instead of being lost inside the resume machinery.
+    // run the user function under a protected call that survives await yields so an uncaught error is reported once.
     lua_pushvalue(L, lua_upvalueindex(1));
     const int status = lua_pcallk(L, 0, 0, 0, ctx, &AsyncModule::entryContinuation);
     return entryContinuation(L, status, ctx);

@@ -346,9 +346,10 @@ class HttpConnection;
 class ReactorResponse final : public HttpResponse
 {
 public:
-    ReactorResponse(std::shared_ptr<HttpConnection> conn, bool keepAlive)
+    ReactorResponse(std::shared_ptr<HttpConnection> conn, bool keepAlive, bool headersOnly)
         : connection(std::move(conn))
         , keepAlive(keepAlive)
+        , headersOnly(headersOnly)
     {
     }
 
@@ -397,6 +398,7 @@ private:
 
     std::shared_ptr<HttpConnection> connection;
     bool keepAlive;
+    bool headersOnly;
     bool finished = false;
     int statusCode = 200;
     std::map<std::string, std::string> headerMap;
@@ -475,6 +477,7 @@ public:
     {
         writeBuffer = std::move(data);
         writeOffset = 0;
+        lastWriteMs = nowMs();
         keepAlive = keepAliveAfter;
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool
@@ -485,6 +488,7 @@ public:
     {
         writeBuffer = std::move(head);
         writeOffset = 0;
+        lastWriteMs = nowMs();
         keepAlive = keepAliveAfter;
 
         // a head-only response or an empty range has no body to stream after the headers.
@@ -520,6 +524,7 @@ public:
         keepAlive = true;
         writeBuffer = std::move(response);
         writeOffset = 0;
+        lastWriteMs = nowMs();
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool
                         { return self->onWritable(); });
@@ -1325,7 +1330,7 @@ private:
             return;
         }
 
-        auto response = std::make_shared<ReactorResponse>(shared_from_this(), keepAlive);
+        auto response = std::make_shared<ReactorResponse>(shared_from_this(), keepAlive, request.method == "HEAD");
 
         // a matching public file is served ahead of the user handler and streamed off the loop.
         if (staticFiles && staticFiles->tryServe(request, *response))
@@ -1612,6 +1617,7 @@ private:
         keepAlive = false;
         writeBuffer = std::move(head);
         writeOffset = 0;
+        lastWriteMs = nowMs();
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool
                         { return self->onWritable(); });
@@ -1771,7 +1777,9 @@ void ReactorResponse::end(const std::string& body)
 
     const bool bodyless = statusCode == 204 || statusCode == 304;
     std::string head = buildHead(bodyBuffer.size(), !bodyless);
-    if (!bodyless)
+
+    // a head request still advertises Content-Length but carries no body.
+    if (!bodyless && !headersOnly)
     {
         head += bodyBuffer;
     }

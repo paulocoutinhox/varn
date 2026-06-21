@@ -63,17 +63,21 @@ public:
         auto self = shared_from_this();
         loop.watchRead(socket, [self, maxBytes, callback = std::move(callback)]() -> bool
                        {
-            try {
+            try
+            {
                 const int capped = maxBytes < kMaxReceiveBytes ? maxBytes : kMaxReceiveBytes;
                 std::vector<char> buffer(static_cast<std::size_t>(capped));
                 const int received = self->socket.receiveBytes(buffer.data(), capped);
-                if (received < 0) {
+                if (received < 0)
+                {
                     return false;
                 }
 
                 callback(true, received > 0 ? std::string(buffer.data(), static_cast<std::size_t>(received)) : std::string());
                 return true;
-            } catch (const std::exception& ex) {
+            }
+            catch (const std::exception& ex)
+            {
                 callback(false, ex.what());
                 return true;
             } });
@@ -92,16 +96,20 @@ public:
         auto sent = std::make_shared<std::size_t>(0);
         loop.watchWrite(socket, [self, payload, sent, callback = std::move(callback)]() -> bool
                         {
-            try {
-                while (*sent < payload->size()) {
+            try
+            {
+                while (*sent < payload->size())
+                {
                     const std::size_t remaining = payload->size() - *sent;
                     const int chunk = static_cast<int>(std::min(remaining, static_cast<std::size_t>(INT_MAX)));
                     const int wrote = self->socket.sendBytes(payload->data() + *sent, chunk);
-                    if (wrote < 0) {
+                    if (wrote < 0)
+                    {
                         return false;
                     }
 
-                    if (wrote == 0) {
+                    if (wrote == 0)
+                    {
                         callback(false, "[PocoTcpConnection] The connection was closed before all data was sent.");
                         return true;
                     }
@@ -111,7 +119,9 @@ public:
 
                 callback(true, std::string());
                 return true;
-            } catch (const std::exception& ex) {
+            }
+            catch (const std::exception& ex)
+            {
                 callback(false, ex.what());
                 return true;
             } });
@@ -150,11 +160,14 @@ public:
         auto self = shared_from_this();
         loop.watchRead(server, [self, callback = std::move(callback)]() -> bool
                        {
-            try {
+            try
+            {
                 Poco::Net::StreamSocket accepted = self->server.acceptConnection();
                 callback(std::make_shared<PocoTcpConnection>(std::move(accepted), self->loop), "");
                 return true;
-            } catch (const std::exception& ex) {
+            }
+            catch (const std::exception& ex)
+            {
                 callback(nullptr, ex.what());
                 return true;
             } });
@@ -174,7 +187,7 @@ private:
 
 } // namespace
 
-void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, ConnectCallback callback)
+void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, int timeoutMs, ConnectCallback callback)
 {
     EventLoop& loop = runtime.mainLoop();
 
@@ -191,22 +204,51 @@ void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::s
 
     socket.setBlocking(false);
 
-    loop.watchWrite(socket, [&loop, socket, callback = std::move(callback)]() mutable -> bool
-                    {
-        int error = 0;
-        try {
-            error = socket.impl()->socketError();
-        } catch (...) {
-            error = -1;
-        }
+    // the write watcher and the optional timeout race to settle the connect, so the first to fire wins and the other becomes a no-op.
+    auto settled = std::make_shared<bool>(false);
+    auto shared = std::make_shared<ConnectCallback>(std::move(callback));
 
-        if (error != 0) {
-            callback(nullptr, "[SocketTransport] The connection could not be established.");
+    loop.watchWrite(socket, [&loop, socket, settled, shared]() mutable -> bool
+                    {
+        if (*settled)
+        {
             return true;
         }
 
-        callback(std::make_shared<PocoTcpConnection>(socket, loop), "");
+        *settled = true;
+
+        int error = 0;
+        try
+        {
+            error = socket.impl()->socketError();
+        }
+        catch (...)
+        {
+            error = -1;
+        }
+
+        if (error != 0)
+        {
+            (*shared)(nullptr, "[SocketTransport] The connection could not be established.");
+            return true;
+        }
+
+        (*shared)(std::make_shared<PocoTcpConnection>(socket, loop), "");
         return true; });
+
+    if (timeoutMs > 0)
+    {
+        loop.postDelayed(timeoutMs, [&loop, socket, settled, shared]() mutable
+                         {
+            if (*settled)
+            {
+                return;
+            }
+
+            *settled = true;
+            loop.closeSocket(socket);
+            (*shared)(nullptr, "[SocketTransport] The connection timed out."); });
+    }
 }
 
 std::shared_ptr<TcpListener> SocketTransport::listen(varn::runtime::Runtime& runtime, const std::string& host, int port, int backlog)

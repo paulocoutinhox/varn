@@ -4,7 +4,7 @@ Async TCP and UDP sockets. Every operation returns a promise.
 
 ## TCP
 
-- `socket.tcp.connect(host, port)` → promise resolving to a socket.
+- `socket.tcp.connect(host, port, timeoutMs?)` → promise resolving to a socket. With `timeoutMs` set, a connect that does not complete in time rejects instead of waiting for the OS connect timeout; without it the OS default applies.
 - `socket.tcp.listen(host, port, backlog?)` → promise resolving to a listener (`backlog` defaults to `64`).
 - Socket: `sock:send(data)`, `sock:receive(maxBytes?)` (default `65536`), and `sock:close()` all return promises.
 - Listener: `listener:accept()` (resolves to a socket) and `listener:close()`.

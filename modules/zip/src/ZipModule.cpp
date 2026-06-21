@@ -98,6 +98,14 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             throw std::runtime_error("[ZipModule] An entry inside the archive could not be opened.");
         }
 
+        // a pre-existing symlink at the target name would redirect the write outside the root, so refuse to follow it.
+        if (fs::is_symlink(outFile))
+        {
+            zip_fclose(zf);
+            zip_discard(za);
+            throw std::runtime_error("[ZipModule] An entry target already exists as a symlink.");
+        }
+
         std::ofstream out(outFile, std::ios::binary);
         if (!out)
         {

@@ -29,7 +29,6 @@ public:
     WasmHost() = delete;
 
     static RunResult runChunk(const std::string& source);
-    // drops the cached runtime so the next runChunk starts from a fresh lua_State, since otherwise globals, registered listeners, and pending coroutines from earlier chunks survive across calls as intended REPL behavior that offers no recovery when a chunk leaves the runtime in a bad state.
     static void resetRuntime();
 
 private:
@@ -145,6 +144,7 @@ std::unique_ptr<varn::runtime::Runtime>& WasmHost::runtime()
 
 void WasmHost::resetRuntime()
 {
+    // drop the cached runtime so the next chunk starts on a fresh lua_State instead of inheriting globals, listeners, and pending coroutines from earlier chunks.
     auto& rtPtr = runtime();
     if (rtPtr)
     {

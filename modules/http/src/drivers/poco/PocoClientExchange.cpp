@@ -30,8 +30,7 @@ std::string PocoClientExchange::performHttp(
 {
     const std::string path = uri.getPathAndQuery().empty() ? "/" : uri.getPathAndQuery();
     const std::string host = uri.getHost();
-    const Poco::UInt16 port = static_cast<Poco::UInt16>(
-        uri.getPort() == 0 ? (uri.getScheme() == "https" ? 443 : 80) : uri.getPort());
+    const Poco::UInt16 port = static_cast<Poco::UInt16>(uri.getPort());
 
     Poco::Net::HTTPClientSession session(host, port);
     session.setTimeout(Poco::Timespan(options.timeoutSeconds, 0));
@@ -63,7 +62,7 @@ std::string PocoClientExchange::performHttps(
 
     const std::string path = uri.getPathAndQuery().empty() ? "/" : uri.getPathAndQuery();
     const std::string host = uri.getHost();
-    const Poco::UInt16 port = static_cast<Poco::UInt16>(uri.getPort() == 0 ? 443 : uri.getPort());
+    const Poco::UInt16 port = static_cast<Poco::UInt16>(uri.getPort());
 
     Poco::Net::HTTPSClientSession session(host, port, tlsClientContext(options.verifyTls));
     session.setTimeout(Poco::Timespan(options.timeoutSeconds, 0));

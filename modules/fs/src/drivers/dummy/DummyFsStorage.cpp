@@ -31,4 +31,9 @@ void FsStorage::removeRecursive(const std::string& /*path*/)
     throw std::runtime_error("[FsStorage] The file system module is not available in this build.");
 }
 
+std::shared_ptr<FsHandle> FsStorage::open(const std::string& /*path*/, const std::string& /*mode*/)
+{
+    throw std::runtime_error("[FsStorage] The file system module is not available in this build.");
+}
+
 } // namespace varn::fs

@@ -29,11 +29,13 @@ void HttpClientModule::readHeadersTable(lua_State* L, int absIndex, std::map<std
     {
         // coerce a copy of the key so lua_next still sees the original on the next step.
         lua_pushvalue(L, -2);
-        const char* key = lua_tostring(L, -1);
-        const char* val = lua_tostring(L, -2);
+        std::size_t keyLen = 0;
+        std::size_t valLen = 0;
+        const char* key = lua_tolstring(L, -1, &keyLen);
+        const char* val = lua_tolstring(L, -2, &valLen);
         if (key != nullptr && val != nullptr)
         {
-            out.emplace(key, val);
+            out.emplace(std::string(key, keyLen), std::string(val, valLen));
         }
 
         lua_pop(L, 2);

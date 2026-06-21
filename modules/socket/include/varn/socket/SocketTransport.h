@@ -61,7 +61,7 @@ class SocketTransport
 public:
     SocketTransport() = delete;
 
-    static void connectAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, ConnectCallback callback);
+    static void connectAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, int timeoutMs, ConnectCallback callback);
     static std::shared_ptr<TcpListener> listen(varn::runtime::Runtime& runtime, const std::string& host, int port, int backlog);
     static std::shared_ptr<UdpSocket> bindUdp(varn::runtime::Runtime& runtime, const std::string& host, int port);
 };

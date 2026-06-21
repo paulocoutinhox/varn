@@ -171,7 +171,7 @@ int Promise::prepareAwait(lua_State* L)
 
 void Promise::runPendingResumes()
 {
-    // during teardown the loop is stopping and the lua state is about to go away, so never touch it.
+    // the runtime is shutting down and the lua state is gone, so skip the resume.
     if (runtime.stopped())
     {
         return;
@@ -187,12 +187,24 @@ void Promise::runPendingResumes()
     bool useCustom = false;
     {
         std::lock_guard<std::mutex> lock(mutex);
+        if (waitingRefs.empty())
+        {
+            return;
+        }
+
         refs.swap(waitingRefs);
         phaseSnapshot = phase;
-        valueSnapshot = value;
-        errorSnapshot = error;
-        useCustom = customResolved;
-        customPushSnapshot = customPush;
+
+        if (phaseSnapshot == State::Resolved)
+        {
+            valueSnapshot = value;
+            useCustom = customResolved;
+            customPushSnapshot = customPush;
+        }
+        else
+        {
+            errorSnapshot = error;
+        }
     }
 
     for (int ref : refs)

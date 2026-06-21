@@ -54,20 +54,25 @@ public:
         auto payload = std::make_shared<std::string>(std::move(data));
         loop.watchWrite(socket, [self, payload, destination, callback = std::move(callback)]() -> bool
                         {
-            try {
+            try
+            {
                 const int wrote = self->socket.sendTo(payload->data(), static_cast<int>(payload->size()), *destination);
-                if (wrote < 0) {
+                if (wrote < 0)
+                {
                     return false;
                 }
 
-                if (static_cast<std::size_t>(wrote) != payload->size()) {
+                if (static_cast<std::size_t>(wrote) != payload->size())
+                {
                     callback(false, "[PocoUdpSocket] The datagram could not be fully sent.");
                     return true;
                 }
 
                 callback(true, std::string());
                 return true;
-            } catch (const std::exception& ex) {
+            }
+            catch (const std::exception& ex)
+            {
                 callback(false, ex.what());
                 return true;
             } });
@@ -85,16 +90,19 @@ public:
         auto self = shared_from_this();
         loop.watchRead(socket, [self, capacity, callback = std::move(callback)]() -> bool
                        {
-            try {
+            try
+            {
                 std::vector<char> buffer(static_cast<std::size_t>(capacity));
                 Poco::Net::SocketAddress sender;
                 const int received = self->socket.receiveFrom(buffer.data(), capacity, sender);
-                if (received < 0) {
+                if (received < 0)
+                {
                     return false;
                 }
 
                 UdpDatagram datagram;
-                if (received > 0) {
+                if (received > 0)
+                {
                     datagram.data.assign(buffer.data(), static_cast<std::size_t>(received));
                 }
 
@@ -102,7 +110,9 @@ public:
                 datagram.port = sender.port();
                 callback(true, datagram, "");
                 return true;
-            } catch (const std::exception& ex) {
+            }
+            catch (const std::exception& ex)
+            {
                 callback(false, UdpDatagram{}, ex.what());
                 return true;
             } });

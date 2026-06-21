@@ -27,6 +27,13 @@ void onWorkerSignal(int)
 {
     gWorkerShutdown = 1;
 }
+
+void resetChildSignals()
+{
+    // a worker terminates on the parent's shutdown signal rather than inheriting the supervisor handler.
+    signal(SIGINT, SIG_DFL);
+    signal(SIGTERM, SIG_DFL);
+}
 } // namespace
 #endif
 
@@ -63,6 +70,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
 
         if (pid == 0)
         {
+            resetChildSignals();
             _exit(runChild());
         }
 
@@ -106,12 +114,18 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
         const pid_t replacement = fork();
         if (replacement == 0)
         {
+            resetChildSignals();
             _exit(runChild());
         }
 
         if (replacement > 0)
         {
             *slot = replacement;
+        }
+        else
+        {
+            log::Log::error("App", "Failed to restart a worker process.");
+            workers.erase(slot);
         }
     }
 

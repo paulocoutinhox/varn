@@ -13,6 +13,188 @@ namespace varn::fs
 using varn::async::Promise;
 using varn::runtime::Runtime;
 
+namespace
+{
+constexpr const char* kFsHandleMeta = "varn.FsHandle";
+
+Runtime& fsRuntime(lua_State* L)
+{
+    return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
+}
+
+std::string checkPath(lua_State* L, int index)
+{
+    std::string path = varn::lua::LuaHelpers::checkString(L, index);
+
+    // a null byte truncates the path at the os boundary, so reject it rather than act on a different path than was asked for.
+    if (path.find('\0') != std::string::npos)
+    {
+        luaL_error(L, "[FsModule] A path must not contain a null byte.");
+    }
+
+    return path;
+}
+
+void pushHandle(lua_State* L, std::shared_ptr<FsHandle> handle)
+{
+    void* memory = lua_newuserdatauv(L, sizeof(std::shared_ptr<FsHandle>), 0);
+    new (memory) std::shared_ptr<FsHandle>(std::move(handle));
+    luaL_getmetatable(L, kFsHandleMeta);
+    lua_setmetatable(L, -2);
+}
+
+std::shared_ptr<FsHandle>& checkHandle(lua_State* L)
+{
+    return *static_cast<std::shared_ptr<FsHandle>*>(luaL_checkudata(L, 1, kFsHandleMeta));
+}
+
+int luaHandleGc(lua_State* L)
+{
+    auto* holder = static_cast<std::shared_ptr<FsHandle>*>(lua_touserdata(L, 1));
+    if (holder != nullptr)
+    {
+        std::destroy_at(holder);
+    }
+
+    return 0;
+}
+
+int luaHandleRead(lua_State* L)
+{
+    auto handle = checkHandle(L);
+    const lua_Integer maxArg = luaL_optinteger(L, 2, 65536);
+    if (maxArg <= 0)
+    {
+        return luaL_error(L, "[FsModule] The maximum number of bytes to read must be positive.");
+    }
+
+    const std::size_t maxBytes = static_cast<std::size_t>(maxArg);
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, handle, maxBytes]
+                     {
+        try
+        {
+            promise->resolve(handle->read(maxBytes));
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int luaHandleWrite(lua_State* L)
+{
+    auto handle = checkHandle(L);
+    std::size_t len = 0;
+    const char* raw = luaL_checklstring(L, 2, &len);
+    std::string data(raw, len);
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, handle, data = std::move(data)]
+                     {
+        try
+        {
+            handle->write(data);
+            promise->resolve("ok");
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int luaHandleClose(lua_State* L)
+{
+    auto handle = checkHandle(L);
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, handle]
+                     {
+        try
+        {
+            handle->close();
+            promise->resolve("ok");
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int luaFileOpen(lua_State* L)
+{
+    std::string path = checkPath(L, 1);
+    std::string mode = varn::lua::LuaHelpers::optionalString(L, 2, "r");
+    auto& rt = fsRuntime(L);
+    auto promise = std::make_shared<Promise>(rt);
+
+    rt.ioPool().post([promise, path = std::move(path), mode = std::move(mode)]
+                     {
+        try
+        {
+            std::shared_ptr<FsHandle> handle = FsStorage::open(path, mode);
+            promise->resolveCustom([handle](lua_State* lua)
+                                   { pushHandle(lua, handle); });
+        }
+        catch (const std::exception& ex)
+        {
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            promise->reject("[FsModule] The operation failed with a non-standard error.");
+        } });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+void createHandleMetatable(lua_State* L)
+{
+    if (luaL_newmetatable(L, kFsHandleMeta))
+    {
+        lua_pushcfunction(L, &luaHandleGc);
+        lua_setfield(L, -2, "__gc");
+
+        lua_newtable(L);
+        lua_pushcfunction(L, &luaHandleRead);
+        lua_setfield(L, -2, "read");
+        lua_pushcfunction(L, &luaHandleWrite);
+        lua_setfield(L, -2, "write");
+        lua_pushcfunction(L, &luaHandleClose);
+        lua_setfield(L, -2, "close");
+        lua_setfield(L, -2, "__index");
+    }
+
+    lua_pop(L, 1);
+}
+} // namespace
+
 Runtime& FsModule::luaRuntime(lua_State* L)
 {
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
@@ -21,7 +203,7 @@ Runtime& FsModule::luaRuntime(lua_State* L)
 int FsModule::luaReadFile(lua_State* L)
 {
     auto& rt = luaRuntime(L);
-    std::string path = varn::lua::LuaHelpers::checkString(L, 1);
+    std::string path = checkPath(L, 1);
     auto promise = std::make_shared<Promise>(rt);
 
     rt.ioPool().post([promise, path = std::move(path)]
@@ -42,7 +224,7 @@ int FsModule::luaReadFile(lua_State* L)
 int FsModule::luaWriteFile(lua_State* L)
 {
     auto& rt = luaRuntime(L);
-    std::string path = varn::lua::LuaHelpers::checkString(L, 1);
+    std::string path = checkPath(L, 1);
     std::string content = varn::lua::LuaHelpers::checkString(L, 2);
     auto promise = std::make_shared<Promise>(rt);
 
@@ -64,7 +246,7 @@ int FsModule::luaWriteFile(lua_State* L)
 
 int FsModule::luaExists(lua_State* L)
 {
-    std::string path = varn::lua::LuaHelpers::checkString(L, 1);
+    std::string path = checkPath(L, 1);
     lua_pushboolean(L, FsStorage::exists(path));
     return 1;
 }
@@ -72,7 +254,7 @@ int FsModule::luaExists(lua_State* L)
 int FsModule::luaMkdir(lua_State* L)
 {
     auto& rt = luaRuntime(L);
-    std::string path = varn::lua::LuaHelpers::checkString(L, 1);
+    std::string path = checkPath(L, 1);
     auto promise = std::make_shared<Promise>(rt);
 
     rt.ioPool().post([promise, path = std::move(path)]
@@ -93,7 +275,7 @@ int FsModule::luaMkdir(lua_State* L)
 int FsModule::luaRemoveRecursive(lua_State* L)
 {
     auto& rt = luaRuntime(L);
-    std::string path = varn::lua::LuaHelpers::checkString(L, 1);
+    std::string path = checkPath(L, 1);
     auto promise = std::make_shared<Promise>(rt);
 
     rt.ioPool().post([promise, path = std::move(path)]
@@ -113,6 +295,8 @@ int FsModule::luaRemoveRecursive(lua_State* L)
 
 int FsModule::luaOpen(lua_State* L)
 {
+    createHandleMetatable(L);
+
     lua_newtable(L);
 
     lua_pushcfunction(L, &FsModule::luaReadFile);
@@ -129,6 +313,9 @@ int FsModule::luaOpen(lua_State* L)
 
     lua_pushcfunction(L, &FsModule::luaRemoveRecursive);
     lua_setfield(L, -2, "removeRecursive");
+
+    lua_pushcfunction(L, &luaFileOpen);
+    lua_setfield(L, -2, "open");
 
     return 1;
 }

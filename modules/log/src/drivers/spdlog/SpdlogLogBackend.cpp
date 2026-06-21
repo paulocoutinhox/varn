@@ -47,7 +47,7 @@ public:
 void Log::emit(Level level, std::string_view message)
 {
     SpdlogBridge::ensureLogger();
-    spdlog::default_logger()->log(SpdlogBridge::toLevel(level), std::string(message));
+    spdlog::default_logger()->log(SpdlogBridge::toLevel(level), spdlog::string_view_t(message.data(), message.size()));
 }
 
 } // namespace varn::log

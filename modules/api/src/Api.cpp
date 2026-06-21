@@ -60,7 +60,14 @@ extern "C"
     {
         if (runtime)
         {
-            reinterpret_cast<varn::runtime::Runtime*>(runtime)->stop();
+            // the c abi boundary cannot propagate a c++ exception, so contain it here like the other entry points do.
+            try
+            {
+                reinterpret_cast<varn::runtime::Runtime*>(runtime)->stop();
+            }
+            catch (...)
+            {
+            }
         }
     }
 

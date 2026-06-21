@@ -25,10 +25,10 @@ async.run(function()
     assert(missing == nil, "missing read should yield nil content")
     assert(merr, "missing read should return an error")
 
-    -- FS-008, FS-161 NUL in path: an embedded NUL is handled as an unreadable path, not a truncation crash.
-    local nulRead, nerr = fs.readFile(dir .. "/fs_sec\0.txt"):await()
-    assert(nulRead == nil, "NUL path read should yield nil content")
-    assert(nerr, "NUL path read should return an error")
+    -- FS-008, FS-161 NUL in path: an embedded NUL is rejected outright rather than silently truncating the path.
+    local nulOk, nerr = pcall(function() return fs.readFile(dir .. "/fs_sec\0.txt") end)
+    assert(not nulOk, "NUL path should be rejected")
+    assert(tostring(nerr):find("null byte"), "NUL path error should name the null byte")
 
     -- FS-014 control bytes in path: a newline in the path is handled without crashing.
     local ctrlRead, cerr = fs.readFile(dir .. "/fs_sec\n_ctrl.txt"):await()
