@@ -1,5 +1,7 @@
 #include "varn/socket/SocketTransport.h"
 
+#include "PocoSocketStream.h"
+
 #include "varn/runtime/EventLoop.h"
 #include "varn/runtime/Runtime.h"
 
@@ -121,19 +123,7 @@ public:
     void close() override
     {
         closed = true;
-        if (loop.isRunning())
-        {
-            loop.closeSocket(socket);
-            return;
-        }
-
-        try
-        {
-            socket.impl()->close();
-        }
-        catch (...)
-        {
-        }
+        closeManagedSocket(loop, socket);
     }
 
 private:

@@ -20,7 +20,7 @@ public:
 
     static std::string base64Encode(std::string_view data, bool urlSafe, bool padding);
 
-    static std::string base64Decode(std::string_view data, bool urlSafe);
+    static std::string base64Decode(std::string_view data);
 
     static std::string hexEncode(std::string_view data);
 

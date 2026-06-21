@@ -54,7 +54,6 @@ int ProcessModule::luaExec(lua_State* L)
 {
     std::string command = varn::lua::LuaHelpers::checkString(L, 1);
 
-    // rejects a command containing a null byte
     if (command.find('\0') != std::string::npos)
     {
         return luaL_error(L, "[ProcessModule] A command must not contain a null byte.");
@@ -63,20 +62,22 @@ int ProcessModule::luaExec(lua_State* L)
     auto& rt = luaRuntime(L);
     auto promise = std::make_shared<Promise>(rt);
 
+    // clang-format off
     rt.ioPool().post([promise, command = std::move(command)]
-                     {
+    {
         try
         {
             const ProcessResult result = ProcessRunner::exec(command);
             promise->resolveCustom([result](lua_State* lua)
-                                   {
+            {
                 lua_createtable(lua, 0, 3);
                 lua_pushlstring(lua, result.stdoutData.data(), result.stdoutData.size());
                 lua_setfield(lua, -2, "stdout");
                 lua_pushlstring(lua, result.stderrData.data(), result.stderrData.size());
                 lua_setfield(lua, -2, "stderr");
                 lua_pushinteger(lua, static_cast<lua_Integer>(result.code));
-                lua_setfield(lua, -2, "code"); });
+                lua_setfield(lua, -2, "code");
+            });
         }
         catch (const std::exception& ex)
         {
@@ -85,7 +86,9 @@ int ProcessModule::luaExec(lua_State* L)
         catch (...)
         {
             promise->reject("[ProcessModule] The operation failed with a non-standard error.");
-        } });
+        }
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;

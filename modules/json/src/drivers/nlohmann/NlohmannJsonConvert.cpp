@@ -25,7 +25,15 @@ bool JsonConvert::isSequence(lua_State* L, int index, lua_Integer& length)
     while (lua_next(L, index) != 0)
     {
         ++counted;
-        if (!lua_isinteger(L, -2) || lua_tointeger(L, -2) < 1 || lua_tointeger(L, -2) > length)
+
+        if (!lua_isinteger(L, -2))
+        {
+            lua_pop(L, 2);
+            return false;
+        }
+
+        const lua_Integer key = lua_tointeger(L, -2);
+        if (key < 1 || key > length)
         {
             lua_pop(L, 2);
             return false;

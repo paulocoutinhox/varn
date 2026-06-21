@@ -143,6 +143,7 @@ int compareInstant(int64_t a, int64_t b)
     {
         return -1;
     }
+
     if (a > b)
     {
         return 1;
@@ -384,6 +385,20 @@ long long fieldOr(lua_State* L, int table, const char* key, long long fallback)
     const long long value = luaL_optinteger(L, -1, fallback);
     lua_pop(L, 1);
     return value;
+}
+
+int64_t shiftByDeltaTable(lua_State* L, int64_t millis, int table, int sign)
+{
+    const long long years = fieldOr(L, table, "years", 0);
+    const long long months = fieldOr(L, table, "months", 0);
+    const long long weeks = fieldOr(L, table, "weeks", 0);
+    const long long days = fieldOr(L, table, "days", 0);
+    const long long hours = fieldOr(L, table, "hours", 0);
+    const long long minutes = fieldOr(L, table, "minutes", 0);
+    const long long seconds = fieldOr(L, table, "seconds", 0);
+    const long long millisDelta = fieldOr(L, table, "millis", 0);
+
+    return shiftInstant(millis, static_cast<int>(sign * years), static_cast<int>(sign * months), sign * (weeks * 7 + days), sign * hours, sign * minutes, sign * seconds, sign * millisDelta);
 }
 
 long long requiredField(lua_State* L, int table, const char* key)
@@ -635,16 +650,7 @@ int DatetimeModule::methodAdd(lua_State* L)
     const int64_t millis = check(L, 1);
     luaL_checktype(L, 2, LUA_TTABLE);
 
-    const long long years = fieldOr(L, 2, "years", 0);
-    const long long months = fieldOr(L, 2, "months", 0);
-    const long long weeks = fieldOr(L, 2, "weeks", 0);
-    const long long days = fieldOr(L, 2, "days", 0);
-    const long long hours = fieldOr(L, 2, "hours", 0);
-    const long long minutes = fieldOr(L, 2, "minutes", 0);
-    const long long seconds = fieldOr(L, 2, "seconds", 0);
-    const long long millisDelta = fieldOr(L, 2, "millis", 0);
-
-    push(L, shiftInstant(millis, static_cast<int>(years), static_cast<int>(months), weeks * 7 + days, hours, minutes, seconds, millisDelta));
+    push(L, shiftByDeltaTable(L, millis, 2, 1));
     return 1;
 }
 
@@ -653,16 +659,7 @@ int DatetimeModule::methodSubtract(lua_State* L)
     const int64_t millis = check(L, 1);
     luaL_checktype(L, 2, LUA_TTABLE);
 
-    const long long years = fieldOr(L, 2, "years", 0);
-    const long long months = fieldOr(L, 2, "months", 0);
-    const long long weeks = fieldOr(L, 2, "weeks", 0);
-    const long long days = fieldOr(L, 2, "days", 0);
-    const long long hours = fieldOr(L, 2, "hours", 0);
-    const long long minutes = fieldOr(L, 2, "minutes", 0);
-    const long long seconds = fieldOr(L, 2, "seconds", 0);
-    const long long millisDelta = fieldOr(L, 2, "millis", 0);
-
-    push(L, shiftInstant(millis, -static_cast<int>(years), -static_cast<int>(months), -(weeks * 7 + days), -hours, -minutes, -seconds, -millisDelta));
+    push(L, shiftByDeltaTable(L, millis, 2, -1));
     return 1;
 }
 

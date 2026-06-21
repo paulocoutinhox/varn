@@ -34,7 +34,7 @@ macro(varn_libffi_add_assembly _varn_asm_file)
 
         get_filename_component(_varn_asm_base "${_varn_asm_abs}" NAME_WE)
 
-        # Same layout as blade-lang/ffi: cwd has fficonfig.h; ./include has ffi.h; upstream include for .S.
+        # preprocessor include layout: cwd holds fficonfig.h, ./include holds ffi.h, upstream include resolves the .S
         execute_process(
             COMMAND "${CMAKE_C_COMPILER}" /nologo /EP
                 /I.
@@ -153,7 +153,7 @@ endif()
 if(ANDROID)
     set(VARN_FFI_MMAP_EXEC_WRIT "1")
 endif()
-# closures.c only (re)defines FFI_MMAP_EXEC_WRIT when it is 0; Windows needs 1 (VirtualAlloc / DEP). Match that here.
+# closures.c only redefines FFI_MMAP_EXEC_WRIT when it is 0, so windows needs it preset to 1 for VirtualAlloc and DEP
 if(WIN32)
     set(VARN_FFI_MMAP_EXEC_WRIT "1")
 endif()
@@ -183,13 +183,13 @@ file(MAKE_DIRECTORY "${VARN_FFI_GEN_DIR}")
 file(MAKE_DIRECTORY "${VARN_FFI_GEN_INCLUDE}")
 
 if(VARN_FFI_EXEC_STATIC_TRAMP STREQUAL "1")
-    # tramp.c uses #ifdef FFI_EXEC_STATIC_TRAMP; the macro must be absent when disabled.
+    # tramp.c tests FFI_EXEC_STATIC_TRAMP with #ifdef, so the macro must be absent when disabled
     set(VARN_FFI_EXEC_STATIC_TRAMP_CPP [[#define FFI_EXEC_STATIC_TRAMP 1]])
 else()
     set(VARN_FFI_EXEC_STATIC_TRAMP_CPP "")
 endif()
 
-# libffi uses #ifdef have_as_* ; #define have_as_* 0 still enables the branch and breaks msvc ml64.
+# libffi tests have_as_* with #ifdef, so defining it to 0 still enables the branch and breaks msvc ml64
 set(VARN_FFI_HAVE_AS_CFI_CPP "")
 if(NOT WIN32)
     if(_varn_ffi_target MATCHES "^(X86|X86_64|X86_DARWIN)$")

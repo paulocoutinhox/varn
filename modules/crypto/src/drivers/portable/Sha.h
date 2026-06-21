@@ -7,17 +7,14 @@
 namespace varn::crypto::portable
 {
 
-// each function returns the raw digest bytes for the given message
 std::string sha1(std::string_view data);
 std::string sha224(std::string_view data);
 std::string sha256(std::string_view data);
 std::string sha384(std::string_view data);
 std::string sha512(std::string_view data);
 
-// block size in bytes for the hmac construction over each algorithm
 std::size_t blockSize(std::string_view algorithm);
 
-// reports whether the algorithm name is supported and dispatches a normalized name to its hash
 bool isSupported(std::string_view algorithm);
 std::string hashByName(std::string_view algorithm, std::string_view data);
 

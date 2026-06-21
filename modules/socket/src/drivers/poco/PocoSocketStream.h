@@ -4,6 +4,7 @@
 
 #include "varn/runtime/EventLoop.h"
 
+#include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/Socket.h>
 #include <Poco/Net/StreamSocket.h>
 
@@ -132,6 +133,54 @@ public:
 private:
     Poco::Net::StreamSocket socket;
     varn::runtime::EventLoop& loop;
+    bool closed = false;
+};
+
+class PocoStreamListener : public TcpListener, public std::enable_shared_from_this<PocoStreamListener>
+{
+public:
+    PocoStreamListener(Poco::Net::ServerSocket server, varn::runtime::EventLoop& loop, std::string closedError)
+        : server(std::move(server))
+        , loop(loop)
+        , closedError(std::move(closedError))
+    {
+        this->server.setBlocking(false);
+    }
+
+    void acceptAsync(AcceptCallback callback) override
+    {
+        if (closed)
+        {
+            callback(nullptr, closedError);
+            return;
+        }
+
+        auto self = shared_from_this();
+        loop.watchRead(server, [self, callback = std::move(callback)]() -> bool
+                       {
+            try
+            {
+                Poco::Net::StreamSocket accepted = self->server.acceptConnection();
+                callback(std::make_shared<PocoStreamConnection>(std::move(accepted), self->loop), "");
+                return true;
+            }
+            catch (const std::exception& ex)
+            {
+                callback(nullptr, ex.what());
+                return true;
+            } });
+    }
+
+    void close() override
+    {
+        closed = true;
+        closeManagedSocket(loop, server);
+    }
+
+private:
+    Poco::Net::ServerSocket server;
+    varn::runtime::EventLoop& loop;
+    std::string closedError;
     bool closed = false;
 };
 

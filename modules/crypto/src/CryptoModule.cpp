@@ -147,7 +147,7 @@ int CryptoModule::luaBase64Decode(lua_State* L)
 
     try
     {
-        const std::string out = CryptoPrimitives::base64Decode(data, false);
+        const std::string out = CryptoPrimitives::base64Decode(data);
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     }
@@ -180,7 +180,7 @@ int CryptoModule::luaBase64UrlDecode(lua_State* L)
 
     try
     {
-        const std::string out = CryptoPrimitives::base64Decode(data, true);
+        const std::string out = CryptoPrimitives::base64Decode(data);
         lua_pushlstring(L, out.data(), out.size());
         return 1;
     }

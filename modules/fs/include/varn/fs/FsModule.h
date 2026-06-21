@@ -2,11 +2,6 @@
 
 struct lua_State;
 
-namespace varn::runtime
-{
-class Runtime;
-}
-
 namespace varn::fs
 {
 
@@ -18,8 +13,6 @@ public:
     static void install(lua_State* L);
 
 private:
-    static varn::runtime::Runtime& luaRuntime(lua_State* L);
-
     static int luaReadFile(lua_State* L);
     static int luaWriteFile(lua_State* L);
     static int luaExists(lua_State* L);

@@ -336,13 +336,18 @@ int AsyncModule::promiseContinuation(lua_State* L, int status, lua_KContext ctx)
     lua_pushvalue(L, -1);
     const int valueRef = luaL_ref(L, LUA_REGISTRYINDEX);
     Runtime* runtime = &rt;
+
+    // clang-format off
     std::shared_ptr<int> refHolder(new int(valueRef), [runtime](int* ref)
-                                   {
+    {
         if (!runtime->stopped())
         {
             luaL_unref(runtime->luaState(), LUA_REGISTRYINDEX, *ref);
         }
-        delete ref; });
+
+        delete ref;
+    });
+    // clang-format on
 
     promise->resolveCustom([refHolder](lua_State* target)
                            { lua_rawgeti(target, LUA_REGISTRYINDEX, *refHolder); });

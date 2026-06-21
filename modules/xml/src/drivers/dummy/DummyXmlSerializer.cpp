@@ -21,9 +21,9 @@ bool XmlSerializer::parse(lua_State* /*L*/, const std::string& /*text*/)
     throw std::runtime_error("[XmlSerializer] The XML module is not available in this build.");
 }
 
-std::string XmlSerializer::sanitizeElementName(const std::string& raw)
+std::string XmlSerializer::sanitizeElementName(const std::string& /*raw*/)
 {
-    return raw;
+    throw std::runtime_error("[XmlSerializer] The XML module is not available in this build.");
 }
 
 } // namespace varn::xml

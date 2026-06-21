@@ -37,7 +37,7 @@ bool HttpToken::base64UrlDecode(const std::string& input, std::string& out)
 {
     try
     {
-        out = varn::crypto::CryptoPrimitives::base64Decode(input, true);
+        out = varn::crypto::CryptoPrimitives::base64Decode(input);
         return true;
     }
     catch (const std::exception&)

@@ -3,6 +3,7 @@
 
 #include <lua.hpp>
 
+#include <algorithm>
 #include <exception>
 #include <string>
 
@@ -21,7 +22,7 @@ int JsonModule::readIndent(lua_State* L, int optsIndex)
     if (lua_isinteger(L, -1))
     {
         const lua_Integer value = lua_tointeger(L, -1);
-        indent = value > 0 ? static_cast<int>(value < 16 ? value : 16) : 0;
+        indent = static_cast<int>(std::clamp<lua_Integer>(value, 0, 16));
     }
 
     lua_pop(L, 1);

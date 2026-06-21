@@ -60,7 +60,6 @@ extern "C"
     {
         if (runtime)
         {
-            // contains any c++ exception at the c abi boundary
             try
             {
                 reinterpret_cast<varn::runtime::Runtime*>(runtime)->stop();
@@ -73,7 +72,13 @@ extern "C"
 
     void varn_runtime_free(varn_runtime* runtime)
     {
-        delete reinterpret_cast<varn::runtime::Runtime*>(runtime);
+        try
+        {
+            delete reinterpret_cast<varn::runtime::Runtime*>(runtime);
+        }
+        catch (...)
+        {
+        }
     }
 
     const char* varn_version(void)

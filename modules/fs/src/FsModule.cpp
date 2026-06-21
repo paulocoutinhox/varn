@@ -376,25 +376,24 @@ void createHandleMetatable(lua_State* L)
 }
 } // namespace
 
-Runtime& FsModule::luaRuntime(lua_State* L)
-{
-    return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
-}
-
 int FsModule::luaReadFile(lua_State* L)
 {
-    auto& rt = luaRuntime(L);
+    auto& rt = fsRuntime(L);
     std::string path = checkPath(L, 1);
     auto promise = std::make_shared<Promise>(rt);
 
     rt.ioPool().post([promise, path = std::move(path)]
                      {
-        try {
+        try
+        {
             promise->resolve(FsStorage::readAll(path));
-        } catch (const std::exception& ex) {
+        }
+        catch (const std::exception& ex)
+        {
             promise->reject(ex.what());
-        } catch (...) {
-            // reject on a non-standard exception
+        }
+        catch (...)
+        {
             promise->reject("[FsModule] The operation failed with a non-standard error.");
         } });
 
@@ -404,20 +403,24 @@ int FsModule::luaReadFile(lua_State* L)
 
 int FsModule::luaWriteFile(lua_State* L)
 {
-    auto& rt = luaRuntime(L);
+    auto& rt = fsRuntime(L);
     std::string path = checkPath(L, 1);
     std::string content = varn::lua::LuaHelpers::checkString(L, 2);
     auto promise = std::make_shared<Promise>(rt);
 
     rt.ioPool().post([promise, path = std::move(path), content = std::move(content)]
                      {
-        try {
+        try
+        {
             FsStorage::writeAll(path, content);
             promise->resolve("ok");
-        } catch (const std::exception& ex) {
+        }
+        catch (const std::exception& ex)
+        {
             promise->reject(ex.what());
-        } catch (...) {
-            // reject on a non-standard exception
+        }
+        catch (...)
+        {
             promise->reject("[FsModule] The operation failed with a non-standard error.");
         } });
 
@@ -434,18 +437,23 @@ int FsModule::luaExists(lua_State* L)
 
 int FsModule::luaMkdir(lua_State* L)
 {
-    auto& rt = luaRuntime(L);
+    auto& rt = fsRuntime(L);
     std::string path = checkPath(L, 1);
     auto promise = std::make_shared<Promise>(rt);
 
     rt.ioPool().post([promise, path = std::move(path)]
                      {
-        try {
+        try
+        {
             FsStorage::mkdir(path);
             promise->resolve("ok");
-        } catch (const std::exception& ex) {
+        }
+        catch (const std::exception& ex)
+        {
             promise->reject(ex.what());
-        } catch (...) {
+        }
+        catch (...)
+        {
             promise->reject("[FsModule] The operation failed with a non-standard error.");
         } });
 
@@ -455,18 +463,23 @@ int FsModule::luaMkdir(lua_State* L)
 
 int FsModule::luaRemoveRecursive(lua_State* L)
 {
-    auto& rt = luaRuntime(L);
+    auto& rt = fsRuntime(L);
     std::string path = checkPath(L, 1);
     auto promise = std::make_shared<Promise>(rt);
 
     rt.ioPool().post([promise, path = std::move(path)]
                      {
-        try {
+        try
+        {
             FsStorage::removeRecursive(path);
             promise->resolve("ok");
-        } catch (const std::exception& ex) {
+        }
+        catch (const std::exception& ex)
+        {
             promise->reject(ex.what());
-        } catch (...) {
+        }
+        catch (...)
+        {
             promise->reject("[FsModule] The operation failed with a non-standard error.");
         } });
 

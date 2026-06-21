@@ -18,57 +18,6 @@ namespace varn::socket
 
 using varn::runtime::EventLoop;
 
-namespace
-{
-
-class PocoTcpListener : public TcpListener, public std::enable_shared_from_this<PocoTcpListener>
-{
-public:
-    PocoTcpListener(Poco::Net::ServerSocket server, EventLoop& loop)
-        : server(std::move(server))
-        , loop(loop)
-    {
-        this->server.setBlocking(false);
-    }
-
-    void acceptAsync(AcceptCallback callback) override
-    {
-        if (closed)
-        {
-            callback(nullptr, "[PocoTcpListener] The listener is closed.");
-            return;
-        }
-
-        auto self = shared_from_this();
-        loop.watchRead(server, [self, callback = std::move(callback)]() -> bool
-                       {
-            try
-            {
-                Poco::Net::StreamSocket accepted = self->server.acceptConnection();
-                callback(std::make_shared<PocoStreamConnection>(std::move(accepted), self->loop), "");
-                return true;
-            }
-            catch (const std::exception& ex)
-            {
-                callback(nullptr, ex.what());
-                return true;
-            } });
-    }
-
-    void close() override
-    {
-        closed = true;
-        closeManagedSocket(loop, server);
-    }
-
-private:
-    Poco::Net::ServerSocket server;
-    EventLoop& loop;
-    bool closed = false;
-};
-
-} // namespace
-
 void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::string& host, int port, int timeoutMs, ConnectCallback callback)
 {
     EventLoop& loop = runtime.mainLoop();
@@ -136,7 +85,7 @@ void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::s
 std::shared_ptr<TcpListener> SocketTransport::listen(varn::runtime::Runtime& runtime, const std::string& host, int port, int backlog)
 {
     Poco::Net::ServerSocket server(Poco::Net::SocketAddress(host, static_cast<Poco::UInt16>(port)), backlog);
-    return std::make_shared<PocoTcpListener>(std::move(server), runtime.mainLoop());
+    return std::make_shared<PocoStreamListener>(std::move(server), runtime.mainLoop(), "[PocoTcpListener] The listener is closed.");
 }
 
 } // namespace varn::socket

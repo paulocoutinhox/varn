@@ -93,7 +93,7 @@ std::string CryptoPrimitives::base64Encode(std::string_view data, bool urlSafe, 
     return codecs::base64Encode(data, urlSafe, padding);
 }
 
-std::string CryptoPrimitives::base64Decode(std::string_view data, bool /*urlSafe*/)
+std::string CryptoPrimitives::base64Decode(std::string_view data)
 {
     return codecs::base64Decode(data);
 }

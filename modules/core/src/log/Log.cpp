@@ -9,16 +9,14 @@ void Log::line(std::string_view module, std::string message)
 {
     std::ostringstream o;
     o << '[' << module << "] " << message;
-    const std::string line = o.str();
-    emit(Level::Info, line);
+    emit(Level::Info, o.str());
 }
 
 void Log::error(std::string_view module, std::string message)
 {
     std::ostringstream o;
     o << '[' << module << "] " << message;
-    const std::string line = o.str();
-    emit(Level::Error, line);
+    emit(Level::Error, o.str());
 }
 
 } // namespace varn::log

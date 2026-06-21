@@ -292,7 +292,7 @@ std::string CryptoPrimitives::base64Encode(std::string_view data, bool urlSafe, 
     return codecs::base64Encode(data, urlSafe, padding);
 }
 
-std::string CryptoPrimitives::base64Decode(std::string_view data, bool /*urlSafe*/)
+std::string CryptoPrimitives::base64Decode(std::string_view data)
 {
     return codecs::base64Decode(data);
 }
@@ -490,8 +490,8 @@ bool CryptoPrimitives::verifyPassword(std::string_view password, std::string_vie
     std::string expected;
     try
     {
-        salt = base64Decode(saltStr, true);
-        expected = base64Decode(hashStr, true);
+        salt = base64Decode(saltStr);
+        expected = base64Decode(hashStr);
     }
     catch (const std::exception&)
     {

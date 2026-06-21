@@ -20,12 +20,15 @@ public:
     static void ensureLogger()
     {
         static std::once_flag once;
+        // clang-format off
         std::call_once(once, []
-                       {
+        {
             auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
             auto logger = std::make_shared<spdlog::logger>("varn", sink);
             logger->set_level(spdlog::level::trace);
-            spdlog::set_default_logger(std::move(logger)); });
+            spdlog::set_default_logger(std::move(logger));
+        });
+        // clang-format on
     }
 
     static spdlog::level::level_enum toLevel(Level level)

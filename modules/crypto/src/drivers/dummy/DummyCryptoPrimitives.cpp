@@ -31,7 +31,7 @@ std::string CryptoPrimitives::base64Encode(std::string_view /*data*/, bool /*url
     throw std::runtime_error("[CryptoPrimitives] The crypto module is not available in this build.");
 }
 
-std::string CryptoPrimitives::base64Decode(std::string_view /*data*/, bool /*urlSafe*/)
+std::string CryptoPrimitives::base64Decode(std::string_view /*data*/)
 {
     throw std::runtime_error("[CryptoPrimitives] The crypto module is not available in this build.");
 }

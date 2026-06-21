@@ -1,10 +1,16 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
 
 struct lua_State;
+
+namespace varn::async
+{
+class Promise;
+}
 
 namespace varn::runtime
 {
@@ -22,6 +28,8 @@ public:
 
 private:
     static varn::runtime::Runtime& luaRuntime(lua_State* L);
+
+    static void runAsync(lua_State* L, std::function<void(varn::async::Promise&)> work);
 
     static void performExtract(const std::string& zipPath, const std::string& destDir);
     static void performCreate(const std::string& zipPath, const std::vector<std::pair<std::string, std::string>>& items);
