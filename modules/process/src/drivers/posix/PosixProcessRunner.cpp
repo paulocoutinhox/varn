@@ -125,7 +125,7 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     return result;
 }
 
-std::vector<std::pair<std::string, std::string>> ProcessRunner::environ()
+std::vector<std::pair<std::string, std::string>> ProcessRunner::environment()
 {
     std::vector<std::pair<std::string, std::string>> entries;
 

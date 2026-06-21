@@ -13,7 +13,7 @@ ProcessResult ProcessRunner::exec(const std::string& /*command*/)
     throw std::runtime_error("[ProcessRunner] The process module is not available in this build.");
 }
 
-std::vector<std::pair<std::string, std::string>> ProcessRunner::environ()
+std::vector<std::pair<std::string, std::string>> ProcessRunner::environment()
 {
     return {};
 }

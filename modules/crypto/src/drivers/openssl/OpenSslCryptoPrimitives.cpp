@@ -1,11 +1,11 @@
 #include "varn/crypto/CryptoPrimitives.h"
 
 #include <array>
+#include <chrono>
 #include <climits>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <ctime>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -530,9 +530,7 @@ std::string CryptoPrimitives::uuidV7()
     }
 
     // the first 48 bits hold a big-endian unix millisecond timestamp so the ids sort by creation time.
-    struct timespec ts;
-    timespec_get(&ts, TIME_UTC);
-    const std::uint64_t millis = static_cast<std::uint64_t>(ts.tv_sec) * 1000ULL + static_cast<std::uint64_t>(ts.tv_nsec) / 1000000ULL;
+    const std::uint64_t millis = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     bytes[0] = static_cast<unsigned char>((millis >> 40) & 0xFF);
     bytes[1] = static_cast<unsigned char>((millis >> 32) & 0xFF);
     bytes[2] = static_cast<unsigned char>((millis >> 24) & 0xFF);

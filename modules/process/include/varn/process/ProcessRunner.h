@@ -20,7 +20,7 @@ public:
     ProcessRunner() = delete;
 
     static ProcessResult exec(const std::string& command);
-    static std::vector<std::pair<std::string, std::string>> environ();
+    static std::vector<std::pair<std::string, std::string>> environment();
     static std::string cwd();
 };
 

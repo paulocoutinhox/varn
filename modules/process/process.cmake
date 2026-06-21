@@ -1,7 +1,8 @@
 # process: run commands and read the environment through a platform driver.
 
 if(NOT DEFINED CACHE{VARN_PROCESS_DRIVER})
-    if(VARN_BUILDING_FOR_EMSCRIPTEN)
+    # fork/exec and unistd are unavailable on emscripten, windows, and the apple tv/watch/vision platforms.
+    if(VARN_BUILDING_FOR_EMSCRIPTEN OR WIN32 OR CMAKE_SYSTEM_NAME MATCHES "^(tvOS|watchOS|visionOS)$")
         set(VARN_PROCESS_DRIVER "DUMMY" CACHE STRING "process backend: POSIX DUMMY")
     else()
         set(VARN_PROCESS_DRIVER "POSIX" CACHE STRING "process backend: POSIX DUMMY")

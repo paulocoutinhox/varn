@@ -19,7 +19,7 @@ namespace
 {
 void pushEnvTable(lua_State* L)
 {
-    const std::vector<std::pair<std::string, std::string>> entries = ProcessRunner::environ();
+    const std::vector<std::pair<std::string, std::string>> entries = ProcessRunner::environment();
 
     lua_createtable(L, 0, static_cast<int>(entries.size()));
     for (const auto& entry : entries)
@@ -94,7 +94,7 @@ int ProcessModule::luaGetenv(lua_State* L)
 {
     const std::string name = varn::lua::LuaHelpers::checkString(L, 1);
 
-    const std::vector<std::pair<std::string, std::string>> entries = ProcessRunner::environ();
+    const std::vector<std::pair<std::string, std::string>> entries = ProcessRunner::environment();
     for (const auto& entry : entries)
     {
         if (entry.first == name)
