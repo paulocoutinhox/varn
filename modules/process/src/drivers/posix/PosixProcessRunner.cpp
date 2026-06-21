@@ -100,7 +100,11 @@ ProcessResult ProcessRunner::exec(const std::string& command)
         ::close(errPipe[0]);
         ::close(errPipe[1]);
 
+#if defined(__ANDROID__)
+        ::execl("/system/bin/sh", "sh", "-c", command.c_str(), static_cast<char*>(nullptr));
+#else
         ::execl("/bin/sh", "sh", "-c", command.c_str(), static_cast<char*>(nullptr));
+#endif
         ::_exit(127);
     }
 
