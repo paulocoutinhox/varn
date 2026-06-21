@@ -115,6 +115,12 @@ void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt)
                 progressed = true;
             }
 
+            if (rt.ioPool().hasPostedJobs())
+            {
+                rt.ioPool().drainPostedJobs();
+                progressed = true;
+            }
+
             if (rt.mainLoop().hasPendingJobs())
             {
                 rt.mainLoop().drainPostedJobs();

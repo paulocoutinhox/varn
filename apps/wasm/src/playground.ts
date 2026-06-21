@@ -71,6 +71,123 @@ print("divided:", divided, "result:", result)
 `,
   },
   {
+    module: "Lua stdlib",
+    label: "string — format, find, gsub, bytes",
+    code: `-- the string library for formatting search substitution and bytes
+local s = "Varn 1.0 fast and small"
+print("format:", string.format("%s has %d chars", s, #s))
+print("find:", s:find("%d+%.%d+"))
+print("gsub:", (s:gsub("%s+", "_")))
+print("upper sub rep:", s:upper():sub(1, 4):rep(2))
+
+local words = {}
+for word in s:gmatch("%a+") do
+  words[#words + 1] = word
+end
+print("words:", table.concat(words, " "))
+print("byte and char:", string.byte("A"), string.char(86, 97, 114, 110))
+`,
+  },
+  {
+    module: "Lua stdlib",
+    label: "table — insert, sort, concat, unpack",
+    code: `-- the table library to build sort join and unpack arrays
+local t = { "banana", "apple", "cherry" }
+table.insert(t, "date")
+table.remove(t, 1)
+table.sort(t)
+print("sorted:", table.concat(t, ", "))
+
+local nums = { 3, 1, 2 }
+table.sort(nums, function(a, b) return a > b end)
+print("desc:", table.unpack(nums))
+print("count:", #t)
+`,
+  },
+  {
+    module: "Lua stdlib",
+    label: "math — round, roots, random",
+    code: `-- the math library for rounding roots extremes and randomness
+print("floor and ceil:", math.floor(3.7), math.ceil(3.2))
+print("sqrt and abs:", math.sqrt(144), math.abs(-9))
+print("max and min:", math.max(3, 8, 1), math.min(3, 8, 1))
+print("pi:", string.format("%.5f", math.pi))
+
+math.randomseed(42)
+print("random:", math.random(1, 6), math.random(1, 6))
+print("type:", math.type(3), math.type(3.0))
+`,
+  },
+  {
+    module: "Lua stdlib",
+    label: "coroutine — cooperative tasks",
+    code: `-- coroutines are cooperative tasks that yield values and resume where they left off
+local function squares(limit)
+  for i = 1, limit do
+    coroutine.yield(i * i)
+  end
+end
+
+local co = coroutine.create(squares)
+for _ = 1, 3 do
+  local ok, value = coroutine.resume(co, 3)
+  print("resumed:", ok, value)
+end
+print("status:", coroutine.status(co))
+
+local gen = coroutine.wrap(function()
+  for c in ("abc"):gmatch(".") do
+    coroutine.yield(c)
+  end
+end)
+print("wrap:", gen(), gen(), gen())
+`,
+  },
+  {
+    module: "Lua stdlib",
+    label: "metatable — operators & objects",
+    code: `-- metatables give operator overloading and prototype-based objects
+local Vec = {}
+Vec.__index = Vec
+
+function Vec.new(x, y)
+  return setmetatable({ x = x, y = y }, Vec)
+end
+
+function Vec.__add(a, b)
+  return Vec.new(a.x + b.x, a.y + b.y)
+end
+
+function Vec:length()
+  return math.sqrt(self.x ^ 2 + self.y ^ 2)
+end
+
+function Vec.__tostring(v)
+  return string.format("(%d, %d)", v.x, v.y)
+end
+
+local sum = Vec.new(3, 4) + Vec.new(1, 2)
+print("sum:", tostring(sum))
+print("length:", Vec.new(3, 4):length())
+`,
+  },
+  {
+    module: "Lua stdlib",
+    label: "os — time, date, clock",
+    code: `-- the os library for time dates and a high-resolution clock
+print("time is a number:", type(os.time()))
+print("formatted date:", os.date("!%Y-%m-%d %H:%M:%S", 1750000000))
+
+local started = os.clock()
+local sum = 0
+for i = 1, 1000000 do
+  sum = sum + i
+end
+print("sum 1..1e6:", sum)
+print(string.format("cpu time: %.3f s", os.clock() - started))
+`,
+  },
+  {
     module: "datetime",
     label: "datetime — parse, format, math",
     code: `local datetime = require("datetime")
@@ -304,7 +421,7 @@ export function mountPlayground(root: HTMLElement): () => void {
   textarea.spellcheck = false;
   textarea.autocomplete = "off";
   textarea.className =
-    "min-h-[220px] w-full resize-y rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2 font-mono text-sm leading-relaxed text-cyan-50 outline-none ring-cyan-500/40 transition focus:border-cyan-600/60 focus:ring-2";
+    "min-h-[220px] max-h-[440px] w-full resize-y varn-scroll rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2 font-mono text-sm leading-relaxed text-cyan-50 outline-none ring-cyan-500/40 transition focus:border-cyan-600/60 focus:ring-2";
   textarea.value = DEFAULT_LUA;
 
   exampleSelect.addEventListener("change", () => {
@@ -339,7 +456,7 @@ export function mountPlayground(root: HTMLElement): () => void {
   outCard.appendChild(el("h2", "text-sm font-medium text-zinc-300", "Console"));
   const consolePre = document.createElement("pre");
   consolePre.className =
-    "min-h-[220px] flex-1 overflow-auto rounded-xl border border-zinc-800 bg-black/50 p-3 font-mono text-xs leading-relaxed text-emerald-200/95";
+    "h-[440px] overflow-auto varn-scroll rounded-xl border border-zinc-800 bg-black/50 p-3 font-mono text-xs leading-relaxed text-emerald-200/95";
   consolePre.textContent = "Ready.\n";
   const status = el("p", "text-xs text-zinc-500", "Worker idle.");
 
@@ -352,8 +469,13 @@ export function mountPlayground(root: HTMLElement): () => void {
   shell.appendChild(grid);
   root.appendChild(shell);
 
-  const appendLine = (line: string) => {
-    consolePre.textContent += line.endsWith("\n") ? line : `${line}\n`;
+  const appendLine = (line: string, kind?: "error") => {
+    const span = document.createElement("span");
+    if (kind === "error") {
+      span.className = "text-red-400";
+    }
+    span.textContent = line.endsWith("\n") ? line : `${line}\n`;
+    consolePre.appendChild(span);
     consolePre.scrollTop = consolePre.scrollHeight;
   };
 
@@ -378,21 +500,21 @@ export function mountPlayground(root: HTMLElement): () => void {
         appendLine(r.output.trimEnd());
       }
       if (!r.ok && r.error) {
-        appendLine(`error: ${r.error}`);
+        appendLine(`error: ${r.error}`, "error");
       }
       status.textContent = r.ok ? "Finished." : "Finished with errors.";
       runBtn.disabled = false;
       return;
     }
     if (msg.type === "error") {
-      appendLine(`worker: ${msg.message}`);
+      appendLine(`worker: ${msg.message}`, "error");
       status.textContent = "Error.";
       runBtn.disabled = false;
     }
   };
 
   const onError = (e: ErrorEvent) => {
-    appendLine(`worker fault: ${e.message}`);
+    appendLine(`worker fault: ${e.message}`, "error");
     status.textContent = "Worker fault.";
     runBtn.disabled = false;
   };

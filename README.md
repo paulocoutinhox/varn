@@ -20,6 +20,8 @@ Varn is an all-in-one platform for building applications with Lua scripts, power
 
 Instead of assembling and wiring together separate pieces, you get one complete and coherent foundation that behaves the same whether it runs on a computer, a phone, or in the browser, so the focus stays on the product and not on the plumbing.
 
+**Try it in your browser at [varn.pages.dev](https://varn.pages.dev)** — a playground running the real engine compiled to WebAssembly.
+
 ## 🚀 Quickstart
 
 ```bash

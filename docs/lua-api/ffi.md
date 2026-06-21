@@ -15,7 +15,7 @@ print(ffi.C.strlen("hello")) -- 5
 - `ffi.cast(ct, value)` — reinterpret a value or pointer as C type `ct`.
 - `ffi.string(ptr [, len])` — copy a C string, or `len` raw bytes, into a Lua string.
 - `ffi.copy(dst, src [, len])` — copy bytes into a cdata buffer.
-- `ffi.sizeof`, `ffi.typeof`, `ffi.offsetof`, `ffi.metatype`, `ffi.gc`, `ffi.istype`, `ffi.tonumber`, `ffi.fill`, `ffi.addressof`, `ffi.errno` — the rest of the LuaJIT-style surface.
+- `ffi.sizeof`, `ffi.typeof`, `ffi.offsetof`, `ffi.metatype`, `ffi.gc`, `ffi.istype`, `ffi.tonumber`, `ffi.fill`, `ffi.addressof`, `ffi.errno` — the rest of the introspection and memory surface.
 - `ffi.nullptr` — the null pointer value.
 - `ffi.VERSION` — the FFI backend version string.
 

@@ -56,6 +56,10 @@ if(VARN_BUILDING_FOR_EMSCRIPTEN)
     set(VARN_LOG_DRIVER "SPDLOG" CACHE STRING "" FORCE)
     set(VARN_FS_DRIVER "STD" CACHE STRING "" FORCE)
     set(VARN_FFI_DRIVER "DUMMY" CACHE STRING "" FORCE)
+
+    # lua compiled as c++ needs emscripten exception support so a raised lua error can be caught by pcall
+    add_compile_options(-fexceptions)
+    add_link_options(-fexceptions)
 endif()
 
 # apple platform deployment targets (matches dependency toolchains when cross-compiling)
