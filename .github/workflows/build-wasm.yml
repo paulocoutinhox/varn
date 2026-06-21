@@ -52,10 +52,10 @@ jobs:
       - name: Configure (Emscripten)
         run: emcmake cmake -B build/wasm -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
 
-      - name: Build varn_wasm
+      - name: Build WebAssembly
         run: cmake --build build/wasm --config ${{ env.BUILD_TYPE }} -j$(nproc)
 
-      - name: Verify wasm outputs
+      - name: Verify WebAssembly output
         run: |
           test -f build/wasm/bin/varn_wasm.js
           test -f build/wasm/bin/varn_wasm.wasm

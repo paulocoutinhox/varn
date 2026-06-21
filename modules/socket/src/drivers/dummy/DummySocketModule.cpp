@@ -7,7 +7,7 @@
 namespace varn::socket
 {
 
-void SocketTransport::connectAsync(varn::runtime::Runtime& /*runtime*/, const std::string& /*host*/, int /*port*/, ConnectCallback callback)
+void SocketTransport::connectAsync(varn::runtime::Runtime& /*runtime*/, const std::string& /*host*/, int /*port*/, int /*timeoutMs*/, ConnectCallback callback)
 {
     callback(nullptr, "[SocketTransport] The socket module is not available in this build.");
 }

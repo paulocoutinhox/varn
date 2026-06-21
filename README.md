@@ -78,6 +78,19 @@ Every component ships with runnable examples under `components/<component>/examp
 
 The same scripts run on Linux, macOS, and Windows, on iPhone and Android, and in the browser. You can run them as a standalone app you launch, or embed them inside an app you already have.
 
+## ⚡ Performance
+
+The same `/plaintext` and `/json` routes with no framework on any side, driven by `wrk` on Linux — Varn against raw Node `http` and a raw ASGI app on uvicorn (`uvloop`+`httptools`):
+
+| Scenario | Varn | Node | Python |
+|----------|-----:|-----:|-------:|
+| 1 core, plaintext | **147k req/s** | 55k | 54k |
+| 1 core, json | **120k req/s** | 53k | 48k |
+| 4 workers, plaintext | **452k req/s** | 199k | 201k |
+| 4 workers, json | **410k req/s** | 184k | 186k |
+
+About **2.5× the throughput of Node and Python per core**, scaling near-linearly with `VARN_WORKERS`. Reproduce it with `bash bench/run.sh`, or on Linux through Docker with `bash bench/docker-bench.sh`. Method and caveats: [docs/stress-test.md](docs/stress-test.md).
+
 ## 📚 Documentation
 
 | Topic | File |
@@ -88,6 +101,7 @@ The same scripts run on Linux, macOS, and Windows, on iPhone and Android, and in
 | ⏳ Async and promises | [docs/async.md](docs/async.md) |
 | 🔒 Safety notes | [docs/security.md](docs/security.md) |
 | 🔥 Stress testing | [docs/stress-test.md](docs/stress-test.md) |
+| 🧭 Roadmap | [docs/roadmap.md](docs/roadmap.md) |
 
 ## 💜 Support
 
