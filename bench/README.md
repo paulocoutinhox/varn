@@ -22,17 +22,17 @@ stack's async I/O and protocol handling, not a framework.
 
 Varn talks to MySQL through a **native protocol client written over the async socket** (no
 `libmysqlclient`): it authenticates with `mysql_native_password` and runs `COM_QUERY`, yielding on the
-event loop at every read so one process keeps many queries in flight. Redis runs the same way over
-RESP. A generic [`pool`](../../components/pool) component shares a bounded set of connections, handing
-a free one to each request and blocking the rest on an event-driven wait (`async.deferred`) until one
-is released — the same model `mysql2` and `aiomysql` pools use.
+event loop at every read so one process keeps many queries in flight, sharing a bounded set of
+connections through a generic [`pool`](../../components/pool) — the model `mysql2` and `aiomysql` use.
+Redis uses a single **multiplexed connection** ([`pipeline = true`](../../components/redis)) that
+auto-pipelines concurrent commands into one stream and demultiplexes the replies in order, the ioredis
+model, both built on an `async.deferred` primitive.
 
-On an in-network Linux run (`-c256`, one process each) Varn leads `/plaintext` and `/json` by ~2.2×
-on its C++ HTTP core, **and leads `/db` by ~1.3×** over Node and Python because the whole database path
-stays non-blocking and pooled on the event loop — with far tighter tail latency (no GC pauses). The one
-route it trails is `/cache`, where `ioredis` auto-pipelines commands onto one connection; pipelining
-the redis client is the open optimization. Measure on a real network: a Docker-Desktop port-forward
-adds milliseconds per round trip and inverts the `/db` result.
+On an in-network Linux run (`-c256`, one process each) Varn **leads every route** — about 2.5× on
+`/plaintext` and `/json` from its C++ HTTP core, ~1.3× on `/db` from the non-blocking pooled MySQL
+client, and it edges out `ioredis` on `/cache` with the auto-pipelining redis client — all with far
+tighter tail latency, since no GC pauses the loop. Measure on a real network: a Docker-Desktop
+port-forward adds milliseconds per round trip and skews the database routes.
 
 ## Run with Docker (recommended, real network)
 

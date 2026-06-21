@@ -101,10 +101,10 @@ It holds up on real work too. A second benchmark adds `/db` (a MySQL `SELECT`) a
 
 | Scenario | Varn | Node | Python |
 |----------|-----:|-----:|-------:|
-| db (MySQL `SELECT`) | **13.9k req/s** | 10.8k | 11.2k |
-| cache (Redis `INCR`) | 15.4k | **36.3k** | 16.0k |
+| db (MySQL `SELECT`) | **13.5k req/s** | 10.6k | 10.7k |
+| cache (Redis `INCR`) | **44.4k req/s** | 35.0k | 15.7k |
 
-Varn **leads on the database route** (~1.3× Node/Python) with far tighter tail latency — `/db` p99 of 25 ms against Node's 427 ms, since no GC pauses the loop. It trails only on `/cache`, where `ioredis` auto-pipelines. Reproduce it with `bash bench/run.sh`, or on Linux through Docker with `bash bench/docker-bench.sh`. Method and caveats: [docs/stress-test.md](docs/stress-test.md).
+Varn **leads every route**, the database and cache included. Its MySQL client speaks the wire protocol natively over the async socket, and its redis client auto-pipelines concurrent commands onto one multiplexed connection — so it edges out `ioredis` on `/cache`. Tail latency is in another class: `/db` p99 of 26 ms against Node's 421 ms and `/cache` p99 of 8 ms against Node's 72 ms, because no GC pauses the event loop. Reproduce it with `python3 varn.py bench`. Method and caveats: [docs/stress-test.md](docs/stress-test.md).
 
 ## 📚 Documentation
 

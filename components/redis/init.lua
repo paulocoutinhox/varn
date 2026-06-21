@@ -1,5 +1,6 @@
 -- redis client built on the native socket module speaking RESP2 over a single connection, where every socket operation (redis.connect, client:command, client:pipeline, client:close) yields on the event loop so the whole lifecycle must run inside an async coroutine (async.spawn/async.run), and with no __gc finalizer a forgotten client leaks until the runtime exits since :close() cannot run outside an async coroutine, so always close in the same scope that opened the client, ideally via pcall to cover the error path.
 local socket = require("socket")
+local async = require("async")
 
 local READ_CHUNK = 4096
 
@@ -235,6 +236,133 @@ function methods:close()
     self.sock = nil
 end
 
+-- a multiplexed client: many concurrent commands share one connection, the ioredis model. each command
+-- queues its frame and awaits a per-command deferred; a writer coroutine batches everything queued into
+-- a single send (auto-pipelining), and a reader coroutine resolves the awaiting commands as replies
+-- arrive in request order. opt in with redis.connect({ pipeline = true }).
+local muxMethods = {}
+
+local MuxClient = {}
+MuxClient.__index = function(_, key)
+    local method = muxMethods[key]
+    if method then
+        return method
+    end
+
+    return function(self, ...)
+        return self:command(key, ...)
+    end
+end
+
+local function failPending(self, message)
+    self.dead = true
+
+    for _, entry in ipairs(self.pending) do
+        entry.err = message
+        entry.wake()
+    end
+    self.pending = {}
+
+    for _, item in ipairs(self.writeQueue) do
+        item.entry.err = message
+        item.entry.wake()
+    end
+    self.writeQueue = {}
+end
+
+function muxMethods:command(...)
+    if self.dead then
+        error("[Redis] Connection is poisoned after an earlier I/O failure and cannot be reused.")
+    end
+
+    local entry = {}
+    entry.gate, entry.wake = async.deferred()
+    self.writeQueue[#self.writeQueue + 1] = { frame = encodeCommand(...), entry = entry }
+
+    if self.writerWake then
+        local wake = self.writerWake
+        self.writerWake = false
+        wake()
+    end
+
+    entry.gate:await()
+
+    if entry.err then
+        error(entry.err, 0)
+    end
+    if isServerError(entry.reply) then
+        error("[Redis] " .. entry.reply.message)
+    end
+    return entry.reply
+end
+
+local function startMux(self)
+    -- writer: drain the queue into one send so a burst of concurrent commands costs a single syscall.
+    async.spawn(function()
+        while not self.closed do
+            if #self.writeQueue == 0 then
+                local gate
+                gate, self.writerWake = async.deferred()
+                gate:await()
+            else
+                local batch = self.writeQueue
+                self.writeQueue = {}
+
+                local frames = {}
+                for i = 1, #batch do
+                    frames[i] = batch[i].frame
+                    self.pending[#self.pending + 1] = batch[i].entry
+                end
+
+                local _, err = self.sock:send(table.concat(frames)):await()
+                if err then
+                    failPending(self, "[Redis] Send failed: " .. tostring(err))
+                    return
+                end
+            end
+        end
+    end)
+
+    -- reader: replies arrive in request order, so each one resolves the oldest awaiting command.
+    async.spawn(function()
+        while not self.closed do
+            local ok, reply = pcall(self.reader.reply, self.reader)
+            local entry = table.remove(self.pending, 1)
+            if not entry then
+                self.dead = self.dead or (not ok)
+                return
+            end
+
+            if ok then
+                entry.reply = reply
+            else
+                entry.err = tostring(reply)
+            end
+            entry.wake()
+
+            if not ok then
+                failPending(self, tostring(reply))
+                return
+            end
+        end
+    end)
+end
+
+function muxMethods:close()
+    self.closed = true
+    if self.writerWake then
+        local wake = self.writerWake
+        self.writerWake = false
+        wake()
+    end
+    if self.sock then
+        pcall(function()
+            self.sock:close():await()
+        end)
+        self.sock = nil
+    end
+end
+
 local redis = {}
 
 -- opens one endpoint and brings it fully online (auth and database select), with any failure closing the socket and propagating so the caller can move on to the next endpoint.
@@ -269,10 +397,51 @@ local function dial(options, host, port)
     return client
 end
 
--- connects to the first reachable endpoint, taking a single host/port or a list of { host, port } tables in `hosts` for failover where each is tried in order until one connects and answers.
+-- the multiplexed variant of dial: bring the writer/reader loops up first, then run the auth and
+-- database-select handshake through them like any other command.
+local function dialMux(options, host, port)
+    local sock, err = socket.tcp.connect(host, port):await()
+    if err then
+        error("[Redis] Connect to " .. host .. ":" .. port .. " failed: " .. tostring(err), 0)
+    end
+
+    local client = setmetatable({
+        sock = sock,
+        reader = Reader.new(sock),
+        writeQueue = {},
+        pending = {},
+        dead = false,
+        closed = false,
+        writerWake = false,
+    }, MuxClient)
+
+    startMux(client)
+
+    local ok, handshakeError = pcall(function()
+        if options.username then
+            client:command("AUTH", options.username, options.password or "")
+        elseif options.password then
+            client:command("AUTH", options.password)
+        end
+
+        if options.db then
+            client:command("SELECT", options.db)
+        end
+    end)
+
+    if not ok then
+        client:close()
+        error(handshakeError, 0)
+    end
+
+    return client
+end
+
+-- connects to the first reachable endpoint, taking a single host/port or a list of { host, port } tables in `hosts` for failover where each is tried in order until one connects and answers. with pipeline = true the connection is multiplexed so concurrent commands share it.
 function redis.connect(options)
     options = options or {}
 
+    local dialer = options.pipeline and dialMux or dial
     local endpoints = options.hosts or { { host = options.host, port = options.port } }
 
     local failures = {}
@@ -280,7 +449,7 @@ function redis.connect(options)
         local host = endpoint.host or "127.0.0.1"
         local port = endpoint.port or 6379
 
-        local ok, result = pcall(dial, options, host, port)
+        local ok, result = pcall(dialer, options, host, port)
         if ok then
             return result
         end

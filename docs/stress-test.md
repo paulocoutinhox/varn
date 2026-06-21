@@ -32,18 +32,17 @@ Measured on Linux (one process each, `wrk -t4 -c256`), requests per second:
 
 | Scenario | Varn | Node | Python |
 |----------|-----:|-----:|-------:|
-| plaintext | **115k** | 53k | 48k |
-| json | **111k** | 47k | 45k |
-| db (MySQL `SELECT`) | **13.9k** | 10.8k | 11.2k |
-| cache (Redis `INCR`) | 15.4k | **36.3k** | 16.0k |
+| plaintext | **131k** | 50k | 48k |
+| json | **109k** | 49k | 44k |
+| db (MySQL `SELECT`) | **13.5k** | 10.6k | 10.7k |
+| cache (Redis `INCR`) | **44.4k** | 35.0k | 15.7k |
 
-Varn **leads on `/db`** — about 1.3× Node and Python — even though it parses the MySQL wire in Lua,
-because the whole path stays non-blocking and pooled on the C++ event loop. Its **tail latency is far
-tighter** too: `/db` p99 is 25 ms versus Node's 427 ms, and `/plaintext` p99 is 4 ms versus Node's
-132 ms, since there is no GC pausing the loop. The one route Varn trails is **`/cache`**, where
-`ioredis` auto-pipelines many commands onto one connection; Varn issues one command per pooled
-connection per round trip (on par with Python's `redis.asyncio`). Pipelining the redis client is the
-open optimization there. Reproduce all of this with `bash bench/docker-bench.sh`.
+Varn **leads every route**. On `/db` it reads MySQL through a wire-protocol client that stays
+non-blocking and pooled on the C++ event loop; on `/cache` the redis client **auto-pipelines**
+concurrent commands onto one multiplexed connection (the [`pipeline = true`](../components/redis) mode),
+so it edges out `ioredis`. Its **tail latency is in another class**: `/db` p99 is 26 ms versus Node's
+421 ms, and `/cache` p99 is 8 ms versus Node's 72 ms and Python's 449 ms, because no GC ever pauses the
+event loop. Reproduce all of this with `python3 varn.py bench`.
 
 > Run the bench on a real network, not a Docker-Desktop port-forward: the host→container proxy on
 > macOS/Windows adds milliseconds per round trip and disproportionately penalizes whichever client does

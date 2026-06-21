@@ -1,9 +1,11 @@
 -- varn server for the comparison benchmark. /plaintext and /json are framework-free baselines;
--- /db reads a random row through the async mysql client and /cache hits redis, both over pooled,
--- non-blocking connections so one process keeps many queries in flight. scale with VARN_WORKERS=N.
+-- /db reads a random row through the async mysql client over a connection pool (each blocking-free
+-- query needs its own connection), and /cache hits redis over a single multiplexed connection that
+-- auto-pipelines concurrent commands, the ioredis model. scale with VARN_WORKERS=N.
 package.path = "components/?.lua;components/?/init.lua;" .. package.path
 
 local http = require("http")
+local async = require("async")
 local mysql = require("mysql")
 local redis = require("redis")
 local pool = require("pool")
@@ -24,15 +26,40 @@ local mysqlPool = pool.new({
     end,
 })
 
-local redisPool = pool.new({
-    size = poolSize,
-    connect = function()
-        return redis.connect({
-            host = os.getenv("REDIS_HOST") or "127.0.0.1",
-            port = tonumber(os.getenv("REDIS_PORT") or "6379"),
-        })
-    end,
-})
+-- one multiplexed redis connection shared by every request, connected lazily on the first /cache hit.
+-- redisGate serializes the concurrent first hits so exactly one connection is opened.
+local redisClient
+local redisGate
+
+local function redisConn()
+    if redisClient then
+        return redisClient
+    end
+    if redisGate then
+        redisGate:await()
+        return redisClient
+    end
+
+    local gate, done = async.deferred()
+    redisGate = gate
+
+    local ok, client = pcall(redis.connect, {
+        host = os.getenv("REDIS_HOST") or "127.0.0.1",
+        port = tonumber(os.getenv("REDIS_PORT") or "6379"),
+        pipeline = true,
+    })
+    if ok then
+        redisClient = client
+    end
+
+    redisGate = nil
+    done()
+
+    if not ok then
+        error(client)
+    end
+    return redisClient
+end
 
 http.createServer(function(req, res)
     local path = req.path
@@ -58,9 +85,7 @@ http.createServer(function(req, res)
     end
 
     if path == "/cache" then
-        local hits = redisPool:with(function(client)
-            return client:incr("bench:hits")
-        end)
+        local hits = redisConn():incr("bench:hits")
         res:json({ count = hits })
         return
     end

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from tools.core import android, apple, cxx, general, tests, wasm
+from tools.core import android, apple, bench, cxx, general, site, tests, wasm
 
 
 def _common(
@@ -71,6 +71,27 @@ def _opt_clean(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _opt_bench(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--connections", type=int, default=256, help="concurrent connections (default: 256)")
+    parser.add_argument("--duration", default="10s", help="wrk duration per route (default: 10s)")
+    parser.add_argument("--workers", type=int, default=1, help="worker processes per runtime (default: 1)")
+    parser.add_argument("--jobs", type=int, default=4, help="parallel build jobs for varn (default: 4)")
+    parser.add_argument("--pool-size", type=int, default=64, help="db connection pool size (default: 64)")
+
+
+def _opt_site(parser: argparse.ArgumentParser) -> None:
+    _common(parser)
+    parser.add_argument("--zip", help="ON or OFF")
+    parser.add_argument(
+        "--remote",
+        default="https://github.com/varn-project/website.git",
+        help="target git remote (default: the varn-project/website repo)",
+    )
+    parser.add_argument("--branch", default="main", help="target branch (default: main)")
+    parser.add_argument("--message", help="commit message (default: auto from source commit)")
+    parser.add_argument("--dry-run", action="store_true", help="build and commit locally without pushing")
+
+
 # task -> (handler, options configurator, one-line help shown in --help).
 _TASKS = {
     "build": (
@@ -88,6 +109,11 @@ _TASKS = {
         _opt_test_cpp,
         "Build and run the native C++ test target (googletest).",
     ),
+    "bench": (
+        bench.run,
+        _opt_bench,
+        "Run the Varn vs Node vs Python benchmark (plaintext, json, MySQL, Redis) in Docker.",
+    ),
     "apple": (apple.build, _common, "Build Varn.xcframework for all Apple slices."),
     "android": (
         android.build,
@@ -104,6 +130,11 @@ _TASKS = {
         wasm.serve,
         _opt_wasm,
         "Build wasm, then start the Vite dev server for apps/wasm.",
+    ),
+    "site-deploy": (
+        site.deploy,
+        _opt_site,
+        "Build the production wasm site and publish it to the varn-project/website repo.",
     ),
     "format": (
         general.fmt,
