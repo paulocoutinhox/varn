@@ -15,12 +15,12 @@ class HttpClientResponseLua
 public:
     HttpClientResponseLua() = delete;
 
-    // header names are pushed lowercased so a caller can look them up case-insensitively
     static void pushHeaders(lua_State* L, const ResponseHeaders& headers)
     {
         lua_createtable(L, 0, static_cast<int>(headers.size()));
         for (const auto& [name, value] : headers)
         {
+            // lowercase the name so a caller can look the header up case-insensitively
             std::string key = name;
             for (char& c : key)
             {

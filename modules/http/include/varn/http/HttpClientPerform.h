@@ -32,10 +32,7 @@ struct ClientResponse
     std::string body;
 };
 
-// invoked once with the status and headers before any body chunk arrives
 using StreamResponseFn = std::function<void(int, const ResponseHeaders&)>;
-
-// invoked for each body chunk in arrival order
 using StreamChunkFn = std::function<void(const char*, std::size_t)>;
 
 #if defined(__EMSCRIPTEN__) && defined(VARN_HTTP_CLIENT_DRIVER_EMSCRIPTEN_FETCH) && VARN_HTTP_CLIENT_DRIVER_EMSCRIPTEN_FETCH

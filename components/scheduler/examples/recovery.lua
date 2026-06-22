@@ -1,4 +1,4 @@
--- shows crash recovery: a task left running by a dead process is returned to the queue and processed on the next start
+-- shows crash recovery where a task left running by a dead process returns to the queue and is processed on the next start
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

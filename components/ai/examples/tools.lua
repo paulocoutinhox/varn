@@ -1,4 +1,4 @@
--- full tool-calling round trip: the model requests a tool, the program runs it, and the result is fed back for a final answer
+-- full tool-calling round trip where the model requests a tool, the program runs it, and the result is fed back for a final answer
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

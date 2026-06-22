@@ -1,4 +1,4 @@
--- structured output: ask for json conforming to a schema and decode the response, using the openai-style response_format
+-- structured output asking for json conforming to a schema and decoding the response with the openai-style response_format
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

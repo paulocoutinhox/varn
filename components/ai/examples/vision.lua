@@ -1,4 +1,4 @@
--- multimodal input: read a local image, embed it as a base64 data url, and ask the model about it
+-- multimodal input reading a local image, embedding it as a base64 data url, and asking the model about it
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

@@ -290,7 +290,7 @@ function Scheduler:_tick()
     end
 end
 
--- boots the scheduler, returning any task left running by a dead process to the queue, then starts the tick loop; idempotent
+-- boots the scheduler returning any orphaned running task to the queue then starts the tick loop and is idempotent
 function Scheduler:start()
     if self.running then
         return
