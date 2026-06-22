@@ -10,7 +10,7 @@
 namespace varn::async
 {
 
-int runOnPool(lua_State* L, varn::runtime::Runtime& runtime, varn::runtime::TaskPool& pool, std::string moduleTag, std::function<void(Promise&)> work)
+int AsyncTask::runOnPool(lua_State* L, varn::runtime::Runtime& runtime, varn::runtime::TaskPool& pool, std::string moduleTag, std::function<void(Promise&)> work)
 {
     auto promise = std::make_shared<Promise>(runtime);
 

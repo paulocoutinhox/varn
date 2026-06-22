@@ -48,7 +48,7 @@ public:
             // clang-format off
             ctx->promise->resolveCustom([status, respBody](lua_State* L)
             {
-                pushResponseTable(L, status, {}, respBody);
+                HttpClientResponseLua::pushResponse(L, status, {}, respBody);
             });
             // clang-format on
         }

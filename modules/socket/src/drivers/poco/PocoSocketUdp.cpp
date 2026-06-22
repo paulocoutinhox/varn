@@ -123,7 +123,7 @@ public:
     void close() override
     {
         closed = true;
-        closeManagedSocket(loop, socket);
+        ManagedSocket::close(loop, socket);
     }
 
 private:

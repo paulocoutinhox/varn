@@ -62,7 +62,7 @@ int ProcessModule::luaExec(lua_State* L)
     auto& rt = luaRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "ProcessModule", [command = std::move(command)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "ProcessModule", [command = std::move(command)](Promise& promise)
     {
         const ProcessResult result = ProcessRunner::exec(command);
         promise.resolveCustom([result](lua_State* lua)

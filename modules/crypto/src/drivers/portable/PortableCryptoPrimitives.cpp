@@ -19,12 +19,12 @@ namespace
 {
 std::string hmacOver(std::string_view algorithm, std::string_view key, std::string_view data)
 {
-    const std::size_t block = portable::blockSize(algorithm);
+    const std::size_t block = portable::Sha::blockSize(algorithm);
 
     std::string normalizedKey(key);
     if (normalizedKey.size() > block)
     {
-        normalizedKey = portable::hashByName(algorithm, normalizedKey);
+        normalizedKey = portable::Sha::hashByName(algorithm, normalizedKey);
     }
     normalizedKey.resize(block, '\0');
 
@@ -37,8 +37,8 @@ std::string hmacOver(std::string_view algorithm, std::string_view key, std::stri
         outerKey[i] = static_cast<char>(k ^ 0x5c);
     }
 
-    const std::string inner = portable::hashByName(algorithm, innerKey + std::string(data));
-    return portable::hashByName(algorithm, outerKey + inner);
+    const std::string inner = portable::Sha::hashByName(algorithm, innerKey + std::string(data));
+    return portable::Sha::hashByName(algorithm, outerKey + inner);
 }
 
 [[noreturn]] void unavailable(const char* feature)
@@ -49,24 +49,24 @@ std::string hmacOver(std::string_view algorithm, std::string_view key, std::stri
 
 std::string CryptoPrimitives::digest(std::string_view algorithm, std::string_view data, bool outputHex)
 {
-    if (!portable::isSupported(algorithm))
+    if (!portable::Sha::isSupported(algorithm))
     {
         throw std::runtime_error("[CryptoPrimitives] The requested hash algorithm is not available in this build.");
     }
 
-    const std::string raw = portable::hashByName(algorithm, data);
-    return outputHex ? codecs::hexEncode(raw) : raw;
+    const std::string raw = portable::Sha::hashByName(algorithm, data);
+    return outputHex ? CryptoCodecs::hexEncode(raw) : raw;
 }
 
 std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string_view key, std::string_view data, bool outputHex)
 {
-    if (!portable::isSupported(digestAlgorithm))
+    if (!portable::Sha::isSupported(digestAlgorithm))
     {
         throw std::runtime_error("[CryptoPrimitives] The requested hash algorithm is not available in this build.");
     }
 
     const std::string raw = hmacOver(digestAlgorithm, key, data);
-    return outputHex ? codecs::hexEncode(raw) : raw;
+    return outputHex ? CryptoCodecs::hexEncode(raw) : raw;
 }
 
 std::string CryptoPrimitives::randomBytes(std::size_t count)
@@ -90,22 +90,22 @@ std::string CryptoPrimitives::randomBytes(std::size_t count)
 
 std::string CryptoPrimitives::base64Encode(std::string_view data, bool urlSafe, bool padding)
 {
-    return codecs::base64Encode(data, urlSafe, padding);
+    return CryptoCodecs::base64Encode(data, urlSafe, padding);
 }
 
 std::string CryptoPrimitives::base64Decode(std::string_view data)
 {
-    return codecs::base64Decode(data);
+    return CryptoCodecs::base64Decode(data);
 }
 
 std::string CryptoPrimitives::hexEncode(std::string_view data)
 {
-    return codecs::hexEncode(data);
+    return CryptoCodecs::hexEncode(data);
 }
 
 std::string CryptoPrimitives::hexDecode(std::string_view data)
 {
-    return codecs::hexDecode(data);
+    return CryptoCodecs::hexDecode(data);
 }
 
 std::string CryptoPrimitives::uuidV4()
@@ -119,7 +119,7 @@ std::string CryptoPrimitives::uuidV4()
     bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0F) | 0x40);
     bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3F) | 0x80);
 
-    return codecs::formatUuid(bytes);
+    return CryptoCodecs::formatUuid(bytes);
 }
 
 std::string CryptoPrimitives::uuidV7()
@@ -143,7 +143,7 @@ std::string CryptoPrimitives::uuidV7()
     bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0F) | 0x70);
     bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3F) | 0x80);
 
-    return codecs::formatUuid(bytes);
+    return CryptoCodecs::formatUuid(bytes);
 }
 
 std::string CryptoPrimitives::hashPassword(std::string_view /*password*/)

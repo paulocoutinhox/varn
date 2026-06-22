@@ -21,23 +21,29 @@ namespace varn::socket
 
 constexpr int kMaxReceiveBytes = 16 * 1024 * 1024;
 
-inline void closeManagedSocket(varn::runtime::EventLoop& loop, const Poco::Net::Socket& socket)
+class ManagedSocket
 {
-    if (loop.isRunning())
-    {
-        loop.closeSocket(socket);
-        return;
-    }
+public:
+    ManagedSocket() = delete;
 
-    // closes the fd directly when the loop is stopped at shutdown
-    try
+    static void close(varn::runtime::EventLoop& loop, const Poco::Net::Socket& socket)
     {
-        socket.impl()->close();
+        if (loop.isRunning())
+        {
+            loop.closeSocket(socket);
+            return;
+        }
+
+        // closes the fd directly when the loop is stopped at shutdown
+        try
+        {
+            socket.impl()->close();
+        }
+        catch (...)
+        {
+        }
     }
-    catch (...)
-    {
-    }
-}
+};
 
 class PocoStreamConnection : public TcpConnection, public std::enable_shared_from_this<PocoStreamConnection>
 {
@@ -127,7 +133,7 @@ public:
     void close() override
     {
         closed = true;
-        closeManagedSocket(loop, socket);
+        ManagedSocket::close(loop, socket);
     }
 
 private:
@@ -174,7 +180,7 @@ public:
     void close() override
     {
         closed = true;
-        closeManagedSocket(loop, server);
+        ManagedSocket::close(loop, server);
     }
 
 private:

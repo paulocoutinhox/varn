@@ -289,22 +289,22 @@ bool constantTimeEqual(const unsigned char* a, const unsigned char* b, std::size
 
 std::string CryptoPrimitives::base64Encode(std::string_view data, bool urlSafe, bool padding)
 {
-    return codecs::base64Encode(data, urlSafe, padding);
+    return CryptoCodecs::base64Encode(data, urlSafe, padding);
 }
 
 std::string CryptoPrimitives::base64Decode(std::string_view data)
 {
-    return codecs::base64Decode(data);
+    return CryptoCodecs::base64Decode(data);
 }
 
 std::string CryptoPrimitives::hexEncode(std::string_view data)
 {
-    return codecs::hexEncode(data);
+    return CryptoCodecs::hexEncode(data);
 }
 
 std::string CryptoPrimitives::hexDecode(std::string_view data)
 {
-    return codecs::hexDecode(data);
+    return CryptoCodecs::hexDecode(data);
 }
 
 std::string CryptoPrimitives::uuidV4()
@@ -319,7 +319,7 @@ std::string CryptoPrimitives::uuidV4()
     bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0F) | 0x40);
     bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3F) | 0x80);
 
-    return codecs::formatUuid(bytes);
+    return CryptoCodecs::formatUuid(bytes);
 }
 
 std::string CryptoPrimitives::uuidV7()
@@ -343,7 +343,7 @@ std::string CryptoPrimitives::uuidV7()
     bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0F) | 0x70);
     bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3F) | 0x80);
 
-    return codecs::formatUuid(bytes);
+    return CryptoCodecs::formatUuid(bytes);
 }
 
 std::string CryptoPrimitives::pbkdf2(std::string_view password, std::string_view salt, std::size_t iterations, std::size_t keyLen, std::string_view algorithm)

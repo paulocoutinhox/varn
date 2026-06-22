@@ -7,6 +7,8 @@ Working checklist and research record for two additions to Varn:
 
 Decisions locked: streaming is built now (the HTTP core gains a streaming path — no backward-compat with the old full-body-only design); the scheduler persists through `vdo`; provider APIs below were verified live on **2026-06-21**.
 
+**Status (2026-06-22): all three parts shipped and validated.** Part 3 (HTTP client streaming + headers) is live and tested against the real OpenAI API. `components/ai/` ships the transport, the OpenAI/Anthropic/Gemini/ElevenLabs adapters, seven examples, a network-free mock test, and a README — validated live against OpenAI (text/stream/tools/embed/image), Anthropic (text/stream/tools), Gemini (text/stream/tools/native image), ElevenLabs (tts/stream/stt/voices), and Grok/DeepSeek/OpenRouter. `components/scheduler/` ships the vdo-backed store, the full state machine with boot-epoch crash recovery and backoff retries, three examples, a test, and a README. Both component tests run in `varn.py test` (51 passed). The checklists below are kept as the design record.
+
 ---
 
 ## Part 0 — Internal audit and the one core change (done)

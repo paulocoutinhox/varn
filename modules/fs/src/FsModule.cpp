@@ -75,7 +75,7 @@ int luaHandleRead(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [handle, maxBytes](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [handle, maxBytes](Promise& promise)
     {
         promise.resolve(handle->read(maxBytes));
     });
@@ -91,7 +91,7 @@ int luaHandleWrite(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [handle, data = std::move(data)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [handle, data = std::move(data)](Promise& promise)
     {
         handle->write(data);
         promise.resolve("ok");
@@ -105,7 +105,7 @@ int luaHandleClose(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [handle](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [handle](Promise& promise)
     {
         handle->close();
         promise.resolve("ok");
@@ -120,7 +120,7 @@ int luaFileOpen(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path), mode = std::move(mode)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path), mode = std::move(mode)](Promise& promise)
     {
         std::shared_ptr<FsHandle> handle = FsStorage::open(path, mode);
         promise.resolveCustom([handle](lua_State* lua)
@@ -135,7 +135,7 @@ int luaStat(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
     {
         FsStat info = FsStorage::stat(path);
         promise.resolveCustom([info](lua_State* lua)
@@ -161,7 +161,7 @@ int luaReaddir(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
     {
         std::vector<std::string> names = FsStorage::readdir(path);
         promise.resolveCustom([names = std::move(names)](lua_State* lua)
@@ -183,7 +183,7 @@ int luaRename(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [from = std::move(from), to = std::move(to)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [from = std::move(from), to = std::move(to)](Promise& promise)
     {
         FsStorage::rename(from, to);
         promise.resolve("ok");
@@ -198,7 +198,7 @@ int luaCopy(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [from = std::move(from), to = std::move(to)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [from = std::move(from), to = std::move(to)](Promise& promise)
     {
         FsStorage::copy(from, to);
         promise.resolve("ok");
@@ -215,7 +215,7 @@ int luaAppend(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path), data = std::move(data)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path), data = std::move(data)](Promise& promise)
     {
         FsStorage::append(path, data);
         promise.resolve("ok");
@@ -229,7 +229,7 @@ int luaMkdtemp(lua_State* L)
     auto& rt = fsRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [prefix = std::move(prefix)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [prefix = std::move(prefix)](Promise& promise)
     {
         promise.resolve(FsStorage::mkdtemp(prefix));
     });
@@ -263,7 +263,7 @@ int FsModule::luaReadFile(lua_State* L)
     std::string path = checkPath(L, 1);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
     {
         promise.resolve(FsStorage::readAll(path));
     });
@@ -277,7 +277,7 @@ int FsModule::luaWriteFile(lua_State* L)
     std::string content = varn::lua::LuaHelpers::checkString(L, 2);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path), content = std::move(content)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path), content = std::move(content)](Promise& promise)
     {
         FsStorage::writeAll(path, content);
         promise.resolve("ok");
@@ -298,7 +298,7 @@ int FsModule::luaMkdir(lua_State* L)
     std::string path = checkPath(L, 1);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
     {
         FsStorage::mkdir(path);
         promise.resolve("ok");
@@ -312,7 +312,7 @@ int FsModule::luaRemoveRecursive(lua_State* L)
     std::string path = checkPath(L, 1);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "FsModule", [path = std::move(path)](Promise& promise)
     {
         FsStorage::removeRecursive(path);
         promise.resolve("ok");

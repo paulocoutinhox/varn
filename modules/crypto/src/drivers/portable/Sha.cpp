@@ -349,36 +349,36 @@ std::string normalize(std::string_view algorithm)
 }
 } // namespace
 
-std::string sha1(std::string_view data)
+std::string Sha::sha1(std::string_view data)
 {
     return sha1Impl(data);
 }
 
-std::string sha224(std::string_view data)
+std::string Sha::sha224(std::string_view data)
 {
     static const std::uint32_t iv[8] = {0xc1059ed8, 0x367cd507, 0x3070dd17, 0xf70e5939, 0xffc00b31, 0x68581511, 0x64f98fa7, 0xbefa4fa4};
     return sha256Core(data, iv, 28);
 }
 
-std::string sha256(std::string_view data)
+std::string Sha::sha256(std::string_view data)
 {
     static const std::uint32_t iv[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
     return sha256Core(data, iv, 32);
 }
 
-std::string sha384(std::string_view data)
+std::string Sha::sha384(std::string_view data)
 {
     static const std::uint64_t iv[8] = {0xcbbb9d5dc1059ed8ull, 0x629a292a367cd507ull, 0x9159015a3070dd17ull, 0x152fecd8f70e5939ull, 0x67332667ffc00b31ull, 0x8eb44a8768581511ull, 0xdb0c2e0d64f98fa7ull, 0x47b5481dbefa4fa4ull};
     return sha512Core(data, iv, 48);
 }
 
-std::string sha512(std::string_view data)
+std::string Sha::sha512(std::string_view data)
 {
     static const std::uint64_t iv[8] = {0x6a09e667f3bcc908ull, 0xbb67ae8584caa73bull, 0x3c6ef372fe94f82bull, 0xa54ff53a5f1d36f1ull, 0x510e527fade682d1ull, 0x9b05688c2b3e6c1full, 0x1f83d9abfb41bd6bull, 0x5be0cd19137e2179ull};
     return sha512Core(data, iv, 64);
 }
 
-std::size_t blockSize(std::string_view algorithm)
+std::size_t Sha::blockSize(std::string_view algorithm)
 {
     const std::string name = normalize(algorithm);
     if (name == "SHA384" || name == "SHA512")
@@ -389,13 +389,13 @@ std::size_t blockSize(std::string_view algorithm)
     return 64;
 }
 
-bool isSupported(std::string_view algorithm)
+bool Sha::isSupported(std::string_view algorithm)
 {
     const std::string name = normalize(algorithm);
     return name == "SHA1" || name == "SHA224" || name == "SHA256" || name == "SHA384" || name == "SHA512";
 }
 
-std::string hashByName(std::string_view algorithm, std::string_view data)
+std::string Sha::hashByName(std::string_view algorithm, std::string_view data)
 {
     const std::string name = normalize(algorithm);
     if (name == "SHA1")

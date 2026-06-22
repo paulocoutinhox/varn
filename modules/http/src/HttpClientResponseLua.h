@@ -10,35 +10,41 @@
 namespace varn::http::client
 {
 
-// header names are pushed lowercased so a caller can look them up case-insensitively
-inline void pushHeadersTable(lua_State* L, const ResponseHeaders& headers)
+class HttpClientResponseLua
 {
-    lua_createtable(L, 0, static_cast<int>(headers.size()));
-    for (const auto& [name, value] : headers)
+public:
+    HttpClientResponseLua() = delete;
+
+    // header names are pushed lowercased so a caller can look them up case-insensitively
+    static void pushHeaders(lua_State* L, const ResponseHeaders& headers)
     {
-        std::string key = name;
-        for (char& c : key)
+        lua_createtable(L, 0, static_cast<int>(headers.size()));
+        for (const auto& [name, value] : headers)
         {
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            std::string key = name;
+            for (char& c : key)
+            {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+
+            lua_pushlstring(L, value.data(), value.size());
+            lua_setfield(L, -2, key.c_str());
         }
-
-        lua_pushlstring(L, value.data(), value.size());
-        lua_setfield(L, -2, key.c_str());
     }
-}
 
-inline void pushResponseTable(lua_State* L, int status, const ResponseHeaders& headers, const std::string& body)
-{
-    lua_createtable(L, 0, 3);
+    static void pushResponse(lua_State* L, int status, const ResponseHeaders& headers, const std::string& body)
+    {
+        lua_createtable(L, 0, 3);
 
-    lua_pushinteger(L, status);
-    lua_setfield(L, -2, "status");
+        lua_pushinteger(L, status);
+        lua_setfield(L, -2, "status");
 
-    pushHeadersTable(L, headers);
-    lua_setfield(L, -2, "headers");
+        pushHeaders(L, headers);
+        lua_setfield(L, -2, "headers");
 
-    lua_pushlstring(L, body.data(), body.size());
-    lua_setfield(L, -2, "body");
-}
+        lua_pushlstring(L, body.data(), body.size());
+        lua_setfield(L, -2, "body");
+    }
+};
 
 } // namespace varn::http::client

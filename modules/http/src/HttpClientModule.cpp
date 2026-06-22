@@ -321,7 +321,7 @@ int HttpClientModule::luaClientRequest(lua_State* L)
             auto resp = varn::http::client::HttpClientPerform::perform(methodStr, urlStr, headers, body, options);
             promise->resolveCustom([resp = std::move(resp)](lua_State* lua)
             {
-                varn::http::client::pushResponseTable(lua, resp.status, resp.headers, resp.body);
+                varn::http::client::HttpClientResponseLua::pushResponse(lua, resp.status, resp.headers, resp.body);
             });
         }
         catch (const std::exception& ex)
@@ -419,7 +419,7 @@ int HttpClientModule::luaClientStream(lua_State* L)
                     lua_State* lua = rtp->luaState();
                     lua_rawgeti(lua, LUA_REGISTRYINDEX, onResponseRef);
                     lua_pushinteger(lua, status);
-                    varn::http::client::pushHeadersTable(lua, *headersCopy);
+                    varn::http::client::HttpClientResponseLua::pushHeaders(lua, *headersCopy);
                     if (lua_pcall(lua, 2, 0, 0) != LUA_OK)
                     {
                         logCallbackError(lua, "the stream onResponse callback failed");

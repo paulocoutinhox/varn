@@ -63,6 +63,12 @@ def run(args: Namespace) -> None:
         print("no lua tests found under modules/*/lua/tests")
         raise SystemExit(1)
 
+    # self-contained component tests that need no external server are run alongside the module tests
+    for relative in ("components/ai/tests/mock_test.lua", "components/scheduler/tests/scheduler_test.lua"):
+        candidate = helper.PROJECT_DIR / relative
+        if candidate.exists():
+            tests.append(candidate)
+
     # each test receives a fresh scratch directory through VARN_TEST_DIR, created and cleaned here.
     scratch = helper.PROJECT_DIR / build_dir / "test-scratch"
 

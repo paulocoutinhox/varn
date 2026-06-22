@@ -16,6 +16,12 @@ class TaskPool;
 namespace varn::async
 {
 
-int runOnPool(lua_State* L, varn::runtime::Runtime& runtime, varn::runtime::TaskPool& pool, std::string moduleTag, std::function<void(Promise&)> work);
+class AsyncTask
+{
+public:
+    AsyncTask() = delete;
+
+    static int runOnPool(lua_State* L, varn::runtime::Runtime& runtime, varn::runtime::TaskPool& pool, std::string moduleTag, std::function<void(Promise&)> work);
+};
 
 } // namespace varn::async

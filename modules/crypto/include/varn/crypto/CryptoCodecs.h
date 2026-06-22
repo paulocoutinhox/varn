@@ -4,17 +4,19 @@
 #include <string>
 #include <string_view>
 
-namespace varn::crypto::codecs
+namespace varn::crypto
 {
 
-std::string base64Encode(std::string_view data, bool urlSafe, bool padding);
+class CryptoCodecs
+{
+public:
+    CryptoCodecs() = delete;
 
-std::string base64Decode(std::string_view data);
+    static std::string base64Encode(std::string_view data, bool urlSafe, bool padding);
+    static std::string base64Decode(std::string_view data);
+    static std::string hexEncode(std::string_view data);
+    static std::string hexDecode(std::string_view data);
+    static std::string formatUuid(const unsigned char bytes[16]);
+};
 
-std::string hexEncode(std::string_view data);
-
-std::string hexDecode(std::string_view data);
-
-std::string formatUuid(const unsigned char bytes[16]);
-
-} // namespace varn::crypto::codecs
+} // namespace varn::crypto

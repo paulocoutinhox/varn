@@ -1,0 +1,66 @@
+# ⏱ scheduler
+
+Durable background task scheduler over the [vdo](../vdo) store. Run work immediately, at a future time, or on an interval, with full status and history, surviving restarts and returning interrupted tasks to the queue.
+
+```lua
+local async = require("async")
+local scheduler = require("scheduler")
+
+async.run(function()
+    local jobs = scheduler.new({ dsn = "sqlite:jobs.db" })
+    jobs:handler("send_email", function(payload)
+        -- do the work, return any json-serializable result
+        return { sent = payload.to }
+    end)
+    jobs:start()
+    jobs:enqueue("send_email", { to = "user@example.com" })
+end)
+```
+
+The tick loop and handlers run on the event loop, so the whole lifecycle must live inside an async coroutine (`async.run` / `async.spawn`). Native-only — it depends on `vdo` (ffi-backed sqlite/mysql/postgres).
+
+## Durability contract
+
+- Tasks reference a **named handler plus a json payload**, never a closure, so the queue is fully reconstructable from the store after a restart.
+- `start()` returns any task left in `running` by a dead process back to `queued`, so a task interrupted by a crash or restart runs again.
+- Delivery is **at-least-once**, so handlers should be idempotent.
+
+## Constructor
+
+| Function | What it does |
+|---|---|
+| `scheduler.new(config)` | Open the store and ensure the schema; `config` takes `dsn` (default `sqlite:scheduler.db`), `concurrency` (default 4), `pollMs` (default 1000), `backoffSeconds` (default 1), `maxBackoffSeconds` (default 300). |
+
+## Triggers
+
+| Function | What it does |
+|---|---|
+| `jobs:handler(name, fn)` | Register the handler `fn(payload, task)` invoked for tasks of that name. |
+| `jobs:enqueue(name, payload, opts)` | Run as soon as the next tick reaches it. |
+| `jobs:schedule(name, payload, runAt, opts)` | Run once at the unix time `runAt`. |
+| `jobs:every(name, payload, intervalSeconds, opts)` | Run now and re-arm every `intervalSeconds` after each success. |
+
+`opts` takes `id` (a stable id for idempotency), `priority` (higher runs first), and `maxAttempts` (retries on failure, default 1).
+
+## Lifecycle and management
+
+| Function | What it does |
+|---|---|
+| `jobs:start()` | Reclaim orphaned tasks and start the tick loop; idempotent. |
+| `jobs:stop()` | Stop the tick loop. |
+| `jobs:close()` | Stop the loop and close the store. |
+| `jobs:pause()` / `jobs:resume()` | Hold or release task dispatch while leaving the loop running. |
+| `jobs:get(id)` | The task row, with `payload` and `result` decoded. |
+| `jobs:list(filter)` | All tasks, or those matching `filter.state`. |
+| `jobs:history(taskId)` | The recorded runs for a task. |
+| `jobs:cancel(id)` | Cancel a task that has not started yet. |
+| `jobs:remove(id)` | Delete a task. |
+
+## States
+
+A task moves through `scheduled` (waiting for its time), `queued` (ready to run), `running`, and then `success`, `failed` (retries exhausted), or `cancelled`. A failing task with remaining attempts re-arms as `scheduled` after an exponential backoff; an interval task re-arms as `scheduled` after each success.
+
+## Examples and tests
+
+- Runnable examples: [examples/](examples/) — basic enqueue, future and interval scheduling, crash recovery.
+- Test: [tests/scheduler_test.lua](tests/scheduler_test.lua) covers success, retry, cancel, scheduling, interval re-arm, and crash recovery with no network.

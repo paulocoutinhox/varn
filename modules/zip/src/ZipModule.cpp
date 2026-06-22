@@ -258,7 +258,7 @@ int ZipModule::luaExtract(lua_State* L)
     auto& rt = luaRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.taskPool(), "ZipModule", [zipPath, destDir](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.taskPool(), "ZipModule", [zipPath, destDir](Promise& promise)
     {
         performExtract(zipPath, destDir);
         promise.resolve("ok");
@@ -305,7 +305,7 @@ int ZipModule::luaCreate(lua_State* L)
     auto& rt = luaRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.taskPool(), "ZipModule", [zipPath, items = std::move(items)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.taskPool(), "ZipModule", [zipPath, items = std::move(items)](Promise& promise)
     {
         performCreate(zipPath, items);
         promise.resolve("ok");
@@ -324,7 +324,7 @@ int ZipModule::luaList(lua_State* L)
     auto& rt = luaRuntime(L);
 
     // clang-format off
-    return varn::async::runOnPool(L, rt, rt.taskPool(), "ZipModule", [zipPath](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.taskPool(), "ZipModule", [zipPath](Promise& promise)
     {
         std::vector<std::string> names = performList(zipPath);
         promise.resolveCustom([names = std::move(names)](lua_State* lua)

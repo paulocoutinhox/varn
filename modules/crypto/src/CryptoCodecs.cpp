@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <stdexcept>
 
-namespace varn::crypto::codecs
+namespace varn::crypto
 {
 
 namespace
@@ -71,7 +71,7 @@ int hexNibble(unsigned char c)
 }
 } // namespace
 
-std::string base64Encode(std::string_view data, bool urlSafe, bool padding)
+std::string CryptoCodecs::base64Encode(std::string_view data, bool urlSafe, bool padding)
 {
     const char* alphabet = urlSafe ? kBase64Url : kBase64Std;
     const std::size_t fullGroups = data.size() / 3;
@@ -122,7 +122,7 @@ std::string base64Encode(std::string_view data, bool urlSafe, bool padding)
     return out;
 }
 
-std::string base64Decode(std::string_view data)
+std::string CryptoCodecs::base64Decode(std::string_view data)
 {
     const std::array<signed char, 256>& rev = base64Reverse();
 
@@ -171,7 +171,7 @@ std::string base64Decode(std::string_view data)
     return out;
 }
 
-std::string hexEncode(std::string_view data)
+std::string CryptoCodecs::hexEncode(std::string_view data)
 {
     static const char* digits = "0123456789abcdef";
 
@@ -190,7 +190,7 @@ std::string hexEncode(std::string_view data)
     return out;
 }
 
-std::string hexDecode(std::string_view data)
+std::string CryptoCodecs::hexDecode(std::string_view data)
 {
     if (data.size() % 2 != 0)
     {
@@ -216,7 +216,7 @@ std::string hexDecode(std::string_view data)
     return out;
 }
 
-std::string formatUuid(const unsigned char bytes[16])
+std::string CryptoCodecs::formatUuid(const unsigned char bytes[16])
 {
     static const char* digits = "0123456789abcdef";
 
@@ -238,4 +238,4 @@ std::string formatUuid(const unsigned char bytes[16])
     return out;
 }
 
-} // namespace varn::crypto::codecs
+} // namespace varn::crypto
