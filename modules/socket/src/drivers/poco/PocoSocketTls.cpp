@@ -15,7 +15,9 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 
+#include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -27,6 +29,37 @@ using varn::runtime::EventLoop;
 
 namespace
 {
+
+#if !defined(_WIN32)
+// the bundled openssl ships no trust store, so point verification at the os ca bundle
+std::string resolveCaBundle()
+{
+    if (const char* env = std::getenv("SSL_CERT_FILE"); env != nullptr && env[0] != '\0')
+    {
+        return env;
+    }
+
+    static const char* const candidates[] = {
+        "/etc/ssl/cert.pem",
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/ca-bundle.pem",
+        "/opt/homebrew/etc/openssl@3/cert.pem",
+        "/usr/local/etc/openssl@3/cert.pem",
+    };
+
+    for (const char* path : candidates)
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(path, ec))
+        {
+            return path;
+        }
+    }
+
+    return std::string();
+}
+#endif
 
 Poco::Net::Context::Ptr tlsClientContext(bool verify)
 {
@@ -55,8 +88,9 @@ Poco::Net::Context::Ptr tlsClientContext(bool verify)
 #else
     if (verify)
     {
+        static const std::string caBundle = resolveCaBundle();
         static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
-            Poco::Net::Context::TLS_CLIENT_USE, "", "", "", Poco::Net::Context::VERIFY_STRICT, 9, true,
+            Poco::Net::Context::TLS_CLIENT_USE, "", "", caBundle, Poco::Net::Context::VERIFY_STRICT, 9, true,
             "DEFAULT@SECLEVEL=2");
         return strict;
     }

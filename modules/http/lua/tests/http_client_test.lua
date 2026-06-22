@@ -50,9 +50,11 @@ async.run(function()
     assert(viaRequest.ok, "request() not ok")
     assert(viaRequest.json().received == 7, "request() json body not round-tripped")
 
-    -- the raw primitive still returns the unparsed VARN/1 wire for low-level callers
-    local wire = http.client.requestRaw({ url = base .. "/greet" }):await()
-    assert(wire:match("^VARN/1 200 "), "raw wire framing changed")
+    -- the raw primitive resolves to a status, headers, body table for low-level callers
+    local raw = http.client.requestRaw({ url = base .. "/greet" }):await()
+    assert(raw.status == 200, "raw status not 200")
+    assert(type(raw.headers) == "table", "raw headers not a table")
+    assert(raw.body:find("hello", 1, true), "raw body missing payload")
 
     print("http client ok")
 end)

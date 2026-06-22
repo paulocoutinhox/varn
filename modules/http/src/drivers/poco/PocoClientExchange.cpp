@@ -15,29 +15,55 @@
 #include <Poco/Net/RejectCertificateHandler.h>
 #include <Poco/Net/SSLManager.h>
 
+#include <cstdlib>
+#include <filesystem>
 #include <mutex>
 #endif
 
 namespace varn::http::client
 {
 
-std::string PocoClientExchange::performHttp(
-    const std::string& method,
-    const Poco::URI& uri,
-    const std::map<std::string, std::string>& headers,
-    const std::string& body,
-    const ClientRequestOptions& options)
+#if defined(VARN_ENABLE_TLS) && !defined(_WIN32)
+namespace
+{
+// the bundled openssl ships no trust store, so point verification at the os ca bundle
+std::string resolveCaBundle()
+{
+    if (const char* env = std::getenv("SSL_CERT_FILE"); env != nullptr && env[0] != '\0')
+    {
+        return env;
+    }
+
+    static const char* const candidates[] = {
+        "/etc/ssl/cert.pem",
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/ca-bundle.pem",
+        "/opt/homebrew/etc/openssl@3/cert.pem",
+        "/usr/local/etc/openssl@3/cert.pem",
+    };
+
+    for (const char* path : candidates)
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(path, ec))
+        {
+            return path;
+        }
+    }
+
+    return std::string();
+}
+} // namespace
+#endif
+
+ClientResponse PocoClientExchange::exchange(Poco::Net::HTTPClientSession& session, const std::string& method, const Poco::URI& uri, const std::map<std::string, std::string>& headers, const std::string& body, const ClientRequestOptions& options)
 {
     const std::string path = uri.getPathAndQuery().empty() ? "/" : uri.getPathAndQuery();
-    const std::string host = uri.getHost();
-    const Poco::UInt16 port = static_cast<Poco::UInt16>(uri.getPort());
-
-    Poco::Net::HTTPClientSession session(host, port);
     session.setTimeout(Poco::Timespan(options.timeoutSeconds, 0));
 
     Poco::Net::HTTPRequest request(method, path, Poco::Net::HTTPMessage::HTTP_1_1);
     applyHeaders(request, headers);
-
     if (!body.empty())
     {
         request.setContentLength(static_cast<std::streamsize>(body.size()));
@@ -51,52 +77,68 @@ std::string PocoClientExchange::performHttp(
 
     Poco::Net::HTTPResponse response;
     std::istream& rs = session.receiveResponse(response);
-    const int status = static_cast<int>(response.getStatus());
-    return buildWire(status, readResponseBody(rs, options.maxResponseBytes));
+
+    ClientResponse out;
+    out.status = static_cast<int>(response.getStatus());
+    out.headers = collectHeaders(response);
+    out.body = readResponseBody(rs, options.maxResponseBytes);
+    return out;
+}
+
+void PocoClientExchange::exchangeStream(Poco::Net::HTTPClientSession& session, const std::string& method, const Poco::URI& uri, const std::map<std::string, std::string>& headers, const std::string& body, const ClientRequestOptions& options, const StreamResponseFn& onResponse, const StreamChunkFn& onChunk)
+{
+    const std::string path = uri.getPathAndQuery().empty() ? "/" : uri.getPathAndQuery();
+    session.setTimeout(Poco::Timespan(options.timeoutSeconds, 0));
+
+    Poco::Net::HTTPRequest request(method, path, Poco::Net::HTTPMessage::HTTP_1_1);
+    applyHeaders(request, headers);
+    if (!body.empty())
+    {
+        request.setContentLength(static_cast<std::streamsize>(body.size()));
+    }
+
+    std::ostream& os = session.sendRequest(request);
+    if (!body.empty())
+    {
+        os << body;
+    }
+
+    Poco::Net::HTTPResponse response;
+    std::istream& rs = session.receiveResponse(response);
+
+    onResponse(static_cast<int>(response.getStatus()), collectHeaders(response));
+    streamResponseBody(rs, options.maxResponseBytes, onChunk);
+}
+
+ClientResponse PocoClientExchange::performHttp(const std::string& method, const Poco::URI& uri, const std::map<std::string, std::string>& headers, const std::string& body, const ClientRequestOptions& options)
+{
+    Poco::Net::HTTPClientSession session(uri.getHost(), static_cast<Poco::UInt16>(uri.getPort()));
+    return exchange(session, method, uri, headers, body, options);
+}
+
+void PocoClientExchange::performStreamHttp(const std::string& method, const Poco::URI& uri, const std::map<std::string, std::string>& headers, const std::string& body, const ClientRequestOptions& options, const StreamResponseFn& onResponse, const StreamChunkFn& onChunk)
+{
+    Poco::Net::HTTPClientSession session(uri.getHost(), static_cast<Poco::UInt16>(uri.getPort()));
+    exchangeStream(session, method, uri, headers, body, options, onResponse, onChunk);
 }
 
 #if defined(VARN_ENABLE_TLS)
-std::string PocoClientExchange::performHttps(
-    const std::string& method,
-    const Poco::URI& uri,
-    const std::map<std::string, std::string>& headers,
-    const std::string& body,
-    const ClientRequestOptions& options)
+ClientResponse PocoClientExchange::performHttps(const std::string& method, const Poco::URI& uri, const std::map<std::string, std::string>& headers, const std::string& body, const ClientRequestOptions& options)
 {
     ensureTlsClientInitialized();
 
-    const std::string path = uri.getPathAndQuery().empty() ? "/" : uri.getPathAndQuery();
-    const std::string host = uri.getHost();
-    const Poco::UInt16 port = static_cast<Poco::UInt16>(uri.getPort());
+    Poco::Net::HTTPSClientSession session(uri.getHost(), static_cast<Poco::UInt16>(uri.getPort()), tlsClientContext(options.verifyTls));
+    return exchange(session, method, uri, headers, body, options);
+}
 
-    Poco::Net::HTTPSClientSession session(host, port, tlsClientContext(options.verifyTls));
-    session.setTimeout(Poco::Timespan(options.timeoutSeconds, 0));
+void PocoClientExchange::performStreamHttps(const std::string& method, const Poco::URI& uri, const std::map<std::string, std::string>& headers, const std::string& body, const ClientRequestOptions& options, const StreamResponseFn& onResponse, const StreamChunkFn& onChunk)
+{
+    ensureTlsClientInitialized();
 
-    Poco::Net::HTTPRequest request(method, path, Poco::Net::HTTPMessage::HTTP_1_1);
-    applyHeaders(request, headers);
-
-    if (!body.empty())
-    {
-        request.setContentLength(static_cast<std::streamsize>(body.size()));
-    }
-
-    std::ostream& os = session.sendRequest(request);
-    if (!body.empty())
-    {
-        os << body;
-    }
-
-    Poco::Net::HTTPResponse response;
-    std::istream& rs = session.receiveResponse(response);
-    const int status = static_cast<int>(response.getStatus());
-    return buildWire(status, readResponseBody(rs, options.maxResponseBytes));
+    Poco::Net::HTTPSClientSession session(uri.getHost(), static_cast<Poco::UInt16>(uri.getPort()), tlsClientContext(options.verifyTls));
+    exchangeStream(session, method, uri, headers, body, options, onResponse, onChunk);
 }
 #endif
-
-std::string PocoClientExchange::buildWire(int status, const std::string& body)
-{
-    return "VARN/1 " + std::to_string(status) + " " + std::to_string(body.size()) + "\n" + body;
-}
 
 bool PocoClientExchange::headerControlSafe(const std::string& value)
 {
@@ -124,6 +166,17 @@ void PocoClientExchange::applyHeaders(Poco::Net::HTTPRequest& request, const std
     }
 }
 
+ResponseHeaders PocoClientExchange::collectHeaders(const Poco::Net::HTTPResponse& response)
+{
+    ResponseHeaders out;
+    for (const auto& [name, value] : response)
+    {
+        out.emplace_back(name, value);
+    }
+
+    return out;
+}
+
 std::string PocoClientExchange::readResponseBody(std::istream& rs, std::size_t maxBytes)
 {
     std::string out;
@@ -148,6 +201,29 @@ std::string PocoClientExchange::readResponseBody(std::istream& rs, std::size_t m
     return out;
 }
 
+void PocoClientExchange::streamResponseBody(std::istream& rs, std::size_t maxBytes, const StreamChunkFn& onChunk)
+{
+    std::size_t total = 0;
+    char buffer[65536];
+    while (rs)
+    {
+        rs.read(buffer, sizeof(buffer));
+        const std::streamsize got = rs.gcount();
+        if (got <= 0)
+        {
+            break;
+        }
+
+        total += static_cast<std::size_t>(got);
+        if (total > maxBytes)
+        {
+            throw std::runtime_error("[PocoClientExchange] The response body exceeds the maximum allowed size.");
+        }
+
+        onChunk(buffer, static_cast<std::size_t>(got));
+    }
+}
+
 #if defined(VARN_ENABLE_TLS)
 Poco::Net::Context::Ptr PocoClientExchange::tlsClientContext(bool verify)
 {
@@ -167,8 +243,9 @@ Poco::Net::Context::Ptr PocoClientExchange::tlsClientContext(bool verify)
 #else
     if (verify)
     {
+        static const std::string caBundle = resolveCaBundle();
         static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
-            Poco::Net::Context::TLS_CLIENT_USE, "", "", "", Poco::Net::Context::VERIFY_STRICT, 9, true,
+            Poco::Net::Context::TLS_CLIENT_USE, "", "", caBundle, Poco::Net::Context::VERIFY_STRICT, 9, true,
             "DEFAULT@SECLEVEL=2");
         return strict;
     }
@@ -184,11 +261,15 @@ void PocoClientExchange::ensureTlsClientInitialized()
 {
     static Poco::Crypto::OpenSSLInitializer sslInitializer;
     static std::once_flag sslOnce;
+
+    // clang-format off
     std::call_once(sslOnce, []
-                   {
-        // the default handler rejects invalid certificates so strict sessions actually fail closed
+    {
+        // the default handler rejects invalid certificates so strict sessions fail closed
         Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> handler(new Poco::Net::RejectCertificateHandler(false));
-        Poco::Net::SSLManager::instance().initializeClient(nullptr, handler, tlsClientContext(true)); });
+        Poco::Net::SSLManager::instance().initializeClient(nullptr, handler, tlsClientContext(true));
+    });
+    // clang-format on
 }
 #endif
 

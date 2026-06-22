@@ -2,6 +2,7 @@
 #error "EmscriptenFetchHttpClient is only built for Emscripten (VARN_HTTP_CLIENT_DRIVER=EMSCRIPTEN_FETCH)."
 #endif
 
+#include "../../HttpClientResponseLua.h"
 #include "varn/async/Promise.h"
 #include "varn/http/HttpClientPerform.h"
 #include "varn/wasm/WasmAsyncHost.h"
@@ -44,7 +45,12 @@ public:
 
         try
         {
-            ctx->promise->resolve(wire(status, respBody));
+            // clang-format off
+            ctx->promise->resolveCustom([status, respBody](lua_State* L)
+            {
+                pushResponseTable(L, status, {}, respBody);
+            });
+            // clang-format on
         }
         catch (...)
         {
@@ -64,12 +70,6 @@ public:
         }
 
         delete ctx;
-    }
-
-private:
-    static std::string wire(int status, const std::string& body)
-    {
-        return "VARN/1 " + std::to_string(status) + " " + std::to_string(body.size()) + "\n" + body;
     }
 };
 

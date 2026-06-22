@@ -1,9 +1,12 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace varn::async
 {
@@ -19,6 +22,21 @@ struct ClientRequestOptions
     bool verifyTls = true;
     std::size_t maxResponseBytes = 64u * 1024u * 1024u;
 };
+
+using ResponseHeaders = std::vector<std::pair<std::string, std::string>>;
+
+struct ClientResponse
+{
+    int status = 0;
+    ResponseHeaders headers;
+    std::string body;
+};
+
+// invoked once with the status and headers before any body chunk arrives
+using StreamResponseFn = std::function<void(int, const ResponseHeaders&)>;
+
+// invoked for each body chunk in arrival order
+using StreamChunkFn = std::function<void(const char*, std::size_t)>;
 
 #if defined(__EMSCRIPTEN__) && defined(VARN_HTTP_CLIENT_DRIVER_EMSCRIPTEN_FETCH) && VARN_HTTP_CLIENT_DRIVER_EMSCRIPTEN_FETCH
 #define VARN_HTTP_CLIENT_EMSCRIPTEN_FETCH_ASYNC 1
@@ -41,12 +59,21 @@ public:
         int timeoutSeconds,
         std::size_t maxResponseBytes);
 #else
-    static std::string perform(
+    static ClientResponse perform(
         const std::string& method,
         const std::string& url,
         const std::map<std::string, std::string>& headers,
         const std::string& body,
         const ClientRequestOptions& options);
+
+    static void performStream(
+        const std::string& method,
+        const std::string& url,
+        const std::map<std::string, std::string>& headers,
+        const std::string& body,
+        const ClientRequestOptions& options,
+        const StreamResponseFn& onResponse,
+        const StreamChunkFn& onChunk);
 #endif
 };
 

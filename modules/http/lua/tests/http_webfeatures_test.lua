@@ -5,12 +5,8 @@ local http = require("http")
 local port = 39823
 local base = "http://127.0.0.1:" .. port
 
--- splits the VARN/1 wire into status and raw body, the only framing the client returns
-local function parseWire(wire)
-    local nl = assert(wire:find("\n", 1, true), "missing header terminator")
-    local status, len = wire:sub(1, nl - 1):match("^VARN/1 (%d+) (%d+)$")
-    assert(status, "bad header line: " .. wire:sub(1, nl - 1))
-    return tonumber(status), wire:sub(nl + 1, nl + tonumber(len))
+local function statusBody(res)
+    return res.status, res.body
 end
 
 local function request(method, path, headers)
@@ -78,24 +74,24 @@ app:listen({ host = "127.0.0.1", port = port })
 
 async.run(function()
     -- a large json body with gzip accepted comes back gzip-framed and smaller than the plain body
-    local plainStatus, plainBody = parseWire(get("/big"))
+    local plainStatus, plainBody = statusBody(get("/big"))
     assert(plainStatus == 200, "plain big request failed")
     assert(plainBody:byte(1) ~= 0x1f, "plain body unexpectedly gzip-framed")
 
-    local _, gzBody = parseWire(get("/big", { ["Accept-Encoding"] = "gzip" }))
+    local _, gzBody = statusBody(get("/big", { ["Accept-Encoding"] = "gzip" }))
     assert(gzBody:byte(1) == 0x1f and gzBody:byte(2) == 0x8b, "gzip magic bytes missing")
     assert(#gzBody < #plainBody, "gzip body not smaller than plain body")
 
     -- a tiny body stays uncompressed even when gzip is accepted
-    local _, tinyBody = parseWire(get("/tiny", { ["Accept-Encoding"] = "gzip" }))
+    local _, tinyBody = statusBody(get("/tiny", { ["Accept-Encoding"] = "gzip" }))
     assert(tinyBody:byte(1) ~= 0x1f, "tiny body should not be gzipped")
 
     -- an already-encoded body is never recompressed
-    local _, preBody = parseWire(get("/preencoded", { ["Accept-Encoding"] = "gzip" }))
+    local _, preBody = statusBody(get("/preencoded", { ["Accept-Encoding"] = "gzip" }))
     assert(preBody:byte(1) ~= 0x1f, "pre-encoded body recompressed")
 
     -- the sse stream carries event, data and comment lines with correct framing
-    local sseStatus, sseBody = parseWire(get("/events"))
+    local sseStatus, sseBody = statusBody(get("/events"))
     assert(sseStatus == 200, "sse request failed")
     assert(sseBody:find("data: hello\n\n", 1, true), "sse default-event message missing")
     assert(sseBody:find("event: tick\ndata: first\n\n", 1, true), "sse named event missing")
@@ -103,17 +99,17 @@ async.run(function()
     assert(sseBody:find(": heartbeat\n\n", 1, true), "sse comment heartbeat missing")
 
     -- the cache helper composes the directive string
-    local cacheStatus, cacheBody = parseWire(get("/cached"))
+    local cacheStatus, cacheBody = statusBody(get("/cached"))
     assert(cacheStatus == 200 and cacheBody:find("ok", 1, true), "cache route failed")
 
     -- the etag helper answers a fresh request and short-circuits a matching If-None-Match to 304
-    assert(parseWire(get("/tagged")) == 200, "etag fresh request failed")
-    assert(parseWire(get("/tagged", { ["If-None-Match"] = '"v1"' })) == 304, "etag did not honor If-None-Match")
+    assert(statusBody(get("/tagged")) == 200, "etag fresh request failed")
+    assert(statusBody(get("/tagged", { ["If-None-Match"] = '"v1"' })) == 304, "etag did not honor If-None-Match")
 
     -- content negotiation returns json or html based on Accept
-    local _, negJson = parseWire(get("/negotiate", { ["Accept"] = "application/json" }))
+    local _, negJson = statusBody(get("/negotiate", { ["Accept"] = "application/json" }))
     assert(negJson:find("json", 1, true), "negotiation did not pick json")
-    local _, negHtml = parseWire(get("/negotiate", { ["Accept"] = "text/html" }))
+    local _, negHtml = statusBody(get("/negotiate", { ["Accept"] = "text/html" }))
     assert(negHtml:find("html", 1, true), "negotiation did not pick html")
 
     print("http web features ok")

@@ -1,13 +1,16 @@
 #include "varn/http/HttpClientModule.h"
 
+#include "HttpClientResponseLua.h"
 #include "HttpUrl.h"
 #include "varn/async/Promise.h"
 #include "varn/http/HttpClientPerform.h"
+#include "varn/log/Log.h"
 #include "varn/lua/LuaHelpers.h"
 #include "varn/runtime/Runtime.h"
 
 #include <lua.hpp>
 
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <string>
@@ -38,12 +41,20 @@ int luaUrlDecode(lua_State* L)
     lua_pushlstring(L, out.data(), out.size());
     return 1;
 }
+
+void logCallbackError(lua_State* L, const char* fallback)
+{
+    const char* message = lua_tostring(L, -1);
+    varn::log::Log::error("HttpClientModule", message != nullptr ? message : fallback);
+    lua_pop(L, 1);
+}
 } // namespace
 
-// lua surface wrapping the raw wire primitive into an ergonomic response plus query/json options
+// lua surface wrapping the raw primitives into an ergonomic response plus query/json options
 static const char* const kClientPrelude = R"lua(
 local client = ...
 local requestRaw = client.requestRaw
+local streamRaw = client.streamRaw
 local async = require("async")
 
 local ok, json = pcall(require, "json")
@@ -51,14 +62,14 @@ if not ok then
     json = nil
 end
 
--- percent-encode a query component so keys and values survive transport unambiguously.
+-- percent-encode a query component so keys and values survive transport unambiguously
 local function encodeComponent(value)
     return (tostring(value):gsub("[^%w%-%_%.%~]", function(c)
         return string.format("%%%02X", string.byte(c))
     end))
 end
 
--- fold a { k = v } table into a sorted query string for stable, reproducible urls.
+-- fold a { k = v } table into a sorted query string for stable urls
 local function buildQuery(params)
     local keys = {}
     for key in pairs(params) do
@@ -74,7 +85,7 @@ local function buildQuery(params)
     return table.concat(pairsOut, "&")
 end
 
--- append a query string to a url, respecting an existing '?' already present.
+-- append a query string to a url, respecting an existing '?' already present
 local function withQuery(url, params)
     local query = buildQuery(params)
     if query == "" then
@@ -85,41 +96,20 @@ local function withQuery(url, params)
     return url .. separator .. query
 end
 
--- split the VARN/1 wire into status and raw body, the only framing the primitive returns.
-local function parseWire(wire)
-    local nl = wire:find("\n", 1, true)
-    if not nl then
-        error("http.client: missing wire header terminator")
-    end
-
-    local status, len = wire:sub(1, nl - 1):match("^VARN/1 (%d+) (%d+)$")
-    if not status then
-        error("http.client: bad wire header: " .. wire:sub(1, nl - 1))
-    end
-
-    return tonumber(status), wire:sub(nl + 1, nl + tonumber(len))
-end
-
--- build the ergonomic response table with a lazily parsed json() accessor.
-local function makeResponse(status, body)
-    local response = {
-        status = status,
-        ok = status < 400,
-        headers = {},
-        body = body,
-    }
-
-    function response.json()
+-- augment the resolved { status, headers, body } table with ok and a lazy json accessor
+local function makeResponse(res)
+    res.ok = res.status < 400
+    function res.json()
         if not json then
             error("http.client: the json module is not available")
         end
-        return json.decode(body)
+        return json.decode(res.body)
     end
 
-    return response
+    return res
 end
 
--- normalize a string/table argument into request options, applying query and json shortcuts.
+-- normalize a string/table argument into request options, applying query and json shortcuts
 local function buildOptions(opts)
     opts = opts or {}
 
@@ -144,7 +134,7 @@ local function buildOptions(opts)
         options.url = withQuery(options.url, opts.query)
     end
 
-    -- json option serializes the body and sets the content type unless the caller already set one.
+    -- json option serializes the body and sets the content type unless the caller already set one
     if opts.json ~= nil then
         if not json then
             error("http.client: the json module is not available")
@@ -168,13 +158,12 @@ end
 function client.request(opts)
     local options = buildOptions(opts)
     return async.promise(function()
-        local wire, err = requestRaw(options):await()
+        local res, err = requestRaw(options):await()
         if err then
             error(err, 0)
         end
 
-        local status, body = parseWire(wire)
-        return makeResponse(status, body)
+        return makeResponse(res)
     end)
 end
 
@@ -191,6 +180,19 @@ function client.post(url, opts)
     opts.method = "POST"
     return client.request(opts)
 end
+
+-- stream the response body in chunks; onChunk(chunk) runs per piece and must not yield, opts.onResponse(status, headers) fires once before the chunks
+function client.stream(opts, onChunk)
+    local options = buildOptions(opts)
+    return async.promise(function()
+        local done, err = streamRaw(options, onChunk, opts.onResponse):await()
+        if err then
+            error(err, 0)
+        end
+
+        return done
+    end)
+end
 )lua";
 
 Runtime& HttpClientModule::luaRuntime(lua_State* L)
@@ -198,7 +200,9 @@ Runtime& HttpClientModule::luaRuntime(lua_State* L)
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
 }
 
-void HttpClientModule::readHeadersTable(lua_State* L, int absIndex, std::map<std::string, std::string>& out)
+namespace
+{
+void readHeadersTable(lua_State* L, int absIndex, std::map<std::string, std::string>& out)
 {
     lua_pushnil(L);
     while (lua_next(L, absIndex) != 0)
@@ -218,41 +222,30 @@ void HttpClientModule::readHeadersTable(lua_State* L, int absIndex, std::map<std
     }
 }
 
-int HttpClientModule::luaClientRequest(lua_State* L)
+void readClientOptions(lua_State* L, std::string& method, std::map<std::string, std::string>& headers, std::string& body, varn::http::client::ClientRequestOptions& options)
 {
-    luaL_checktype(L, 1, LUA_TTABLE);
-    lua_getfield(L, 1, "url");
-    const char* url = luaL_checkstring(L, -1);
-    lua_pop(L, 1);
-
     lua_getfield(L, 1, "method");
-    const char* method = lua_isstring(L, -1) ? lua_tostring(L, -1) : "GET";
+    method = lua_isstring(L, -1) ? lua_tostring(L, -1) : "GET";
     lua_pop(L, 1);
 
-    std::map<std::string, std::string> headers;
     lua_getfield(L, 1, "headers");
     if (lua_istable(L, -1))
     {
         readHeadersTable(L, lua_absindex(L, -1), headers);
     }
-
     lua_pop(L, 1);
 
-    std::string body;
     lua_getfield(L, 1, "body");
     if (lua_isstring(L, -1))
     {
-        size_t len = 0;
+        std::size_t len = 0;
         const char* chunk = lua_tolstring(L, -1, &len);
         if (chunk != nullptr)
         {
             body.assign(chunk, len);
         }
     }
-
     lua_pop(L, 1);
-
-    varn::http::client::ClientRequestOptions options;
 
     lua_getfield(L, 1, "timeoutSeconds");
     if (lua_isinteger(L, -1))
@@ -263,23 +256,21 @@ int HttpClientModule::luaClientRequest(lua_State* L)
             options.timeoutSeconds = value;
         }
     }
-
     lua_pop(L, 1);
 
-    // tls verification is on by default, with insecure as an explicit opt-in escape hatch for dev certs
+    // tls verification is on by default, with insecure as an explicit opt-in for dev certs
     lua_getfield(L, 1, "verifyTls");
     if (lua_isboolean(L, -1))
     {
         options.verifyTls = lua_toboolean(L, -1) != 0;
     }
-
     lua_pop(L, 1);
+
     lua_getfield(L, 1, "insecure");
     if (lua_isboolean(L, -1) && lua_toboolean(L, -1) != 0)
     {
         options.verifyTls = false;
     }
-
     lua_pop(L, 1);
 
     lua_getfield(L, 1, "maxResponseBytes");
@@ -291,13 +282,25 @@ int HttpClientModule::luaClientRequest(lua_State* L)
             options.maxResponseBytes = static_cast<std::size_t>(value);
         }
     }
-
     lua_pop(L, 1);
+}
+} // namespace
+
+int HttpClientModule::luaClientRequest(lua_State* L)
+{
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "url");
+    const std::string urlStr = luaL_checkstring(L, -1);
+    lua_pop(L, 1);
+
+    std::string methodStr;
+    std::map<std::string, std::string> headers;
+    std::string body;
+    varn::http::client::ClientRequestOptions options;
+    readClientOptions(L, methodStr, headers, body, options);
 
     auto& rt = luaRuntime(L);
     auto promise = std::make_shared<Promise>(rt);
-    const std::string methodStr = method;
-    const std::string urlStr = url;
 
 #if VARN_HTTP_CLIENT_EMSCRIPTEN_FETCH_ASYNC
     try
@@ -310,16 +313,156 @@ int HttpClientModule::luaClientRequest(lua_State* L)
         promise->reject(ex.what());
     }
 #else
+    // clang-format off
     rt.ioPool().post([promise, methodStr, urlStr, headers, body, options]
-                     {
-        try {
-            promise->resolve(varn::http::client::HttpClientPerform::perform(methodStr, urlStr, headers, body, options));
-        } catch (const std::exception& ex) {
+    {
+        try
+        {
+            auto resp = varn::http::client::HttpClientPerform::perform(methodStr, urlStr, headers, body, options);
+            promise->resolveCustom([resp = std::move(resp)](lua_State* lua)
+            {
+                varn::http::client::pushResponseTable(lua, resp.status, resp.headers, resp.body);
+            });
+        }
+        catch (const std::exception& ex)
+        {
             promise->reject(ex.what());
-        } catch (...) {
+        }
+        catch (...)
+        {
             // a worker thread must never let an exception escape and terminate the process
             promise->reject("[HttpClientModule] The request failed with a non-standard error.");
-        } });
+        }
+    });
+    // clang-format on
+#endif
+
+    Promise::push(L, promise);
+    return 1;
+}
+
+int HttpClientModule::luaClientStream(lua_State* L)
+{
+    luaL_checktype(L, 1, LUA_TTABLE);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    lua_getfield(L, 1, "url");
+    const std::string urlStr = luaL_checkstring(L, -1);
+    lua_pop(L, 1);
+
+    std::string methodStr;
+    std::map<std::string, std::string> headers;
+    std::string body;
+    varn::http::client::ClientRequestOptions options;
+    readClientOptions(L, methodStr, headers, body, options);
+
+    // hold the chunk callback and the optional response callback in the registry for the duration of the stream
+    lua_pushvalue(L, 2);
+    const int onChunkRef = luaL_ref(L, LUA_REGISTRYINDEX);
+
+    int onResponseRef = LUA_NOREF;
+    if (lua_isfunction(L, 3))
+    {
+        lua_pushvalue(L, 3);
+        onResponseRef = luaL_ref(L, LUA_REGISTRYINDEX);
+    }
+
+    auto& rt = luaRuntime(L);
+    Runtime* rtp = &rt;
+    auto promise = std::make_shared<Promise>(rt);
+
+#if VARN_HTTP_CLIENT_EMSCRIPTEN_FETCH_ASYNC
+    luaL_unref(L, LUA_REGISTRYINDEX, onChunkRef);
+    if (onResponseRef != LUA_NOREF)
+    {
+        luaL_unref(L, LUA_REGISTRYINDEX, onResponseRef);
+    }
+    promise->reject("[HttpClientModule] Streaming is not supported in the wasm build.");
+#else
+    // clang-format off
+    rt.ioPool().post([rtp, promise, methodStr, urlStr, headers, body, options, onChunkRef, onResponseRef]
+    {
+        auto releaseRefs = [rtp, onChunkRef, onResponseRef]
+        {
+            rtp->mainLoop().post([rtp, onChunkRef, onResponseRef]
+            {
+                if (rtp->stopped())
+                {
+                    return;
+                }
+
+                lua_State* lua = rtp->luaState();
+                luaL_unref(lua, LUA_REGISTRYINDEX, onChunkRef);
+                if (onResponseRef != LUA_NOREF)
+                {
+                    luaL_unref(lua, LUA_REGISTRYINDEX, onResponseRef);
+                }
+            });
+        };
+
+        try
+        {
+            varn::http::client::StreamResponseFn onResponse = [rtp, onResponseRef](int status, const varn::http::client::ResponseHeaders& hdrs)
+            {
+                if (onResponseRef == LUA_NOREF)
+                {
+                    return;
+                }
+
+                auto headersCopy = std::make_shared<varn::http::client::ResponseHeaders>(hdrs);
+                rtp->mainLoop().post([rtp, onResponseRef, status, headersCopy]
+                {
+                    if (rtp->stopped())
+                    {
+                        return;
+                    }
+
+                    lua_State* lua = rtp->luaState();
+                    lua_rawgeti(lua, LUA_REGISTRYINDEX, onResponseRef);
+                    lua_pushinteger(lua, status);
+                    varn::http::client::pushHeadersTable(lua, *headersCopy);
+                    if (lua_pcall(lua, 2, 0, 0) != LUA_OK)
+                    {
+                        logCallbackError(lua, "the stream onResponse callback failed");
+                    }
+                });
+            };
+
+            varn::http::client::StreamChunkFn onChunk = [rtp, onChunkRef](const char* data, std::size_t len)
+            {
+                auto chunk = std::make_shared<std::string>(data, len);
+                rtp->mainLoop().post([rtp, onChunkRef, chunk]
+                {
+                    if (rtp->stopped())
+                    {
+                        return;
+                    }
+
+                    lua_State* lua = rtp->luaState();
+                    lua_rawgeti(lua, LUA_REGISTRYINDEX, onChunkRef);
+                    lua_pushlstring(lua, chunk->data(), chunk->size());
+                    if (lua_pcall(lua, 1, 0, 0) != LUA_OK)
+                    {
+                        logCallbackError(lua, "the stream onChunk callback failed");
+                    }
+                });
+            };
+
+            varn::http::client::HttpClientPerform::performStream(methodStr, urlStr, headers, body, options, onResponse, onChunk);
+            releaseRefs();
+            promise->resolve("ok");
+        }
+        catch (const std::exception& ex)
+        {
+            releaseRefs();
+            promise->reject(ex.what());
+        }
+        catch (...)
+        {
+            releaseRefs();
+            promise->reject("[HttpClientModule] The stream failed with a non-standard error.");
+        }
+    });
+    // clang-format on
 #endif
 
     Promise::push(L, promise);
@@ -355,9 +498,12 @@ void HttpClientModule::registerClient(lua_State* L)
 
     lua_newtable(L);
 
-    // the raw primitive returns a promise resolving to the VARN/1 wire string and the prelude layers ergonomics over it
+    // the raw primitives resolve to a { status, headers, body } table and the prelude layers ergonomics over them
     lua_pushcfunction(L, &HttpClientModule::luaClientRequest);
     lua_setfield(L, -2, "requestRaw");
+
+    lua_pushcfunction(L, &HttpClientModule::luaClientStream);
+    lua_setfield(L, -2, "streamRaw");
 
     installPrelude(L);
     lua_setfield(L, -2, "client");

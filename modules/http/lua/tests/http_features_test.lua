@@ -5,12 +5,8 @@ local http = require("http")
 local port = 39811
 local base = "http://127.0.0.1:" .. port
 
--- splits the VARN/1 wire into status and raw body, the only framing the client returns
-local function parseWire(wire)
-    local nl = assert(wire:find("\n", 1, true), "missing header terminator")
-    local status, len = wire:sub(1, nl - 1):match("^VARN/1 (%d+) (%d+)$")
-    assert(status, "bad header line: " .. wire:sub(1, nl - 1))
-    return tonumber(status), wire:sub(nl + 1, nl + tonumber(len))
+local function statusBody(res)
+    return res.status, res.body
 end
 
 -- the client wire returns only status and body, so any cross-request cookie is carried in the request headers the test sets explicitly rather than read from an invisible Set-Cookie
@@ -183,55 +179,55 @@ end
 
 async.run(function()
     -- plugin and module routes resolve
-    local _, healthBody = parseWire(get("/health"))
+    local _, healthBody = statusBody(get("/health"))
     assert(jsonField(healthBody, "status") == "ok", "plugin route failed")
 
-    local _, blogBody = parseWire(get("/blog/hello"))
+    local _, blogBody = statusBody(get("/blog/hello"))
     assert(jsonField(blogBody, "slug") == "hello", "module route failed")
 
     -- response helpers
-    local textStatus, textBody = parseWire(get("/text"))
+    local textStatus, textBody = statusBody(get("/text"))
     assert(textStatus == 200 and textBody == "plain text", "text helper failed")
-    assert(parseWire(get("/html")) == 200, "html helper failed")
-    assert(parseWire(get("/json")) == 200, "json helper failed")
+    assert(statusBody(get("/html")) == 200, "html helper failed")
+    assert(statusBody(get("/json")) == 200, "json helper failed")
 
     -- a redirect keeps the requested status and does not follow on its own
-    assert(parseWire(get("/go")) == 302, "redirect helper failed")
+    assert(statusBody(get("/go")) == 302, "redirect helper failed")
 
     -- the int constraint accepts a number and rejects a word with a 404
-    local okStatus, okBody = parseWire(get("/users/42"))
+    local okStatus, okBody = statusBody(get("/users/42"))
     assert(okStatus == 200 and jsonField(okBody, "id") == "42", "int constraint accept failed")
-    assert(parseWire(get("/users/abc")) == 404, "int constraint reject failed")
+    assert(statusBody(get("/users/abc")) == 404, "int constraint reject failed")
 
     -- the named route builds the expected url
-    local _, linksBody = parseWire(get("/links"))
+    local _, linksBody = statusBody(get("/links"))
     assert(linksBody:find("/users/42", 1, true), "named url build failed")
 
     -- the wildcard route captures a deep tail and an empty tail alike
-    local _, deepTail = parseWire(get("/files/docs/2024/report.pdf"))
+    local _, deepTail = statusBody(get("/files/docs/2024/report.pdf"))
     assert(jsonField(deepTail, "tail") == "docs/2024/report.pdf", "wildcard deep tail failed")
-    local _, emptyTail = parseWire(get("/files"))
+    local _, emptyTail = statusBody(get("/files"))
     assert(jsonField(emptyTail, "tail") == "", "wildcard empty tail failed")
 
     -- the optional param resolves with and without its segment
-    local _, withId = parseWire(get("/posts/7"))
+    local _, withId = statusBody(get("/posts/7"))
     assert(jsonField(withId, "id") == "7", "optional param present failed")
-    local _, withoutId = parseWire(get("/posts"))
+    local _, withoutId = statusBody(get("/posts"))
     assert(jsonField(withoutId, "id") == "none", "optional param absent failed")
 
     -- the verbs each resolve to their own handler
-    assert(jsonField(select(2, parseWire(request("POST", "/verb"))), "verb") == "post", "post verb failed")
-    assert(jsonField(select(2, parseWire(request("PUT", "/verb"))), "verb") == "put", "put verb failed")
-    assert(jsonField(select(2, parseWire(request("PATCH", "/verb"))), "verb") == "patch", "patch verb failed")
-    assert(parseWire(request("DELETE", "/verb")) == 204, "delete verb failed")
-    assert(jsonField(select(2, parseWire(request("GET", "/any"))), "method") == "GET", "all route failed")
+    assert(jsonField(select(2, statusBody(request("POST", "/verb"))), "verb") == "post", "post verb failed")
+    assert(jsonField(select(2, statusBody(request("PUT", "/verb"))), "verb") == "put", "put verb failed")
+    assert(jsonField(select(2, statusBody(request("PATCH", "/verb"))), "verb") == "patch", "patch verb failed")
+    assert(statusBody(request("DELETE", "/verb")) == 204, "delete verb failed")
+    assert(jsonField(select(2, statusBody(request("GET", "/any"))), "method") == "GET", "all route failed")
 
     -- json body parsing round-trips a value
-    local _, jb = parseWire(request("POST", "/echo-json", { ["Content-Type"] = "application/json" }, '{"name":"varn"}'))
+    local _, jb = statusBody(request("POST", "/echo-json", { ["Content-Type"] = "application/json" }, '{"name":"varn"}'))
     assert(jsonField(jb, "name") == "varn", "json body parse failed")
 
     -- form-urlencoded body parsing
-    local _, fb = parseWire(request("POST", "/echo-form", { ["Content-Type"] = "application/x-www-form-urlencoded" }, "city=lisbon"))
+    local _, fb = statusBody(request("POST", "/echo-form", { ["Content-Type"] = "application/x-www-form-urlencoded" }, "city=lisbon"))
     assert(jsonField(fb, "city") == "lisbon", "form body parse failed")
 
     -- multipart body parsing with a field and a file
@@ -249,74 +245,74 @@ async.run(function()
         "--" .. boundary .. "--",
         "",
     }, "\r\n")
-    local _, mb = parseWire(request("POST", "/echo-multipart", { ["Content-Type"] = "multipart/form-data; boundary=" .. boundary }, multipart))
+    local _, mb = statusBody(request("POST", "/echo-multipart", { ["Content-Type"] = "multipart/form-data; boundary=" .. boundary }, multipart))
     assert(jsonField(mb, "note") == "hello", "multipart field failed")
     assert(jsonField(mb, "filename") == "a.txt", "multipart filename failed")
 
     -- the session-backed counter increments across requests as the carry cookie is resent
-    local _, c1 = parseWire(get("/counter"))
+    local _, c1 = statusBody(get("/counter"))
     assert(jsonField(c1, "count") == "1", "session first count failed")
-    local _, c2 = parseWire(get("/counter", { ["Cookie"] = "carry=" .. jsonField(c1, "count") }))
+    local _, c2 = statusBody(get("/counter", { ["Cookie"] = "carry=" .. jsonField(c1, "count") }))
     assert(jsonField(c2, "count") == "2", "session second count failed")
-    local _, c3 = parseWire(get("/counter", { ["Cookie"] = "carry=" .. jsonField(c2, "count") }))
+    local _, c3 = statusBody(get("/counter", { ["Cookie"] = "carry=" .. jsonField(c2, "count") }))
     assert(jsonField(c3, "count") == "3", "session third count failed")
 
     -- the cookie helper answers without error
-    assert(parseWire(get("/set-cookie")) == 200, "set-cookie route failed")
+    assert(statusBody(get("/set-cookie")) == 200, "set-cookie route failed")
 
     -- regenerate the session id without crashing
-    assert(parseWire(request("POST", "/relogin")) == 200, "regenerate session failed")
+    assert(statusBody(request("POST", "/relogin")) == 200, "regenerate session failed")
 
     -- jwt sign then verify with the right and the wrong secret
-    local _, loginBody = parseWire(request("POST", "/login"))
+    local _, loginBody = statusBody(request("POST", "/login"))
     local token = jsonField(loginBody, "token")
     assert(token and #token > 0, "jwt sign failed")
 
-    local _, goodVerify = parseWire(request("POST", "/verify", { ["Content-Type"] = "application/json" },
+    local _, goodVerify = statusBody(request("POST", "/verify", { ["Content-Type"] = "application/json" },
         string.format('{"token":"%s","secret":"topsecret"}', token)))
     assert(jsonField(goodVerify, "sub") == "u1", "jwt verify valid failed")
 
-    local _, badVerify = parseWire(request("POST", "/verify", { ["Content-Type"] = "application/json" },
+    local _, badVerify = statusBody(request("POST", "/verify", { ["Content-Type"] = "application/json" },
         string.format('{"token":"%s","secret":"wrongsecret"}', token)))
     assert(jsonField(badVerify, "ok") == "false", "jwt verify wrong-secret accepted")
 
     -- jwtAuth plus requireRole admits the admin token and denies a missing token
-    local _, panelBody = parseWire(get("/admin/panel", { ["Authorization"] = "Bearer " .. token }))
+    local _, panelBody = statusBody(get("/admin/panel", { ["Authorization"] = "Bearer " .. token }))
     assert(jsonField(panelBody, "role") == "admin", "jwtAuth admin access failed")
-    assert(parseWire(get("/admin/panel")) == 401, "jwtAuth missing token not rejected")
+    assert(statusBody(get("/admin/panel")) == 401, "jwtAuth missing token not rejected")
 
     -- requireAuth admits any authenticated user and denies a request with no token
-    local _, accountBody = parseWire(get("/account/me", { ["Authorization"] = "Bearer " .. token }))
+    local _, accountBody = statusBody(get("/account/me", { ["Authorization"] = "Bearer " .. token }))
     assert(jsonField(accountBody, "user") == "u1", "requireAuth authenticated access failed")
-    assert(parseWire(get("/account/me")) == 401, "requireAuth missing token not rejected")
+    assert(statusBody(get("/account/me")) == 401, "requireAuth missing token not rejected")
 
     -- the api key gates the api group
-    assert(parseWire(get("/api/me", { ["X-API-Key"] = "demo-key" })) == 200, "api key valid rejected")
-    assert(parseWire(get("/api/me", { ["X-API-Key"] = "nope" })) == 401, "api key invalid accepted")
+    assert(statusBody(get("/api/me", { ["X-API-Key"] = "demo-key" })) == 200, "api key valid rejected")
+    assert(statusBody(get("/api/me", { ["X-API-Key"] = "nope" })) == 401, "api key invalid accepted")
 
     -- the rate limit emits its headers and returns 429 once the cap is passed
-    assert(parseWire(get("/limited/ping")) == 200, "rate limit first call failed")
-    assert(parseWire(get("/limited/ping")) == 200, "rate limit second call failed")
-    assert(parseWire(get("/limited/ping")) == 429, "rate limit cap not enforced")
+    assert(statusBody(get("/limited/ping")) == 200, "rate limit first call failed")
+    assert(statusBody(get("/limited/ping")) == 200, "rate limit second call failed")
+    assert(statusBody(get("/limited/ping")) == 429, "rate limit cap not enforced")
 
     -- csrf issues a token on a safe request and rejects an unsafe request that lacks a matching token, and since the signed token is bound to the server-minted session whose cookie the headerless wire cannot replay, the positive accept path is exercised at the token layer in the security suite instead
-    local _, csrfBody = parseWire(get("/forms/token"))
+    local _, csrfBody = statusBody(get("/forms/token"))
     local csrfToken = jsonField(csrfBody, "csrf")
     assert(csrfToken and #csrfToken > 0, "csrf token not issued")
 
-    assert(parseWire(request("POST", "/forms/submit", {})) == 403, "csrf post without token accepted")
-    assert(parseWire(request("POST", "/forms/submit", { ["X-CSRF-Token"] = csrfToken })) == 403,
+    assert(statusBody(request("POST", "/forms/submit", {})) == 403, "csrf post without token accepted")
+    assert(statusBody(request("POST", "/forms/submit", { ["X-CSRF-Token"] = csrfToken })) == 403,
         "csrf post with an unbound token accepted")
 
     -- the file download succeeds with the attachment header living on the wire the server set
-    assert(parseWire(get("/download")) == 200, "file download failed")
+    assert(statusBody(get("/download")) == 200, "file download failed")
 
     -- the central error handler turns a thrown handler into a controlled 500
-    local boomStatus, boomBody = parseWire(get("/boom"))
+    local boomStatus, boomBody = statusBody(get("/boom"))
     assert(boomStatus == 500 and jsonField(boomBody, "error") == "handled", "onError not invoked")
 
     -- the custom not found handler answers an unknown route
-    local nfStatus, nfBody = parseWire(get("/nope"))
+    local nfStatus, nfBody = statusBody(get("/nope"))
     assert(nfStatus == 404 and jsonField(nfBody, "error") == "no route", "onNotFound not invoked")
 
     print("http features ok")

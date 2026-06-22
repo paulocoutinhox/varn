@@ -7,11 +7,8 @@ local port = 39812
 local base = "http://127.0.0.1:" .. port
 local dir = assert(os.getenv("VARN_TEST_DIR"), "VARN_TEST_DIR is not set; run tests with: python3 varn.py test")
 
-local function parseWire(wire)
-    local nl = assert(wire:find("\n", 1, true), "missing header terminator")
-    local status, len = wire:sub(1, nl - 1):match("^VARN/1 (%d+) (%d+)$")
-    assert(status, "bad header line: " .. wire:sub(1, nl - 1))
-    return tonumber(status), wire:sub(nl + 1, nl + tonumber(len))
+local function statusBody(res)
+    return res.status, res.body
 end
 
 local function request(method, path, headers, body)
@@ -125,71 +122,71 @@ app:listen({ host = "127.0.0.1", port = port, publicDir = dir, servePublic = tru
 
 async.run(function()
     -- HTTP-061/063 rejects a response header name carrying crlf rather than writing it
-    assert(jsonField(select(2, parseWire(get("/inject-header"))), "rejected") == "true",
+    assert(jsonField(select(2, statusBody(get("/inject-header"))), "rejected") == "true",
         "header injection not rejected")
 
     -- HTTP-076 rejects a cookie value with control characters
-    assert(jsonField(select(2, parseWire(get("/inject-cookie"))), "rejected") == "true",
+    assert(jsonField(select(2, statusBody(get("/inject-cookie"))), "rejected") == "true",
         "cookie control chars not rejected")
 
     -- HTTP-130 answers a request body over the server limit with 413 and never buffers it whole
     local oversized = string.rep("x", 16 * 1024 * 1024 + 32)
-    assert(parseWire(request("POST", "/sink", {}, oversized)) == 413, "oversized body not rejected")
+    assert(statusBody(request("POST", "/sink", {}, oversized)) == 413, "oversized body not rejected")
 
     -- HTTP-001/006 never verifies an alg none token that carries no real signature
     local noneToken = forgeToken('{"alg":"none","typ":"JWT"}', '{"sub":"attacker"}', "")
-    assert(jsonField(select(2, parseWire(request("POST", "/verify",
+    assert(jsonField(select(2, statusBody(request("POST", "/verify",
         { ["Content-Type"] = "application/json" },
         string.format('{"token":"%s"}', noneToken)))), "ok") == "false", "alg-none token accepted")
 
     -- HTTP-009 rejects a token signed with the wrong secret
     local wrongToken = forgeToken('{"alg":"HS256","typ":"JWT"}', '{"sub":"attacker","role":"admin"}', "not-the-secret")
-    assert(jsonField(select(2, parseWire(request("POST", "/verify",
+    assert(jsonField(select(2, statusBody(request("POST", "/verify",
         { ["Content-Type"] = "application/json" },
         string.format('{"token":"%s"}', wrongToken)))), "ok") == "false", "wrong-signature token accepted")
 
     -- HTTP-008 rejects a correctly signed token with one flipped signature byte
     local good = http.jwt.sign({ sub = "u1" }, secret, { expiresIn = 3600 })
     local flipped = good:sub(1, #good - 1) .. (good:sub(#good) == "A" and "B" or "A")
-    assert(jsonField(select(2, parseWire(request("POST", "/verify",
+    assert(jsonField(select(2, statusBody(request("POST", "/verify",
         { ["Content-Type"] = "application/json" },
         string.format('{"token":"%s"}', flipped)))), "ok") == "false", "byte-flipped token accepted")
 
     -- HTTP-021 rejects an expired but correctly signed token on the exp claim
     local expiredToken = forgeToken('{"alg":"HS256","typ":"JWT"}', '{"sub":"u1","exp":1000000000}', secret)
-    local _, expiredBody = parseWire(request("POST", "/verify",
+    local _, expiredBody = statusBody(request("POST", "/verify",
         { ["Content-Type"] = "application/json" },
         string.format('{"token":"%s"}', expiredToken)))
     assert(jsonField(expiredBody, "ok") == "false", "expired token accepted")
     assert(jsonField(expiredBody, "err") == "token expired", "expired token rejected for the wrong reason")
 
     -- HTTP-051/053 rejects an empty key and a near-miss key through the timing-safe compare
-    assert(parseWire(get("/api/data")) == 401, "missing api key accepted")
-    assert(parseWire(get("/api/data", { ["X-API-Key"] = "the-real-kez" })) == 401, "near-miss api key accepted")
-    assert(parseWire(get("/api/data", { ["X-API-Key"] = "the-real-key" })) == 200, "valid api key rejected")
+    assert(statusBody(get("/api/data")) == 401, "missing api key accepted")
+    assert(statusBody(get("/api/data", { ["X-API-Key"] = "the-real-kez" })) == 401, "near-miss api key accepted")
+    assert(statusBody(get("/api/data", { ["X-API-Key"] = "the-real-key" })) == 200, "valid api key rejected")
 
     -- HTTP-086/089 rejects an unsafe method without a session-bound csrf token
-    local _, tokenBody = parseWire(get("/forms/token"))
+    local _, tokenBody = statusBody(get("/forms/token"))
     local csrf = jsonField(tokenBody, "csrf")
     assert(csrf and #csrf > 0, "csrf token not issued")
-    assert(parseWire(request("POST", "/forms/submit", {})) == 403, "csrf submit without token accepted")
-    assert(parseWire(request("POST", "/forms/submit", { ["X-CSRF-Token"] = csrf })) == 403,
+    assert(statusBody(request("POST", "/forms/submit", {})) == 403, "csrf submit without token accepted")
+    assert(statusBody(request("POST", "/forms/submit", { ["X-CSRF-Token"] = csrf })) == 403,
         "csrf cross-submit with an unbound token accepted")
 
     -- HTTP-140 answers requests past the cap with 429 instead of serving them
-    assert(parseWire(get("/limited/ping")) == 200, "rate limit first call failed")
-    assert(parseWire(get("/limited/ping")) == 200, "rate limit second call failed")
-    assert(parseWire(get("/limited/ping")) == 200, "rate limit third call failed")
-    assert(parseWire(get("/limited/ping")) == 429, "rate limit cap not enforced")
+    assert(statusBody(get("/limited/ping")) == 200, "rate limit first call failed")
+    assert(statusBody(get("/limited/ping")) == 200, "rate limit second call failed")
+    assert(statusBody(get("/limited/ping")) == 200, "rate limit third call failed")
+    assert(statusBody(get("/limited/ping")) == 429, "rate limit cap not enforced")
 
     -- HTTP-110/111/117 keeps traversal attempts from escaping the public directory
     for _, path in ipairs({ "/../README.md", "/%2e%2e/README.md", "/..%2fREADME.md", "/etc/passwd" }) do
-        local status = parseWire(get(path))
+        local status = statusBody(get(path))
         assert(status == 403 or status == 404, "traversal path " .. path .. " returned " .. status)
     end
 
     -- HTTP-102 returns 405 with an Allow header for a wrong method on a known path
-    assert(parseWire(request("DELETE", "/only-get", {})) == 405, "method not allowed did not return 405")
+    assert(statusBody(request("DELETE", "/only-get", {})) == 405, "method not allowed did not return 405")
 
     print("http security ok")
 end)

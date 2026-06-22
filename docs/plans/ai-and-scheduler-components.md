@@ -23,9 +23,8 @@ Decisions locked: streaming is built now (the HTTP core gains a streaming path �
 - ❌ Response **headers are dropped** (`headers` table always empty) — rate-limit/`retry-after`/request-id/SSE content-type invisible.
 - ⚠️ No repeating-timer primitive, but `async.spawn` + a `async.sleep(ms):await()` loop gives a tick and keeps the process alive.
 
-### Verdicts
-- **`ai` non-streaming text + image** → pure component today.
-- **`ai` streaming (SSE)** → **build the core streaming HTTP path now** (Part 3). No more deferral.
+### Verdicts (architecture)
+- **`ai` (text, image, audio, streaming, tools)** → Lua component on top of the project HTTP client, which gains a streaming path + response headers (Part 3). Streaming is HTTP — the response body just arrives in pieces — so the right home is the real HTTP client (Poco already does HTTP/1.1 + TLS + chunked decoding correctly), not a hand-rolled HTTP parser over a raw socket. The change also replaces the `VARN/1 <status> <len>\n<body>` wire-string with a proper resolved `{status, headers, body}` table. This benefits every component, not just `ai`.
 - **`scheduler`** → pure component over `vdo` + `async` tick loop + boot-epoch recovery + named handlers.
 
 ---
@@ -35,6 +34,8 @@ Decisions locked: streaming is built now (the HTTP core gains a streaming path �
 ### 1.1 Design
 - [ ] `components/ai/` exposing `local ai = require("ai")`.
 - [ ] `ai.client({provider, apiKey, model, baseUrl?, headers?, ...})` → client with `:generate(req)` (full), `:stream(req, onEvent)` (streaming), `:image(req)`, `:embed(req)` (where supported), `:countTokens(req)` (where supported).
+- [ ] `ai.audio({provider="elevenlabs", apiKey, baseUrl?})` → audio client with `:tts(req)` (returns audio bytes), `:ttsStream(req, onChunk)` (chunked audio), `:stt(req)` (transcription), `:voices()`, `:speechToSpeech(req)`, `:soundEffect(req)`. OpenAI and Gemini also expose audio (OpenAI `/v1/audio/speech` + `/v1/audio/transcriptions`, Gemini audio in/out) — expose those too, with ElevenLabs as the dedicated, full-featured audio provider.
+- [ ] Transport: the project `http.client` (after Part 3) — `client.request` returning `{status, headers, body}` and `client.stream` delivering the body in chunks via a callback. Binary bodies (audio/image) returned intact; multipart bodies (STT/STS/voice-clone uploads) assembled by the ai component and sent as the request body. SSE decoding (split events, multi-line `data:`, ignore comment lines) lives in the ai component on top of the chunk callback.
 - [ ] **Two wire families + adapters**: (a) **OpenAI Chat Completions** baseline covers OpenAI, Grok, DeepSeek, Kimi, Mistral, Groq, Together, OpenRouter, Ollama-`/v1`; (b) **native adapters** for Anthropic Messages, Google Gemini, and Ollama-native `/api/chat`. Optional OpenAI Responses adapter for hosted tools/state.
 - [ ] Normalized request `{model, messages[], system?, temperature?, maxTokens?, topP?, stop?, tools?, toolChoice?, responseFormat?, reasoning?, stream?, extra?}`; message `{role, content=string|parts[]}`; parts text/image/tool_call/tool_result.
 - [ ] Normalized response `{text, finishReason, toolCalls[], reasoning?, usage={inputTokens,outputTokens,totalTokens,...}, raw}`.
@@ -104,6 +105,17 @@ Baseline: `POST {base}/v1/chat/completions`, `Bearer`, SSE + `data: [DONE]`, `ch
 - **Together** (`https://api.together.xyz/v1`): `json_object`+`json_schema`. Image `POST /v1/images/generations` FLUX (`black-forest-labs/FLUX.2-*`, params `prompt/negative_prompt/steps/n/width/height/seed/response_format`, edit via `image_url`). `vendor/model` IDs.
 - **OpenRouter** (`https://openrouter.ai/api/v1`): SSE emits `: OPENROUTER PROCESSING` comment lines (ignore); **mid-stream errors inline with HTTP 200 + `finish_reason:"error"`**. `reasoning` object (effort enum incl xhigh/minimal/none) → `reasoning` field. Headers `HTTP-Referer`+`X-Title`; body `provider` routing object. `vendor/model` IDs.
 - **Ollama** (`http://localhost:11434`): `/v1/chat/completions` (SSE+`[DONE]`, no `tool_choice`/`logprobs`). Native `/api/chat` is **NDJSON** (no `data:`, no `[DONE]`, final `"done":true`+`done_reason`, delta in `message` not `choices[].delta`), structured via `format` (json or schema), reasoning via `think`→`message.thinking`, tool result `role:"tool"`+`tool_name`, sampling in `options`. Model `name:tag`.
+
+### 1.6b Audio — ElevenLabs (verified 2026-06-21, elevenlabs.io/docs)
+- Base `https://api.elevenlabs.io`; auth header `xi-api-key`. `v1` prefix for almost everything (voices list moved to `GET /v2/voices`). Browser/client use can mint single-use tokens via `POST /v1/tokens/create`.
+- **TTS** `POST /v1/text-to-speech/{voice_id}` (and `/stream` for chunked audio). Query `output_format` (default `mp3_44100_128`), `optimize_streaming_latency` (0–4). Body `{text (req), model_id, language_code, voice_settings{stability,similarity_boost,style,use_speaker_boost,speed}, seed, previous_text/next_text, previous_request_ids/next_request_ids, apply_text_normalization}`. Response = raw audio bytes (octet-stream); `/stream` = same bytes chunked. Models `eleven_v3` (most expressive), `eleven_multilingual_v2` (default), `eleven_flash_v2_5` (~75 ms low latency); `*_v1` removed 2026-07-09.
+- **Realtime TTS WebSocket** `wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input` (single-context) and `/multi-stream-input` (multi-context with `context_id`): init msg (`text:" "`, `voice_settings`, `generation_config.chunk_length_schedule`, auth), text chunks (`{text, try_trigger_generation, flush}`), close (`{text:""}`); server → `{audio:<base64>, alignment, normalizedAlignment}` then `{isFinal:true}`. (WebSocket needs a ws client — defer to a later phase; HTTP `/stream` covers low-latency well.)
+- **STT (Scribe)** `POST /v1/speech-to-text` (multipart): `model_id` (`scribe_v2`, req), `file` or `cloud_storage_url`, `language_code`, `tag_audio_events`, `num_speakers`, `timestamps_granularity` (none/word/character), `diarize`, `file_format`. Response `{language_code, language_probability, text, words[]{text,type,start,end,speaker_id,characters[]}}`. Realtime STT WebSocket `wss://.../v1/speech-to-text/realtime` with `scribe_v2_realtime`.
+- **Voices** `GET /v2/voices` (search/page_size/sort/category/voice_ids), `GET /v1/voices/{id}`, settings get/edit; **voice design** `POST /v1/text-to-voice/design` (+ `/create`); **instant clone** `POST /v1/voices/add` (multipart); **PVC** `POST /v1/voices/pvc/*`.
+- **Other**: speech-to-speech `POST /v1/speech-to-speech/{voice_id}` (multipart audio, `model_id` default `eleven_english_sts_v2`, `+/stream`); sound effects `POST /v1/sound-generation` (`text, duration_seconds, prompt_influence, model_id eleven_text_to_sound_v2`); audio isolation `POST /v1/audio-isolation`; dubbing `POST /v1/dubbing` (async `dubbing_id` → poll → `GET /v1/dubbing/{id}/audio/{lang}`).
+- **Output formats**: `mp3_44100_{32..192}`, `mp3_22050_32`, `mp3_24000_48`, `pcm_{8000..48000}` (raw 16-bit LE mono), `ulaw_8000`/`alaw_8000` (telephony), `opus_48000_{32..192}`.
+- **Errors** `{detail:{type,code,message,request_id}}`; 400/401/402/403/404/409/429/500/503. 429 split: `rate_limit_exceeded` (backoff) vs `concurrent_limit_exceeded` (wait for in-flight; per-plan concurrency 2→15+). Usage via `GET /v1/usage/character-stats` + `GET /v1/user/subscription` (no standardized per-response credit header). `request_id` on responses.
+- [ ] Audio bodies are binary — the transport must return raw bytes untouched; `ai.saveAudio(bytes, path)` via fs; STT/STS/clone use multipart bodies (the transport needs a multipart encoder).
 
 ### 1.7 Deviations the client must handle (consolidated)
 - [ ] **Base/path**: Groq `/openai/v1`, OpenRouter `/api/v1`, DeepSeek optional `/v1`, Moonshot two regional clusters, Together `.xyz`.
@@ -176,13 +188,18 @@ Baseline: `POST {base}/v1/chat/completions`, `Bearer`, SSE + `data: [DONE]`, `ch
 
 ---
 
-## Part 3 — Core change: streaming HTTP client (build now)
+## Part 3 — Core change: streaming + headers in the HTTP client — DONE ✅
 
-- [ ] Add a streaming request to the HTTP client: `http.client.stream(opts, onChunk)` returning a promise that resolves when the stream ends; `onChunk(chunk)` fires on the event loop per body chunk.
-- [ ] Expose **response status + headers** at stream start (and add headers to the non-streaming response too) so SSE content-type, rate-limit, and `retry-after` reach Lua.
-- [ ] Implement in the Poco client exchange (read the response stream in chunks on `ioPool`, marshal each chunk to the event loop via the runtime, reuse the `runOnPool`/promise plumbing) and the emscripten fetch driver (incremental reader). Refactor the client architecture as needed — do not preserve the full-body-only path as a constraint.
-- [ ] Keep `maxResponseBytes`/timeout; support cancellation to stop reading.
-- [ ] Tests against a local chunked/SSE server on Windows/Linux/macOS CI. Project comment/format rules; wrap lambdas in `// clang-format off/on`.
+Done and validated against the real OpenAI API (text + streaming + rate-limit headers visible); CI test `modules/http/lua/tests/http_client_stream_test.lua` covers streaming locally. `http.client.request` resolves `{status, headers, body}` (the `VARN/1` wire is gone), `http.client.stream(opts, onChunk)` streams body chunks with `opts.onResponse(status, headers)`. Also fixed a pre-existing TLS gap: the bundled OpenSSL had no CA trust store, so verified https to real hosts failed — added `resolveCaBundle()` (honors `SSL_CERT_FILE`, then probes OS bundle paths) to both the http client and `socket.tls` contexts.
+
+Original scope (for reference): extend the real client rather than hand-rolling HTTP. Bounded change in `HttpClientModule` / `HttpClientPerform` / `PocoClientExchange` (Poco already exposes the response `istream` + `HTTPResponse` headers; today we read it all and drop the headers).
+
+- [ ] **Expose response headers + clean up the wire.** Replace the `VARN/1 <status> <len>\n<body>` wire-string with the promise resolving (via `resolveCustom`) to a Lua table `{status, headers, body}`. Update `HttpClientModule`'s prelude `makeResponse`/`parseWire` accordingly (drop `parseWire`).
+- [ ] **Streaming API.** Add `client.stream(opts, {onResponse=fn(status, headers), onChunk=fn(chunk)})` returning a promise that resolves when the stream ends and rejects on error. `onResponse` fires once after the response line/headers; `onChunk` fires per body chunk.
+- [ ] **Chunk marshaling.** In `PocoClientExchange`, after `receiveResponse` read the body `istream` in chunks on `ioPool`; for each chunk, post a job to the event loop (`rt.mainLoop().post`) that invokes the stored Lua callback ref with the chunk (copy the bytes into the job). Reuse the `runOnPool`/Promise plumbing and the registry-ref pattern from `AsyncModule`/`Promise`. Keep `maxResponseBytes` (as a cumulative guard) and timeout; support cancellation to stop reading.
+- [ ] **Chunked/identity bodies** are handled by Poco's `istream`; the chunk callback sees decoded body bytes (binary-safe).
+- [ ] **wasm**: native (Poco) first; the emscripten fetch driver's incremental/streaming reader is a follow-up (browser AI is server-side anyway).
+- [ ] Tests against a local chunked/SSE HTTP server (the http/socket test harness) on Windows/Linux/macOS CI; project comment/format rules; wrap lambdas in `// clang-format off/on`.
 
 ---
 
@@ -193,8 +210,8 @@ Baseline: `POST {base}/v1/chat/completions`, `Bearer`, SSE + `data: [DONE]`, `ch
 - [ ] Server-side `ai` demo for the site (wasm browser cannot reach provider APIs without a proxy/keys).
 
 ## Build order
-1. **Part 3** streaming HTTP core change (+ response headers) → unblocks `ai` streaming and `retry-after`.
-2. **`ai`** — OpenAI Chat baseline + the compatible providers, then Anthropic + Gemini native adapters, then streaming, then image gen, then native extras.
+1. **Part 3** streaming + response headers in the HTTP client, replacing the `VARN/1` wire with a `{status, headers, body}` table → unblocks `ai` streaming and `retry-after`, benefits the whole project.
+2. **`ai`** — OpenAI Chat baseline + the compatible providers, then Anthropic + Gemini native adapters, then streaming, then image gen, then audio (ElevenLabs), then native extras.
 3. **`scheduler`** — vdo store + state machine + recovery + tick loop, then triggers, retries, history, then examples/tests.
 
 ## Remaining open question

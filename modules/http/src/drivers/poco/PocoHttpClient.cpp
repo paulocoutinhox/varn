@@ -11,12 +11,9 @@
 namespace varn::http::client
 {
 
-std::string HttpClientPerform::perform(
-    const std::string& method,
-    const std::string& url,
-    const std::map<std::string, std::string>& headers,
-    const std::string& body,
-    const ClientRequestOptions& options)
+namespace
+{
+Poco::URI parseUri(const std::string& url)
 {
     Poco::URI uri(url);
     const std::string scheme = uri.getScheme();
@@ -25,7 +22,20 @@ std::string HttpClientPerform::perform(
         throw std::runtime_error("[PocoHttpClient] The URL scheme must be http or https.");
     }
 
-    if (scheme == "https")
+    return uri;
+}
+} // namespace
+
+ClientResponse HttpClientPerform::perform(
+    const std::string& method,
+    const std::string& url,
+    const std::map<std::string, std::string>& headers,
+    const std::string& body,
+    const ClientRequestOptions& options)
+{
+    const Poco::URI uri = parseUri(url);
+
+    if (uri.getScheme() == "https")
     {
 #if defined(VARN_ENABLE_TLS)
         return PocoClientExchange::performHttps(method, uri, headers, body, options);
@@ -35,6 +45,30 @@ std::string HttpClientPerform::perform(
     }
 
     return PocoClientExchange::performHttp(method, uri, headers, body, options);
+}
+
+void HttpClientPerform::performStream(
+    const std::string& method,
+    const std::string& url,
+    const std::map<std::string, std::string>& headers,
+    const std::string& body,
+    const ClientRequestOptions& options,
+    const StreamResponseFn& onResponse,
+    const StreamChunkFn& onChunk)
+{
+    const Poco::URI uri = parseUri(url);
+
+    if (uri.getScheme() == "https")
+    {
+#if defined(VARN_ENABLE_TLS)
+        PocoClientExchange::performStreamHttps(method, uri, headers, body, options, onResponse, onChunk);
+        return;
+#else
+        throw std::runtime_error("[PocoHttpClient] Secure URLs require a build with TLS support enabled.");
+#endif
+    }
+
+    PocoClientExchange::performStreamHttp(method, uri, headers, body, options, onResponse, onChunk);
 }
 
 } // namespace varn::http::client

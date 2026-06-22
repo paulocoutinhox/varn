@@ -4,11 +4,8 @@ local http = require("http")
 
 local port = 3991
 
-local function parseWire(wire)
-    local nl = assert(wire:find("\n", 1, true), "missing header terminator")
-    local status, len = wire:sub(1, nl - 1):match("^VARN/1 (%d+) (%d+)$")
-    assert(status, "bad header line: " .. wire:sub(1, nl - 1))
-    return tonumber(status), wire:sub(nl + 1, nl + tonumber(len))
+local function statusBody(res)
+    return res.status, res.body
 end
 
 http.createServer(function(req, res)
@@ -32,13 +29,13 @@ end
 async.run(function()
     local wire, requestErr = get("/text")
     assert(not requestErr, requestErr)
-    local status, body = parseWire(wire)
+    local status, body = statusBody(wire)
     assert(status == 200, "expected 200, got " .. status)
     assert(body == "hello-http", "unexpected body: " .. body)
 
     local missingWire, missingErr = get("/missing")
     assert(not missingErr, missingErr)
-    assert(parseWire(missingWire) == 404, "expected 404")
+    assert(statusBody(missingWire) == 404, "expected 404")
 
     print("http ok")
 end)
