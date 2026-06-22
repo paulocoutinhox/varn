@@ -1,6 +1,7 @@
 #include "varn/zip/ZipModule.h"
 
 #include "ZipPath.h"
+#include "varn/async/AsyncTask.h"
 #include "varn/async/Promise.h"
 #include "varn/lua/LuaHelpers.h"
 #include "varn/runtime/Runtime.h"
@@ -10,8 +11,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <functional>
-#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -34,32 +33,6 @@ using varn::runtime::Runtime;
 Runtime& ZipModule::luaRuntime(lua_State* L)
 {
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
-}
-
-void ZipModule::runAsync(lua_State* L, std::function<void(Promise&)> work)
-{
-    auto& rt = luaRuntime(L);
-    auto promise = std::make_shared<Promise>(rt);
-
-    // clang-format off
-    rt.taskPool().post([promise, work = std::move(work)]
-    {
-        try
-        {
-            work(*promise);
-        }
-        catch (const std::exception& ex)
-        {
-            promise->reject(ex.what());
-        }
-        catch (...)
-        {
-            promise->reject("[ZipModule] The operation failed with a non-standard error.");
-        }
-    });
-    // clang-format on
-
-    Promise::push(L, promise);
 }
 
 void ZipModule::performExtract(const std::string& zipPath, const std::string& destDir)
@@ -282,15 +255,15 @@ int ZipModule::luaExtract(lua_State* L)
     const std::string zipPath = varn::lua::LuaHelpers::checkString(L, 1);
     const std::string destDir = varn::lua::LuaHelpers::checkString(L, 2);
 
+    auto& rt = luaRuntime(L);
+
     // clang-format off
-    runAsync(L, [zipPath, destDir](Promise& promise)
+    return varn::async::runOnPool(L, rt, rt.taskPool(), "ZipModule", [zipPath, destDir](Promise& promise)
     {
         performExtract(zipPath, destDir);
         promise.resolve("ok");
     });
     // clang-format on
-
-    return 1;
 #else
     return luaL_error(L, "[ZipModule] The zip module is not available in this build.");
 #endif
@@ -329,15 +302,15 @@ int ZipModule::luaCreate(lua_State* L)
         items.emplace_back(file, entry);
     }
 
+    auto& rt = luaRuntime(L);
+
     // clang-format off
-    runAsync(L, [zipPath, items = std::move(items)](Promise& promise)
+    return varn::async::runOnPool(L, rt, rt.taskPool(), "ZipModule", [zipPath, items = std::move(items)](Promise& promise)
     {
         performCreate(zipPath, items);
         promise.resolve("ok");
     });
     // clang-format on
-
-    return 1;
 #else
     return luaL_error(L, "[ZipModule] The zip module is not available in this build.");
 #endif
@@ -348,8 +321,10 @@ int ZipModule::luaList(lua_State* L)
 #if defined(VARN_HAVE_LIBZIP) && VARN_HAVE_LIBZIP
     const std::string zipPath = varn::lua::LuaHelpers::checkString(L, 1);
 
+    auto& rt = luaRuntime(L);
+
     // clang-format off
-    runAsync(L, [zipPath](Promise& promise)
+    return varn::async::runOnPool(L, rt, rt.taskPool(), "ZipModule", [zipPath](Promise& promise)
     {
         std::vector<std::string> names = performList(zipPath);
         promise.resolveCustom([names = std::move(names)](lua_State* lua)
@@ -365,8 +340,6 @@ int ZipModule::luaList(lua_State* L)
         });
     });
     // clang-format on
-
-    return 1;
 #else
     return luaL_error(L, "[ZipModule] The zip module is not available in this build.");
 #endif

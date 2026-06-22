@@ -43,8 +43,6 @@ public:
             return spdlog::level::warn;
         case Level::Error:
             return spdlog::level::err;
-        default:
-            return spdlog::level::info;
         }
     }
 };

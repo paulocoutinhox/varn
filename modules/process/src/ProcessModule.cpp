@@ -1,10 +1,10 @@
 #include "varn/process/ProcessModule.h"
+#include "varn/async/AsyncTask.h"
 #include "varn/async/Promise.h"
 #include "varn/lua/LuaHelpers.h"
 #include "varn/process/ProcessRunner.h"
 #include "varn/runtime/Runtime.h"
 
-#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -60,38 +60,23 @@ int ProcessModule::luaExec(lua_State* L)
     }
 
     auto& rt = luaRuntime(L);
-    auto promise = std::make_shared<Promise>(rt);
 
     // clang-format off
-    rt.ioPool().post([promise, command = std::move(command)]
+    return varn::async::runOnPool(L, rt, rt.ioPool(), "ProcessModule", [command = std::move(command)](Promise& promise)
     {
-        try
+        const ProcessResult result = ProcessRunner::exec(command);
+        promise.resolveCustom([result](lua_State* lua)
         {
-            const ProcessResult result = ProcessRunner::exec(command);
-            promise->resolveCustom([result](lua_State* lua)
-            {
-                lua_createtable(lua, 0, 3);
-                lua_pushlstring(lua, result.stdoutData.data(), result.stdoutData.size());
-                lua_setfield(lua, -2, "stdout");
-                lua_pushlstring(lua, result.stderrData.data(), result.stderrData.size());
-                lua_setfield(lua, -2, "stderr");
-                lua_pushinteger(lua, static_cast<lua_Integer>(result.code));
-                lua_setfield(lua, -2, "code");
-            });
-        }
-        catch (const std::exception& ex)
-        {
-            promise->reject(ex.what());
-        }
-        catch (...)
-        {
-            promise->reject("[ProcessModule] The operation failed with a non-standard error.");
-        }
+            lua_createtable(lua, 0, 3);
+            lua_pushlstring(lua, result.stdoutData.data(), result.stdoutData.size());
+            lua_setfield(lua, -2, "stdout");
+            lua_pushlstring(lua, result.stderrData.data(), result.stderrData.size());
+            lua_setfield(lua, -2, "stderr");
+            lua_pushinteger(lua, static_cast<lua_Integer>(result.code));
+            lua_setfield(lua, -2, "code");
+        });
     });
     // clang-format on
-
-    Promise::push(L, promise);
-    return 1;
 }
 
 int ProcessModule::luaGetenv(lua_State* L)

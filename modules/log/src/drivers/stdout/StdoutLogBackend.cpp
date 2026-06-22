@@ -25,8 +25,6 @@ public:
             return "WARN";
         case Level::Error:
             return "ERROR";
-        default:
-            return "?";
         }
     }
 
