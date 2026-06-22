@@ -63,4 +63,4 @@ A task moves through `scheduled` (waiting for its time), `queued` (ready to run)
 ## Examples and tests
 
 - Runnable examples: [examples/](examples/) — basic enqueue, future and interval scheduling, crash recovery.
-- Test: [tests/scheduler_test.lua](tests/scheduler_test.lua) covers success, retry, cancel, scheduling, interval re-arm, and crash recovery with no network.
+- Test: [tests/scheduler_test.lua](tests/scheduler_test.lua) covers success, retry, cancel, scheduling, interval re-arm, and crash recovery. Run it directly with `./build/bin/varn components/scheduler/tests/scheduler_test.lua` on a platform where the `vdo` sqlite backend loads, since it is not part of the cross-platform `varn.py test` runner.

@@ -63,8 +63,9 @@ def run(args: Namespace) -> None:
         print("no lua tests found under modules/*/lua/tests")
         raise SystemExit(1)
 
-    # self-contained component tests that need no external server are run alongside the module tests
-    for relative in ("components/ai/tests/mock_test.lua", "components/scheduler/tests/scheduler_test.lua"):
+    # component tests with no external dependency run alongside the module tests; ones needing a database
+    # or server (scheduler over vdo/sqlite, redis, mysql) are run separately where that backend exists
+    for relative in ("components/ai/tests/mock_test.lua",):
         candidate = helper.PROJECT_DIR / relative
         if candidate.exists():
             tests.append(candidate)
