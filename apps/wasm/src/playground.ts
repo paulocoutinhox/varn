@@ -333,15 +333,20 @@ print("form plus:", http.urlDecode("name=jo%C3%A3o+silva"))
     code: `local async = require("async")
 local http = require("http")
 
+-- the http client works in the browser through the fetch api, and httpbin /delay/N answers after N seconds so the await is visible
 async.spawn(function()
-  local resp, err = http.client.get("https://httpbin.org/get"):await()
+  print("requesting with a 2s delay...")
+  local res, err = http.client.get("https://httpbin.org/delay/2"):await()
   if err then
     print("request failed:", err)
     return
   end
 
-  print("status:", resp.status)
+  print("status:", res.status)
+  print("ok:", res.ok)
 end)
+
+print("main chunk returned before the response arrived")
 `,
   },
   {

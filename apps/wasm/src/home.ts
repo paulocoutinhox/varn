@@ -17,6 +17,15 @@ const MODULES: ReadonlyArray<{ icon: string; name: string; blurb: string }> = [
   { icon: "📝", name: "log", blurb: "Leveled, structured logging to the console or a file" },
 ];
 
+const COMPONENTS: ReadonlyArray<{ icon: string; name: string; blurb: string }> = [
+  { icon: "🤖", name: "ai", blurb: "Text, images, and audio across OpenAI, Claude, Gemini, ElevenLabs, and OpenAI-compatible providers" },
+  { icon: "⏱", name: "scheduler", blurb: "Durable background jobs, immediate, scheduled, or recurring, with retries and crash recovery" },
+  { icon: "🗄️", name: "vdo", blurb: "PDO-style database access over SQLite, MySQL, and PostgreSQL" },
+  { icon: "⚡", name: "redis", blurb: "Redis client over a single connection with auto-pipelining" },
+  { icon: "🐬", name: "mysql", blurb: "Native async MySQL protocol client" },
+  { icon: "🪣", name: "pool", blurb: "Async resource pooling for clients and connections" },
+];
+
 const PERF: ReadonlyArray<{ route: string; varn: string; node: string; python: string }> = [
   { route: "HTTP plaintext", varn: "131k", node: "50k", python: "48k" },
   { route: "HTTP json", varn: "109k", node: "49k", python: "44k" },
@@ -120,6 +129,32 @@ export function mountHome(root: HTMLElement): void {
   }
   modules.appendChild(grid);
   shell.appendChild(modules);
+
+  // components
+  const components = el("section", "flex flex-col gap-4");
+  components.appendChild(sectionTitle("Components"));
+  components.appendChild(
+    el(
+      "p",
+      "max-w-2xl text-sm leading-relaxed text-zinc-400",
+      "Higher-level libraries written in Lua on top of the core, loaded with require. These run server-side on the native runtime.",
+    ),
+  );
+  const componentsGrid = el("div", "grid gap-3 sm:grid-cols-2 lg:grid-cols-3");
+  for (const c of COMPONENTS) {
+    const card = el(
+      "div",
+      "flex flex-col gap-1 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4 transition hover:border-zinc-700 hover:bg-zinc-900/70",
+    );
+    const head = el("div", "flex items-center gap-2");
+    head.appendChild(el("span", "text-lg", c.icon));
+    head.appendChild(el("span", "font-mono text-sm font-semibold text-cyan-300", c.name));
+    card.appendChild(head);
+    card.appendChild(el("p", "text-sm leading-relaxed text-zinc-400", c.blurb));
+    componentsGrid.appendChild(card);
+  }
+  components.appendChild(componentsGrid);
+  shell.appendChild(components);
 
   // performance
   const perf = el("section", "flex flex-col gap-4");
