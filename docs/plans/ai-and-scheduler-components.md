@@ -1,223 +1,201 @@
 # Mega plan — `ai` and `scheduler` components
 
-This is the working checklist and research record for two proposed additions to Varn:
+Working checklist and research record for two additions to Varn:
 
-1. `ai` — a component with complete clients for text and image generation across the major providers (OpenAI, Anthropic Claude, Google Gemini, xAI Grok, DeepSeek, Moonshot/Kimi, and the OpenAI-compatible long tail), with full support for non-streaming responses, streaming, tools/function calling, and each provider's native features.
-2. `scheduler` — a durable background-task scheduler (like FastAPI background tasks but resilient): immediate, run-at-datetime, and fixed-interval tasks, with status, full history, and add/remove/query, that survives server restarts and resets killed in-progress tasks back to the queue.
+1. `ai` — complete clients for text and image generation across OpenAI, Anthropic Claude, Google Gemini, xAI Grok, Moonshot/Kimi, DeepSeek, Mistral, Groq, Together, OpenRouter, and Ollama — non-streaming, streaming, tools/function calling, and each provider's native features.
+2. `scheduler` — durable background-task scheduler (resilient like a real job queue, not FastAPI's in-process tasks): immediate / run-at-datetime / fixed-interval, with status, full history, add/remove/query, surviving restarts and resetting killed in-progress tasks back to the queue. **Store = the `vdo` component.**
 
-> Sourcing note. The OpenAI section was refreshed against the live developer docs (mid-2026). The Claude, Gemini, OpenAI-compatible, and scheduler-framework sections are written from prior knowledge (cutoff early 2026) because the live web research pass was blocked by API load at planning time. Every provider section carries a **LIVE VERIFY** task — pin exact endpoints, headers, model IDs, and event names against the official docs before implementing that client.
+Decisions locked: streaming is built now (the HTTP core gains a streaming path — no backward-compat with the old full-body-only design); the scheduler persists through `vdo`; provider APIs below were verified live on **2026-06-21**.
 
 ---
 
-## Part 0 — Internal capability audit (done) and the one core change required
-
-What Varn exposes today, with the verdict for each component.
+## Part 0 — Internal audit and the one core change (done)
 
 ### Available today
-- **HTTP client** (`require("http").client`): `client.request(opts)`, `client.get(url, opts)`, `client.post(url, opts)`, plus the raw `requestRaw`. Options: `url`, `method`, `headers`, `body`, `query`, `json` (serializes body + sets content-type), `timeoutSeconds`, `verifyTls`, `insecure`, `maxResponseBytes` (default 64 MiB). Returns a promise resolving to `{ status, ok, headers, body, json() }`. Runs the blocking request on `ioPool` and resolves on the event loop. Files: [HttpClientModule.cpp](../../modules/http/src/HttpClientModule.cpp), [HttpClientPerform.h](../../modules/http/include/varn/http/HttpClientPerform.h).
-- **JSON** (`require("json")`): encode/decode, nested objects/arrays, handles base64 as plain strings.
-- **base64** (`require("crypto")`): `base64Encode` / `base64Decode` / url-safe variants — needed to write image-generation bytes to disk.
-- **fs** (`require("fs")`): `readFile`, `writeFile`, `append`, `exists`, `mkdir`, `stat`, `readdir`, `rename`, `copy`, `removeRecursive`, `open`/handle, `mkdtemp`. Enough for a durable file/jsonl store.
-- **async** (`require("async")`): `sleep(ms)`, `spawn(fn)`, `run(fn)`, `promise(fn)`, `deferred()`, plus combinators `all`/`allSettled`/`race`/`any`/`timeout`/`mapLimit`. Backed by `EventLoop::postDelayed(delayMs, job)` ([EventLoop.h](../../modules/core/include/varn/runtime/EventLoop.h)).
-- **ffi + sqlite**: a working sqlite3 example exists ([sqlite3.lua](../../modules/ffi/lua/examples/sqlite3.lua)) — sqlite via ffi is viable for a durable, transactional store.
-- **Component pattern**: a directory under `components/` with `init.lua` returning a module table, built on `socket`/`async`/`http`/etc. (see `components/redis`, `components/pool`). Long-lived socket work runs inside an `async.spawn`/`async.run` coroutine.
-- **Shared async dispatch**: `varn::async::runOnPool(L, rt, pool, tag, work)` ([AsyncTask.cpp](../../modules/async/src/AsyncTask.cpp)) for running blocking work on a pool and settling a promise — the pattern any new C++ surface should reuse.
+- **HTTP client** (`require("http").client`): `client.request/get/post(opts)` + raw `requestRaw`. Options `url/method/headers/body/query/json/timeoutSeconds/verifyTls/insecure/maxResponseBytes`. Resolves a promise to `{status, ok, headers, body, json()}`, blocking work on `ioPool`. [HttpClientModule.cpp](../../modules/http/src/HttpClientModule.cpp).
+- **json / crypto base64 / fs / async** (`sleep/spawn/run/promise/deferred` + combinators, backed by `EventLoop::postDelayed`) / **ffi**.
+- **`vdo`** ([components/vdo](../../components/vdo)): PDO-style facade over sqlite/mysql/pgsql via ffi, DSN-selected. API: `vdo.connect(dsn,user,pass,opts)` → `db:exec(sql)`, `db:prepare(sql)` → `stmt:execute(params)/fetch()/fetchAll()/rowCount()/close()` (binding `?` or `:name`), `db:query(sql,params)`, `db:lastInsertId()`, `db:beginTransaction()/commit()/rollBack()/inTransaction()`, `db:transaction(fn)` (atomic block), `db:close()`.
+- **Component pattern**: dir under `components/` with `init.lua` returning a table; long-lived socket work runs inside `async.spawn`/`async.run`.
+- **Shared async dispatch**: `varn::async::runOnPool(L, rt, pool, tag, work)` ([AsyncTask.cpp](../../modules/async/src/AsyncTask.cpp)).
 
-### Gaps / findings
-- ❌ **No streaming on the HTTP client.** `HttpClientPerform::perform` returns the full body as one string (`VARN/1 <status> <len>\n<body>`); there is no per-chunk callback. The emscripten path also resolves a single full body.
-- ❌ **Response headers are dropped.** The client wire carries only status + body, so the response `headers` table is always empty. Rate-limit headers, `retry-after`, request-ids, and SSE content-type are not visible to Lua.
-- ⚠️ **No repeating-timer primitive**, but a periodic tick is trivially built with `async.spawn` + a loop of `async.sleep(intervalMs):await()`; the pending timer keeps the event loop (and process) alive.
+### Gaps
+- ❌ HTTP client returns the **full body only** (`VARN/1 <status> <len>\n<body>`); no per-chunk callback.
+- ❌ Response **headers are dropped** (`headers` table always empty) — rate-limit/`retry-after`/request-id/SSE content-type invisible.
+- ⚠️ No repeating-timer primitive, but `async.spawn` + a `async.sleep(ms):await()` loop gives a tick and keeps the process alive.
 
 ### Verdicts
-- **`ai` (non-streaming text + image)** → buildable as a pure Lua component today over `http.client` + `json` + `crypto` + `fs`. No core change needed.
-- **`ai` (streaming / SSE token-by-token)** → **requires one new core capability**: a streaming HTTP request that invokes a Lua callback per received chunk and exposes the response status + headers. See Part 3.
-- **`scheduler`** → buildable as a pure Lua component today: durable store via ffi+sqlite (preferred) or fs+jsonl, a tick loop via `async.spawn`/`async.sleep`, startup recovery to reclaim orphaned in-progress tasks, named handlers + serializable payloads. No core change strictly required; an optional shutdown/signal hook would make graceful drain nicer (Part 3, optional).
+- **`ai` non-streaming text + image** → pure component today.
+- **`ai` streaming (SSE)** → **build the core streaming HTTP path now** (Part 3). No more deferral.
+- **`scheduler`** → pure component over `vdo` + `async` tick loop + boot-epoch recovery + named handlers.
 
 ---
 
 ## Part 1 — `ai` component
 
-### 1.1 Design decisions
-- [ ] One component `components/ai/` exposing `local ai = require("ai")`.
-- [ ] Provider drivers behind a normalized interface: `ai.client({ provider, apiKey, model, baseUrl?, headers?, ... })` returns a client with `:generate(req)` (full), `:stream(req, onEvent)` (streaming), `:image(req)` (image generation), and `:embed(req)` if the provider supports it.
-- [ ] **Two wire families**, not one: (a) **OpenAI-compatible** Chat Completions covers OpenAI, Grok, DeepSeek, Kimi, Mistral, Groq, Together, OpenRouter, Ollama; (b) **native adapters** for Anthropic Messages and Google Gemini, which are structurally different. The normalized request/response is the public surface; adapters translate to/from each wire.
-- [ ] Normalized request: `{ model, messages[], system?, temperature?, maxTokens?, topP?, stop?, tools?, toolChoice?, responseFormat?, stream?, reasoning?, ...providerExtras }`.
-- [ ] Normalized message: `{ role = "system"|"user"|"assistant"|"tool", content = string | parts[] }` where a part is `{ type="text", text }`, `{ type="image", url|data, mediaType }`, `{ type="tool_call", id, name, arguments }`, `{ type="tool_result", id, content }`.
-- [ ] Normalized response: `{ text, finishReason, toolCalls[], usage = { inputTokens, outputTokens, totalTokens }, raw }`.
-- [ ] Streaming yields normalized events: `{ type="text_delta", text }`, `{ type="tool_call_delta", index, id?, name?, argumentsDelta }`, `{ type="reasoning_delta", text }`, `{ type="done", finishReason, usage }`, `{ type="error", message }`.
-- [ ] Never hide provider power: expose a `raw`/`extra` passthrough so callers can set provider-specific fields and read provider-specific response data.
-- [ ] Secrets come from the caller (or `process.env`); never persisted or logged.
+### 1.1 Design
+- [ ] `components/ai/` exposing `local ai = require("ai")`.
+- [ ] `ai.client({provider, apiKey, model, baseUrl?, headers?, ...})` → client with `:generate(req)` (full), `:stream(req, onEvent)` (streaming), `:image(req)`, `:embed(req)` (where supported), `:countTokens(req)` (where supported).
+- [ ] **Two wire families + adapters**: (a) **OpenAI Chat Completions** baseline covers OpenAI, Grok, DeepSeek, Kimi, Mistral, Groq, Together, OpenRouter, Ollama-`/v1`; (b) **native adapters** for Anthropic Messages, Google Gemini, and Ollama-native `/api/chat`. Optional OpenAI Responses adapter for hosted tools/state.
+- [ ] Normalized request `{model, messages[], system?, temperature?, maxTokens?, topP?, stop?, tools?, toolChoice?, responseFormat?, reasoning?, stream?, extra?}`; message `{role, content=string|parts[]}`; parts text/image/tool_call/tool_result.
+- [ ] Normalized response `{text, finishReason, toolCalls[], reasoning?, usage={inputTokens,outputTokens,totalTokens,...}, raw}`.
+- [ ] Normalized stream events: `text_delta`, `tool_call_delta`, `reasoning_delta`, `done{finishReason,usage}`, `error`.
+- [ ] `extra`/`raw` passthrough so provider-specific request fields and response data are never hidden.
+- [ ] Keys from caller or `process.env`; never persisted or logged.
 
-### 1.2 Provider matrix
+### 1.2 Provider matrix (verified 2026-06-21)
 
-| Provider | Wire family | Base URL | Auth | Text stream | Tools | Image gen | Native extras |
-|---|---|---|---|---|---|---|---|
-| OpenAI | Responses + Chat | `https://api.openai.com/v1` | `Authorization: Bearer` | yes (SSE) | yes | yes (gpt-image, dall·e) | reasoning effort, hosted tools, structured outputs |
-| Anthropic | Messages (native) | `https://api.anthropic.com` | `x-api-key` + `anthropic-version` | yes (SSE) | yes | **no** | extended thinking, prompt caching, server tools |
-| Gemini | generateContent (native) | `https://generativelanguage.googleapis.com` | `x-goog-api-key` / `?key=` | yes (SSE) | yes | yes (Imagen + native) | grounding/search, code exec, thinking |
-| xAI Grok | OpenAI-compatible | `https://api.x.ai/v1` | Bearer | yes | yes | yes (`/images/generations`) | live search, reasoning |
-| DeepSeek | OpenAI-compatible | `https://api.deepseek.com` | Bearer | yes | yes | no | `reasoning_content` (reasoner) |
-| Moonshot/Kimi | OpenAI-compatible | `https://api.moonshot.cn/v1` | Bearer | yes | yes | no | context caching, partial mode |
-| Mistral | OpenAI-ish | `https://api.mistral.ai/v1` | Bearer | yes | yes | no | vision (pixtral), OCR |
-| Groq | OpenAI-compatible | `https://api.groq.com/openai/v1` | Bearer | yes | yes | no | very low latency |
-| Together | OpenAI-compatible | `https://api.together.xyz/v1` | Bearer | yes | yes | yes (FLUX) | wide model catalog |
-| OpenRouter | OpenAI-compatible | `https://openrouter.ai/api/v1` | Bearer | yes | yes | varies | `HTTP-Referer`/`X-Title` headers, `vendor/model` ids |
-| Ollama (local) | OpenAI-compat + native | `http://localhost:11434` | none | yes | yes | no | local models, `/api/chat` native |
+| Provider | Wire | Base URL | Auth | Image gen | Reasoning surface |
+|---|---|---|---|---|---|
+| OpenAI | Responses + Chat | `https://api.openai.com/v1` | `Bearer` | yes | `reasoning.effort` |
+| Anthropic | Messages | `https://api.anthropic.com` | `x-api-key` + `anthropic-version: 2023-06-01` | **no** | adaptive `thinking` → `thinking` blocks |
+| Gemini | generateContent | `https://generativelanguage.googleapis.com` (`v1beta`) | `x-goog-api-key` / `?key=` | yes (native) | `thinkingLevel` / `thinkingConfig` |
+| xAI Grok | Chat + Responses + Messages | `https://api.x.ai/v1` | `Bearer` | yes | `reasoning_effort` / `reasoning.effort` |
+| Moonshot/Kimi | Chat (+ Anthropic) | `https://api.moonshot.ai/v1` (+`.cn`) | `Bearer` | no | `reasoning_content` |
+| DeepSeek | Chat (+ Anthropic) | `https://api.deepseek.com` | `Bearer` | no | `reasoning_content` |
+| Mistral | Chat + Agents | `https://api.mistral.ai/v1` | `Bearer` | via agent tool | typed `ThinkChunk` list |
+| Groq | Chat | `https://api.groq.com/openai/v1` | `Bearer` | no | `reasoning` field |
+| Together | Chat + images | `https://api.together.xyz/v1` | `Bearer` | yes (FLUX) | `reasoning` (gpt-oss) |
+| OpenRouter | Chat (+ Messages) | `https://openrouter.ai/api/v1` | `Bearer` | varies | `reasoning` object |
+| Ollama | Chat-`/v1` + native | `http://localhost:11434` | none | no | `message.thinking` |
 
-### 1.3 OpenAI (refreshed against live docs, mid-2026)
-- Base `https://api.openai.com/v1`; `Authorization: Bearer $KEY`; optional `OpenAI-Organization`, `OpenAI-Project`. `v1` path is the version.
-- **Responses API** `POST /v1/responses` is current/recommended; **Chat Completions** `POST /v1/chat/completions` remains fully supported. The Assistants API is being retired (Aug 26, 2026) — do not target it.
-- Responses request: `model`, `input` (string or items), `instructions`, `max_output_tokens`, `temperature`, `top_p`, `reasoning:{effort,summary}`, `text:{format,verbosity}`, `tools`, `tool_choice`, `parallel_tool_calls`, `store`, `previous_response_id`, `stream`, `background`, `metadata`. Response: typed `output[]` (`reasoning`, `message` with `content[].output_text`) + flattened `output_text`; usage uses `input_tokens`/`output_tokens`/`total_tokens`.
-- Chat request: `messages[]` (`system`/`developer`/`user`/`assistant`/`tool`), `max_completion_tokens` (use this for reasoning models; `max_tokens` legacy), `response_format`, `tools`, `tool_choice`, `parallel_tool_calls`, `seed`, `logprobs`, `stream`, `stream_options:{include_usage}`. Response `choices[].message`; usage uses `prompt_tokens`/`completion_tokens`/`total_tokens`; `finish_reason` ∈ stop/length/tool_calls/content_filter.
-- **Streaming**: Chat → `chat.completion.chunk` with `choices[].delta`, terminator literal `data: [DONE]`. Responses → typed semantic events (`response.output_text.delta` with `delta`, `response.function_call_arguments.delta`, terminals `response.completed`/`incomplete`/`failed`), **no `[DONE]`** — ends on a terminal event. The client must handle both terminators.
-- **Tools**: Chat nests under `function:{name,description,parameters,strict}`, returns `choices[].message.tool_calls[]` (`function.arguments` is a JSON string), submit results as `{role:"tool",tool_call_id,content}`. Responses flattens `{type:"function",name,description,parameters}`, returns `function_call` items (`call_id`), submit results as `{type:"function_call_output",call_id,output}`. Shared `tool_choice` (auto/none/required/specific) and `parallel_tool_calls`. Responses also has hosted tools (web_search, file_search, code_interpreter, image_generation, computer_use, mcp).
-- **Structured output**: Chat `response_format:{type:"json_schema",json_schema:{name,strict,schema}}` (nested); Responses `text:{format:{type:"json_schema",name,strict,schema}}` (flattened). Strict rules: all props in `required`, `additionalProperties:false`, root must be object; optional via `["type","null"]`.
-- **Vision**: Chat `{type:"image_url",image_url:{url,detail}}`; Responses `{type:"input_image",image_url:"...",detail}` or `file_id`. URL, `data:` base64, or Files API id. (Re-verify per-request size/image caps live.)
-- **Image generation**: `POST /v1/images/generations`. GPT-Image models always return `b64_json` (no `url`, no `response_format`); params `prompt`, `size`, `quality`, `background`, `output_format`, `output_compression`, `moderation`. `dall-e-3`: `n=1`, `size` 1024/1792 variants, `quality` standard/hd, `style`, `response_format` url|b64_json, returns `revised_prompt`. Edits `/v1/images/edits` (multipart, mask = inpainting), variations `/v1/images/variations` (dall-e-2 only).
-- **Errors**: `{error:{message,type,param,code}}`; 400/401/403/429/500/503; retry 429/500/503 with backoff and honor `Retry-After`. Rate-limit headers `x-ratelimit-*`.
-- **Native extras to expose**: `reasoning.effort` (none/minimal/low/medium/high/xhigh), `reasoning.summary`, `logprobs`/`top_logprobs`, `seed`+`system_fingerprint`, `service_tier` (auto/flex/priority), prompt caching (`prompt_cache_key`), `max_tool_calls`, Responses conversation state (`store`/`previous_response_id`/`background`).
-- [ ] LIVE VERIFY at implementation: exact current model IDs for text and image (the family has moved past gpt-5/o3 naming), and the vision size/count caps.
+### 1.3 OpenAI (verified)
+- `Authorization: Bearer`; optional `OpenAI-Organization`/`OpenAI-Project`. Responses `POST /v1/responses` (current/recommended, stateful) and Chat `POST /v1/chat/completions` (fully supported). Assistants API retires 2026-08-26 — do not target.
+- Responses: `input`+`instructions`, `max_output_tokens`, `reasoning:{effort,summary}`, `text:{format,verbosity}`, typed `output[]`+`output_text`, usage `input_tokens/output_tokens`. Streaming = typed semantic events (`response.output_text.delta`, `response.function_call_arguments.delta`, terminal `response.completed/incomplete/failed`), **no `[DONE]`**.
+- Chat: `messages[]`, `max_completion_tokens`, `response_format`, `choices[].message`, usage `prompt_tokens/completion_tokens`. Streaming = `chat.completion.chunk` `choices[].delta`, terminator `data: [DONE]`, opt-in usage via `stream_options.include_usage`.
+- Tools: Chat nests `function:{...}` + returns `tool_calls[]` (arguments JSON string) + result `{role:"tool",tool_call_id,content}`; Responses flattens `{type:"function",name,...}` + `function_call`(`call_id`) + result `{type:"function_call_output",call_id,output}`. `tool_choice` auto/none/required/specific, `parallel_tool_calls`. Responses hosted tools: web_search, file_search, code_interpreter, image_generation, computer_use, mcp.
+- Structured output: Chat `response_format:{type:"json_schema",json_schema:{name,strict,schema}}`; Responses `text:{format:{type:"json_schema",...}}`. Strict: all props `required`, `additionalProperties:false`, root object.
+- Vision: Chat `{type:"image_url",image_url:{url,detail}}`; Responses `{type:"input_image",image_url,detail}`/`file_id`.
+- Image gen `POST /v1/images/generations`: GPT-Image returns `b64_json` only (`size/quality/background/output_format/output_compression/moderation`); `dall-e-3` (`n=1`, `quality` standard/hd, `style`, `response_format`, `revised_prompt`). Edits `/v1/images/edits` (mask=inpaint), variations `/v1/images/variations` (dall-e-2).
+- Errors `{error:{message,type,param,code}}`; retry 429/5xx honoring `Retry-After`; `x-ratelimit-*` headers. Extras: `reasoning.effort` (none/minimal/low/medium/high/xhigh), `reasoning.summary`, `logprobs`, `seed`+`system_fingerprint`, `service_tier`, prompt caching (`prompt_cache_key`).
+- Models (mid-2026): text `gpt-5.5`/`gpt-5.4`(+mini/nano), `o3`/`o4-mini`; image `gpt-image-2`/`gpt-image-1.5`/`dall-e-3`. Pin exact IDs at integration time via `GET /v1/models`.
 
-### 1.4 Anthropic Claude — written from prior knowledge, LIVE VERIFY before building
-- Base `https://api.anthropic.com`; `POST /v1/messages`. Headers: `x-api-key`, `anthropic-version: 2023-06-01`, `content-type: application/json`, optional `anthropic-beta`.
-- Request: `model`, **`max_tokens` (required)**, `messages[]` (`role` user/assistant, `content` string or block array), `system` (top-level string or block array — not a message), `temperature`, `top_p`, `top_k`, `stop_sequences`, `stream`, `tools`, `tool_choice`, `thinking:{type:"enabled",budget_tokens}`, `metadata`.
-- Content blocks: `{type:"text",text}`; `{type:"image",source:{type:"base64",media_type,data}}` (also url source); `{type:"document",source:{...}}` (PDF); `{type:"tool_use",id,name,input}`; `{type:"tool_result",tool_use_id,content,is_error}`; `{type:"thinking",thinking,signature}`.
-- Response: `{id,type:"message",role:"assistant",model,content:[blocks],stop_reason: end_turn|max_tokens|stop_sequence|tool_use, stop_sequence, usage:{input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens}}`.
-- **Streaming SSE**: `message_start` → (`content_block_start`, `content_block_delta` with `text_delta`/`input_json_delta`/`thinking_delta`/`signature_delta`, `content_block_stop`)* → `message_delta` (stop_reason, usage) → `message_stop`; plus periodic `ping` and `error` events. Each event has an `event:` line and JSON `data:`.
-- **Tools**: `tools:[{name,description,input_schema:{type:"object",properties,required}}]`; model emits `tool_use` blocks; reply with a user message containing `tool_result` blocks. `tool_choice:{type:auto|any|tool|none,name?}`. Parallel = multiple `tool_use` blocks. Server tools (web search, computer use, bash, text editor, code execution) are gated by beta headers and specific type names.
-- **Extended thinking**: `thinking:{type:"enabled",budget_tokens:N}`; responses include `thinking` blocks (preserve `signature` when replaying); streaming via `thinking_delta`+`signature_delta`.
-- **Prompt caching**: `cache_control:{type:"ephemeral"}` on a block; usage reports `cache_creation_input_tokens`/`cache_read_input_tokens`.
-- **No image generation** — the `ai.image()` path must reject for Claude and route image gen to a provider that supports it.
-- Token counting: `POST /v1/messages/count_tokens`. Errors: `{type:"error",error:{type,message}}` (invalid_request/authentication/rate_limit/overloaded/api error); 429 + `retry-after`; `request-id` header.
-- [ ] LIVE VERIFY: current `anthropic-version`, model IDs, server-tool type names + beta header values, any url image source support.
+### 1.4 Anthropic Claude (verified 2026-06-21, docs at platform.claude.com)
+- `POST /v1/messages`; `x-api-key`, `anthropic-version: 2023-06-01`, `content-type: application/json`; combine betas via `anthropic-beta`.
+- Request: `model`, **`max_tokens` (required)**, `messages[]`, `system` (top-level string/blocks), `stream`, `tools`, `tool_choice`, `thinking`, `metadata`, `service_tier`, `output_config`. ⚠️ On Fable 5 / Opus 4.8/4.7 / Sonnet 4.6 `temperature/top_p/top_k` and `thinking.budget_tokens` are **rejected (400)** and prefill returns 400 — feature-detect by model.
+- Response: `content[]` blocks, `stop_reason` (end_turn/max_tokens/stop_sequence/tool_use/pause_turn/refusal), `usage` (`input_tokens/output_tokens/cache_creation_input_tokens/cache_read_input_tokens/output_tokens_details.thinking_tokens/server_tool_use`). `input_tokens` is the uncached remainder.
+- Blocks: `text`; `image` source base64/url/file; `document` (pdf, base64/file, optional citations); `tool_use{id,name,input}`; `tool_result{tool_use_id,content,is_error}`; `thinking{thinking,signature}` + `redacted_thinking`.
+- Streaming: `message_start` → (`content_block_start` → `content_block_delta`(`text_delta`/`input_json_delta(partial_json)`/`thinking_delta`/`signature_delta`/`citations_delta`) → `content_block_stop`)* → `message_delta`(stop_reason,usage cumulative) → `message_stop`; `ping`; `error` events can arrive after the 200.
+- Tools: `input_schema` (+ optional `strict`), `tool_choice` auto/any/tool/none (+`disable_parallel_tool_use`); reply with one user msg holding all `tool_result` blocks. Current server tools: `web_search_20260209`/`web_fetch_20260209`/`code_execution_20260120` (need Opus 4.8/4.7/4.6 or Sonnet 4.6), `bash_20250124`, `text_editor_20250728`, `memory_20250818`, `computer_20250124`.
+- Thinking: `{"type":"adaptive","display":"summarized|omitted"}` on current models (numeric `budget_tokens` only on older); depth via `output_config.effort` (low/medium/high/xhigh/max). Streaming `thinking_delta`+one `signature_delta`; preserve `signature` when replaying.
+- Prompt caching: `cache_control:{type:"ephemeral", ttl?:"1h"}` on a block or top-level; usage reports creation/read.
+- **No image generation** — `ai.image()` must route image requests elsewhere.
+- Token count `POST /v1/messages/count_tokens`. Errors `{type:"error",error:{type,message},request_id}` (400/401/402/403/404/413/429/500/504/529); `retry-after` + `anthropic-ratelimit-*` headers; `request-id` on every response.
+- Models (2026-06-21): `claude-fable-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`. IDs are dateless pinned snapshots (no date suffix on 4.6+).
 
-### 1.5 Google Gemini — written from prior knowledge, LIVE VERIFY before building
-- Base `https://generativelanguage.googleapis.com`; auth `x-goog-api-key: $KEY` (or `?key=$KEY`). Version path `v1beta` (some endpoints `v1`).
-- Text: `POST /v1beta/models/{model}:generateContent`. Streaming: `POST /v1beta/models/{model}:streamGenerateContent?alt=sse` (SSE chunks each `{candidates:[{content:{parts:[{text}]}}]}`).
-- Request: `contents:[{role:"user"|"model",parts:[...]}]`, parts ∈ `{text}` / `{inlineData:{mimeType,data}}` / `{fileData:{mimeType,fileUri}}` / `{functionCall:{name,args}}` / `{functionResponse:{name,response}}`. Plus `systemInstruction:{parts:[{text}]}`, `generationConfig:{temperature,maxOutputTokens,topP,topK,stopSequences,responseMimeType,responseSchema,thinkingConfig:{thinkingBudget,includeThoughts}}`, `safetySettings`, `tools:[{functionDeclarations:[...]},{googleSearch:{}},{codeExecution:{}}]`, `toolConfig:{functionCallingConfig:{mode:AUTO|ANY|NONE,allowedFunctionNames}}`.
-- Response: `{candidates:[{content:{parts,role},finishReason,safetyRatings,groundingMetadata,citationMetadata}],usageMetadata:{promptTokenCount,candidatesTokenCount,totalTokenCount,thoughtsTokenCount},modelVersion}`.
-- **Function calling**: model returns `functionCall` parts; reply with `functionResponse` parts. Modes via `functionCallingConfig`.
-- **Structured output**: `generationConfig.responseMimeType="application/json"` + `responseSchema`.
-- **Multimodal**: `inlineData` base64 for image/audio/video; large files via Files API `POST /upload/v1beta/files` then reference by `fileData.fileUri`.
-- **Image generation**: (a) Imagen — `POST /v1beta/models/{imagen-model}:predict` with `{instances:[{prompt}],parameters:{sampleCount,aspectRatio,personGeneration}}` → `predictions:[{bytesBase64Encoded,mimeType}]`; (b) Gemini native image — `generateContent` with an image-capable model and `responseModalities:["TEXT","IMAGE"]`, image returned as an `inlineData` part.
-- Errors: `{error:{code,message,status}}`.
-- [ ] LIVE VERIFY: current text/image model IDs, `thinkingConfig` shape, native image-gen request shape, `v1` vs `v1beta` per endpoint.
+### 1.5 Google Gemini (verified 2026-06-21, ai.google.dev)
+- Host `https://generativelanguage.googleapis.com`, use `v1beta`. Auth `x-goog-api-key` header (or `?key=`). Endpoint `/v1beta/models/{model}:{method}`.
+- `:generateContent`: `contents[]` (role user/model, parts text/inlineData{mimeType,data}/fileData{mimeType,fileUri}/functionCall/functionResponse), `systemInstruction`, `generationConfig{temperature,maxOutputTokens,topP,topK,stopSequences,responseMimeType,responseSchema,responseModalities,thinkingConfig}`, `safetySettings`, `tools`, `toolConfig`, `cachedContent`. Response `candidates[].content.parts`+`finishReason`, `usageMetadata{promptTokenCount,candidatesTokenCount,thoughtsTokenCount,totalTokenCount}`, `modelVersion`.
+- ⚠️ Thinking changed: Gemini 3.x/3.5 use **`thinkingConfig.thinkingLevel`** (`minimal/low/medium/high`); 2.5 series use legacy `thinkingBudget` (int); sending both → 400. `includeThoughts:true` returns thought-summary parts (`thought:true`).
+- Streaming `:streamGenerateContent?alt=sse` — `data:` lines each a partial `GenerateContentResponse`; text accumulates; usage/finishReason on final chunk.
+- Function calling: `tools[].functionDeclarations`; model returns `functionCall{id,name,args}`, reply `functionResponse{id,name,response}` (echo `id`; for 3.x also echo thought signatures). `toolConfig.functionCallingConfig.mode` AUTO/ANY/NONE/VALIDATED. Native tools `{googleSearch:{}}`, `{urlContext:{}}`, `{codeExecution:{}}` (combinable); grounded responses carry `groundingMetadata`.
+- Structured output: `responseMimeType:"application/json"`+`responseSchema` (OpenAPI subset, `propertyOrdering`); enum via `text/x.enum`.
+- Multimodal: `inlineData` base64 (<~20 MB total) or Files API (`POST /upload/v1beta/files` → `fileData.fileUri`, ~48 h).
+- Image gen: **native (recommended)** — `:generateContent` with image model + `responseModalities:["TEXT","IMAGE"]`, image returned as `inlineData` part, `imageConfig{aspectRatio,imageSize 1K/2K/4K}`; models `gemini-3.1-flash-image`, `gemini-3-pro-image`, `gemini-2.5-flash-image`. **Imagen `:predict`** (`instances[].prompt`, `parameters{sampleCount,aspectRatio,personGeneration}` → `predictions[].bytesBase64Encoded`) is **deprecated, shuts down 2026-08-17** — prefer native.
+- Errors `{error:{code,message,status}}` (400 INVALID_ARGUMENT / 403 / 404 / 429 RESOURCE_EXHAUSTED / 500 / 503); retry 429/503. Rate limits are tier/environment-specific — read at runtime, don't hardcode.
+- Models (2026-06-21): text `gemini-3.5-flash` (default), `gemini-3.1-flash-lite`; image as above. 2.5 series + Imagen 4 on shutdown timelines — target 3.x.
 
-### 1.6 OpenAI-compatible providers — prior knowledge, LIVE VERIFY base URLs + model IDs
-- **Common shape**: `base_url` + `Authorization: Bearer $KEY` + `POST /chat/completions` with `{model,messages,tools,tool_choice,response_format,stream,stream_options}`; streaming = `chat.completion.chunk` + `data: [DONE]`. One adapter covers all of these.
-- **Per-provider deviations the client must handle**:
-  - **Grok** (`https://api.x.ai/v1`): chat compatible; image gen via `/v1/images/generations` (grok image model); live-search params; reasoning models.
-  - **DeepSeek** (`https://api.deepseek.com`, also `/v1`): `deepseek-chat` vs `deepseek-reasoner`; reasoner adds `reasoning_content` on both message and streaming delta — surface as `reasoning_delta`. No image gen.
-  - **Moonshot/Kimi** (`https://api.moonshot.cn/v1`; also an Anthropic-compatible endpoint): context caching; partial/prefix mode; `moonshot-v1-*` and `kimi-*` models. No image gen.
-  - **Mistral** (`https://api.mistral.ai/v1`): chat + tools + vision (pixtral) + document OCR; mostly OpenAI-shaped with minor differences. No general image gen.
-  - **Groq** (`https://api.groq.com/openai/v1`): straight OpenAI-compatible, very fast.
-  - **Together** (`https://api.together.xyz/v1`): chat compatible + image gen `/v1/images/generations` (FLUX models).
-  - **OpenRouter** (`https://openrouter.ai/api/v1`): aggregator; `vendor/model` ids; optional `HTTP-Referer` + `X-Title` headers; per-model capability varies.
-  - **Ollama** (`http://localhost:11434`): OpenAI-compatible `/v1/chat/completions` and native `/api/chat`; no auth by default; local models.
-- [ ] LIVE VERIFY: each base URL, current model IDs, and whether `reasoning_content`/image endpoints still match.
+### 1.6 OpenAI-compatible providers (verified 2026-06-21)
+Baseline: `POST {base}/v1/chat/completions`, `Bearer`, SSE + `data: [DONE]`, `choices[].delta`, `tool_calls[]`. Per-provider deltas:
+- **Grok** (`https://api.x.ai/v1`): Chat is legacy — **Responses `/v1/responses`** preferred (stateful), also Anthropic `/v1/messages`. Tool-call args stream **whole** (no deltas). `additionalProperties` defaults false. `reasoning_effort` (+`xhigh` on multi-agent), reasoning models reject penalties/stop. Image `POST /v1/images/generations` model `grok-imagine-image`/`-quality` — uses **`aspect_ratio`+`resolution`** (no `size`/`quality`). Search via built-in tools `web_search`/`x_search`/`code_interpreter` (old `search_parameters` retired 2026-01-12). Models `grok-4.3`, `grok-4.20-*`.
+- **Moonshot/Kimi** (`https://api.moonshot.ai/v1` and `.cn` — separate accounts/keys): also Anthropic endpoint `/anthropic` (remaps `temp*0.6`). Function `strict` defaults true. Context caching: auto prefix for `kimi-k2.*` (`cached_tokens`, `prompt_cache_key`), explicit `POST /v1/caching` + `role:"cache"` for `moonshot-v1-*`. Partial/prefix mode (`partial:true` on trailing assistant msg; response omits the prefix). Reasoning via `thinking` object → `reasoning_content` (round-trip before tool calls). `max_completion_tokens`, temp 0–1. Models `kimi-k2.7-code`, `kimi-k2.6`, `moonshot-v1-{8k,32k,128k}`.
+- **DeepSeek** (`https://api.deepseek.com`, also `/anthropic`): V4 shipped — `deepseek-v4-flash`/`deepseek-v4-pro` (dual-mode); **`deepseek-chat`/`deepseek-reasoner` retire 2026-07-24**. `thinking` object (default enabled) + `reasoning_effort` high/max; CoT in `reasoning_content` (strip before re-feeding); thinking mode silently ignores sampling params. Only `json_object`. No image.
+- **Mistral** (`https://api.mistral.ai/v1`): `tool_choice` adds `any`; `json_object`+`json_schema`. Reasoning as typed **ThinkChunk/TextChunk list** (no `reasoning_content`; streaming `delta.content` becomes a list) — needs a dedicated parser. Image only via Agents API tool `{type:"image_generation"}`. Models `mistral-medium-3-5`, `mistral-large-3`, `mistral-small-4`.
+- **Groq** (`https://api.groq.com/openai/v1`): `json_object`+`json_schema(strict)`. Reasoning via `reasoning_format`/`include_reasoning` → `reasoning` field; `reasoning_effort`. No image. `N` must be 1; `temperature:0`→`1e-8`; no logprobs/logit_bias. Models `openai/gpt-oss-120b`, `qwen/qwen3.6-27b`, `groq/compound`.
+- **Together** (`https://api.together.xyz/v1`): `json_object`+`json_schema`. Image `POST /v1/images/generations` FLUX (`black-forest-labs/FLUX.2-*`, params `prompt/negative_prompt/steps/n/width/height/seed/response_format`, edit via `image_url`). `vendor/model` IDs.
+- **OpenRouter** (`https://openrouter.ai/api/v1`): SSE emits `: OPENROUTER PROCESSING` comment lines (ignore); **mid-stream errors inline with HTTP 200 + `finish_reason:"error"`**. `reasoning` object (effort enum incl xhigh/minimal/none) → `reasoning` field. Headers `HTTP-Referer`+`X-Title`; body `provider` routing object. `vendor/model` IDs.
+- **Ollama** (`http://localhost:11434`): `/v1/chat/completions` (SSE+`[DONE]`, no `tool_choice`/`logprobs`). Native `/api/chat` is **NDJSON** (no `data:`, no `[DONE]`, final `"done":true`+`done_reason`, delta in `message` not `choices[].delta`), structured via `format` (json or schema), reasoning via `think`→`message.thinking`, tool result `role:"tool"`+`tool_name`, sampling in `options`. Model `name:tag`.
 
-### 1.7 Unified abstraction tasks
-- [ ] Define the normalized request/message/response/stream-event tables (1.1) and document them.
-- [ ] Adapter: **OpenAI Chat Completions** (covers OpenAI-chat, Grok, DeepSeek, Kimi, Mistral, Groq, Together, OpenRouter, Ollama).
-- [ ] Adapter: **OpenAI Responses** (optional, for OpenAI hosted tools + reasoning).
-- [ ] Adapter: **Anthropic Messages**.
-- [ ] Adapter: **Gemini generateContent**.
-- [ ] Tool-calling normalization across all four families (request tool schema, model tool-call extraction, result submission).
-- [ ] Image generation: `ai.image({provider, model, prompt, size, ...})` → normalized `{images=[{b64|url, mediaType}], raw}`; helper `ai.saveImage(result, path)` using crypto.base64Decode + fs.writeFile.
-- [ ] Provider registry with per-provider defaults (base URL, auth header name/scheme, extra headers, model family).
-- [ ] Robust error handling: map provider error envelopes to a uniform error; retry 429/5xx with exponential backoff; honor `Retry-After` once headers are available (Part 3).
+### 1.7 Deviations the client must handle (consolidated)
+- [ ] **Base/path**: Groq `/openai/v1`, OpenRouter `/api/v1`, DeepSeek optional `/v1`, Moonshot two regional clusters, Together `.xyz`.
+- [ ] **Streaming terminators**: SSE+`[DONE]` (most), OpenAI Responses terminal-event (no sentinel), Anthropic event sequence, Gemini `?alt=sse` chunks, Ollama-native NDJSON `done:true`. OpenRouter comment lines + inline 200 errors. Grok whole-chunk tool args.
+- [ ] **Reasoning surfaces** (all different): `reasoning_content` (DeepSeek/Kimi), `reasoning` field (Groq/OpenRouter), `message.thinking` (Ollama), typed chunk list (Mistral), `thinking` blocks (Anthropic), `thoughtsTokenCount`/thought parts (Gemini). Effort enums vary (`xhigh`/`minimal`/`none`/`max`).
+- [ ] **Structured output**: full `json_schema` (most) vs `json_object` only (DeepSeek) vs Gemini `responseSchema` vs Ollama `format`.
+- [ ] **Tools**: Mistral `any`; Ollama `tool_name`/no id/no `tool_choice`; Kimi/Mistral default `strict:true`; server-side tools on xAI/Mistral/Groq/Anthropic/Gemini/OpenAI.
+- [ ] **Image gen**: OpenAI-style (OpenAI, Together, xAI with `aspect_ratio`/`resolution`), Gemini native modality, Imagen `:predict`, Mistral agent tool; none on DeepSeek/Kimi/Groq/OpenRouter/Ollama.
+- [ ] **Model IDs**: namespaced (OpenRouter/Together), `name:tag` (Ollama), plus deprecation churn (DeepSeek 2026-07-24, Groq Llama 2026-08-16) — fetch `GET /v1/models` at runtime where possible.
 
-### 1.8 Streaming (blocked on Part 3 core change)
-- [ ] After the core streaming HTTP API lands, build the SSE line parser (split on `\n`, accumulate `event:`/`data:` until blank line, handle multi-line `data:`).
-- [ ] Per-family event decoding: OpenAI Chat (`delta` + `[DONE]`), OpenAI Responses (semantic events, terminal event), Anthropic (`content_block_delta` etc.), Gemini (`?alt=sse` chunks).
-- [ ] Surface incremental tool-call argument assembly and reasoning deltas.
-- [ ] Backpressure / cancellation: allow the caller to stop a stream early.
+### 1.8 Streaming (built on Part 3)
+- [ ] SSE line parser (accumulate `event:`/`data:` to blank line, multi-line `data:`, ignore comment lines).
+- [ ] NDJSON parser for Ollama-native.
+- [ ] Per-family event decoding → normalized stream events; incremental tool-call argument assembly; reasoning deltas; handle inline-error-with-200 (OpenRouter) and terminal-event vs `[DONE]`.
+- [ ] Early cancellation of a stream.
 
 ### 1.9 `ai` deliverables
-- [ ] `components/ai/init.lua` + adapters.
-- [ ] Examples per capability: text (full), text (stream), tools/function-calling round trip, vision input, structured output, image generation + save, reasoning/thinking, one OpenAI-compatible provider via base-url override.
-- [ ] Tests: a mockable transport (inject a fake `http.client`/streaming transport) so providers are tested without network; unit tests for each adapter's request build + response/stream parse; an opt-in live smoke test gated on env keys (skipped in CI).
-- [ ] `components/ai/README.md` with the capability table + per-provider notes (objective, no history, comment style per project rules).
+- [ ] `components/ai/init.lua` + adapters (`openai_chat`, `openai_responses`, `anthropic`, `gemini`, `ollama_native`) + provider registry with per-provider defaults/headers/quirks.
+- [ ] Tool-calling normalization across all families; image gen + `ai.saveImage` (crypto.base64Decode + fs.writeFile).
+- [ ] Error mapping to a uniform error; retry 429/5xx honoring `retry-after` (needs Part 3 headers).
+- [ ] Examples per capability: text full, text stream, tools round trip, vision input, structured output, image gen + save, reasoning/thinking, base-url override for a compatible provider.
+- [ ] Tests via an injectable fake transport (no network); per-adapter request-build + response/stream-parse unit tests; opt-in live smoke gated on env keys (skipped in CI).
+- [ ] `components/ai/README.md` (capability table, per-provider notes) per project comment/doc style.
 
 ---
 
-## Part 2 — `scheduler` component
+## Part 2 — `scheduler` component (store = `vdo`)
 
-### 2.1 Design (synthesized from Celery / RQ / BullMQ / Sidekiq / APScheduler)
-- [ ] Single-process, durable, named-handler scheduler. Public surface `local scheduler = require("scheduler")`.
-- [ ] **Named handlers, serializable payloads** (the key constraint borrowed from every durable queue): closures cannot be persisted, so a task stores a handler *name* + a JSON payload. `scheduler.handler("send_email", function(payload, ctx) ... end)` registers a handler at startup; tasks reference it by name.
-- [ ] Triggers: `scheduler.enqueue(name, payload, opts)` (immediate), `scheduler.schedule(name, payload, runAt, opts)` (datetime), `scheduler.every(name, payload, intervalMs, opts)` (fixed interval). `opts`: `id?`, `priority?`, `maxAttempts?`, `backoff?`, `unique?`.
-- [ ] Management: `scheduler.cancel(id)`, `scheduler.remove(id)`, `scheduler.get(id)` → status + history, `scheduler.list(filter)`, `scheduler.pause()`/`resume()`.
-- [ ] `scheduler.start()` boots the tick loop and runs recovery; idempotent.
+### 2.1 Design
+- [ ] `components/scheduler/` exposing `local scheduler = require("scheduler")`, persisting through `vdo` (`vdo.connect(dsn)`, default `sqlite:` file e.g. `sqlite:./.varn/scheduler.db`; mysql/pgsql via DSN for shared/multi-node later).
+- [ ] **Named handlers + serializable payloads** (closures are never persisted): `scheduler.handler(name, fn)` registers at startup; tasks store handler name + JSON payload.
+- [ ] Triggers: `scheduler.enqueue(name, payload, opts)` (immediate), `scheduler.schedule(name, payload, runAt, opts)` (datetime), `scheduler.every(name, payload, intervalMs, opts)` (interval). `opts`: `id?/priority?/maxAttempts?/backoff?/unique?`.
+- [ ] Management: `scheduler.cancel(id)`, `scheduler.remove(id)`, `scheduler.get(id)`, `scheduler.list(filter)`, `scheduler.pause()/resume()`, `scheduler.start()` (boots tick loop + recovery, idempotent).
 
-### 2.2 Persistence schema (sqlite via ffi preferred; fs+jsonl fallback)
-- [ ] `tasks` table: `id` (text pk), `name`, `payload` (json text), `state`, `priority` (int), `run_at` (epoch ms), `interval_ms` (nullable, for repeating), `attempts` (int), `max_attempts` (int), `backoff` (json/text), `created_at`, `updated_at`, `lease_epoch` (text/int, the boot id that owns a running task), `last_error` (text), `result` (json text).
-- [ ] `runs` table (history): `id` pk, `task_id`, `attempt`, `started_at`, `finished_at`, `state`, `error`, `result`. Retain N most recent per task or a global cap; expose pruning.
-- [ ] Index on `(state, run_at)` for efficient due-task polling. Use a transaction for every state transition. (sqlite gives atomic claim + queryable history; jsonl needs an append-only log + periodic compaction and is the fallback when ffi/sqlite is unavailable.)
+### 2.2 Store schema (vdo / SQL)
+- [ ] `db:exec` DDL on first start (idempotent `CREATE TABLE IF NOT EXISTS`).
+- [ ] `tasks(id TEXT PRIMARY KEY, name TEXT, payload TEXT, state TEXT, priority INTEGER, run_at INTEGER, interval_ms INTEGER NULL, attempts INTEGER, max_attempts INTEGER, backoff TEXT, lease_epoch TEXT NULL, heartbeat_at INTEGER NULL, last_error TEXT NULL, result TEXT NULL, created_at INTEGER, updated_at INTEGER)`.
+- [ ] `runs(id TEXT PRIMARY KEY, task_id TEXT, attempt INTEGER, started_at INTEGER, finished_at INTEGER NULL, state TEXT, error TEXT NULL, result TEXT NULL)` for history.
+- [ ] Index `(state, run_at)` for due-task polling. Use `:name` bound prepared statements. Use `db:transaction(fn)` for every state transition so claim is atomic.
 
 ### 2.3 State machine
-- States: `queued` (ready now), `scheduled` (future `run_at`), `running`, `success`, `failed`, `retrying`, `cancelled`.
-- Legal transitions: scheduled→queued (when due) ; queued→running (claim) ; running→success ; running→retrying→queued (attempt < max, after backoff) ; running→failed (attempt ≥ max) ; running→queued (orphan reclaim on restart) ; {queued,scheduled,retrying}→cancelled. A repeating task on success re-arms a new `scheduled` row at `now + interval_ms`.
-- [ ] Implement the transition function with a single sqlite UPDATE guarded by the expected current state (compare-and-set) so a claim is atomic.
+- States `queued`, `scheduled`, `running`, `success`, `failed`, `retrying`, `cancelled`.
+- Transitions: scheduled→queued (due) ; queued→running (atomic claim) ; running→success ; running→retrying→queued (attempt<max, after backoff) ; running→failed (attempt≥max) ; running→queued (orphan reclaim on boot) ; {queued,scheduled,retrying}→cancelled. A repeating task on success inserts a fresh `scheduled` row at `now+interval_ms`.
+- [ ] Compare-and-set update (`UPDATE ... WHERE id=:id AND state=:expected`) inside a transaction so a claim cannot double-run.
 
 ### 2.4 Crash recovery / resilience (the core requirement)
-- [ ] On `start()`, generate a fresh **boot epoch** (e.g. a uuid or monotonic id). Any task found in `running` with a `lease_epoch` ≠ current boot epoch was orphaned by a kill/restart → reset to `queued` (attempts unchanged or incremented per policy). This is the single-process equivalent of a visibility-timeout reaper and satisfies "a task running when the process is killed returns to queued".
-- [ ] Claim writes `state=running, lease_epoch=<current boot>, started_at=now` in one transaction; only the owner finishes it.
-- [ ] Optional in-run reaper: a `heartbeat_at` updated periodically for long tasks + a `stuck_running_timeout` that reclaims a task whose heartbeat went stale even without a restart (guards against a hung handler). Document the at-least-once contract → **handlers should be idempotent**.
-- [ ] Recovery rebuilds the full in-memory view from the store on boot, so the list survives restarts.
+- [ ] On `start()`, generate a fresh **boot epoch** id. Any row in `running` with `lease_epoch != current` was orphaned by a kill/restart → reset to `queued` (this is the single-process reaper that satisfies "a killed in-progress task returns to queued").
+- [ ] Claim writes `state=running, lease_epoch=current, heartbeat_at=now, started_at=now` in one transaction; only the owner settles it.
+- [ ] Optional in-run reaper: long handlers update `heartbeat_at`; a `stuck_running_timeout` reclaims a stale-heartbeat task even without a restart. Document **at-least-once → handlers must be idempotent**.
+- [ ] Full in-memory view rebuilt from `tasks` on boot, so the list survives restarts.
 
-### 2.5 Scheduling triggers + polling
-- [ ] Tick loop: `async.spawn(function() while running do tick(); async.sleep(pollMs):await() end end)`. Default poll ~200–1000 ms; the pending sleep keeps the process alive.
-- [ ] Each tick: promote due `scheduled`→`queued` (`run_at <= now`), then claim and dispatch ready `queued` tasks up to a concurrency limit.
-- [ ] Misfire/coalesce after downtime: when many interval runs were missed while down, coalesce to a single run and re-arm from `now` (APScheduler-style `coalesce` + `misfire_grace_time`), configurable per task.
-- [ ] Run the handler body off the event-loop thread when it blocks (wrap in `runOnPool`/ioPool) so the tick loop stays responsive; capture result/error to settle the task state on the event loop.
+### 2.5 Triggers + polling
+- [ ] Tick loop `async.spawn(function() while running do tick(); async.sleep(pollMs):await() end end)` (default ~250–1000 ms; the pending sleep keeps the process alive).
+- [ ] Each tick: promote due `scheduled`→`queued`, then claim+dispatch `queued` up to a concurrency limit, ordered by `priority` then `run_at`.
+- [ ] Misfire/coalesce: when many interval runs were missed during downtime, coalesce to one run and re-arm from `now` (configurable `coalesce`/`misfireGraceMs`).
+- [ ] Run blocking handler bodies off the event-loop thread (wrap in `runOnPool`/ioPool); settle state on the event loop.
 
-### 2.6 Worker model + concurrency
-- [ ] Configurable max concurrent running tasks; a claimed task counts against the limit until it settles.
-- [ ] Per-task `priority` ordering within the due set.
-- [ ] Retry with exponential backoff + jitter; `max_attempts`; terminal `failed` records `last_error` and full `runs` history.
+### 2.6 Worker model
+- [ ] Configurable max concurrent running tasks; a claimed task counts until settled.
+- [ ] Retry with exponential backoff + jitter; `max_attempts`; terminal `failed` records `last_error` + full `runs` history.
 
-### 2.7 What it must NOT do
-- ❌ Persist arbitrary closures/functions — only `{handler name + JSON payload}`.
-- ❌ Assume multiple worker processes without leases — this design is single-process; multi-process would need real leases/heartbeats with TTLs (note as a future extension).
-- ❌ Block the event-loop thread with handler work.
-- ❌ Silently swallow handler errors — record them and transition state.
+### 2.7 Must NOT
+- ❌ Persist closures — only `{handler name + JSON payload}`. ❌ Block the event-loop thread with handler work. ❌ Swallow handler errors (record + transition). ❌ Assume multi-process without real leases (single-process now; multi-node via a shared mysql/pgsql DSN + leases is a documented future extension).
 
 ### 2.8 `scheduler` deliverables
-- [ ] `components/scheduler/init.lua` (+ a storage driver split: `sqlite` and `jsonl`).
-- [ ] Examples: immediate task, run-at-datetime, every-interval, cancel/remove, query status + history, retry-on-error, and a "kill the process mid-task and watch it return to queued on restart" demo.
-- [ ] Tests: state-machine transitions, due-task selection, **crash recovery** (simulate an orphaned `running` row from a previous epoch → asserted reset to `queued`), retry/backoff, interval re-arm + coalescing, cancel/remove, history retention/pruning. Use a temp dir / in-memory sqlite for determinism.
-- [ ] `components/scheduler/README.md` (capability table, durability guarantees, the named-handler + idempotency contract).
+- [ ] `components/scheduler/init.lua` (vdo-backed store, tick loop, recovery, handler registry).
+- [ ] Examples: immediate, run-at-datetime, every-interval, cancel/remove, query status+history, retry-on-error, and a "kill mid-task → returns to queued on restart" demo.
+- [ ] Tests (in-memory `sqlite::memory:` for determinism): state transitions, due selection, **crash recovery** (seed an orphaned `running` row from a prior epoch → assert reset to `queued`), retry/backoff, interval re-arm + coalescing, cancel/remove, history retention/pruning.
+- [ ] `components/scheduler/README.md` (capability table, durability guarantees, named-handler + idempotency contract) per project style.
 
 ---
 
-## Part 3 — Core prerequisite: streaming HTTP client (required for `ai` streaming)
+## Part 3 — Core change: streaming HTTP client (build now)
 
-The only piece neither component can do today. Scope it as a focused core change.
-
-- [ ] Add a streaming request path to the HTTP client that delivers the response incrementally to Lua: e.g. `http.client.stream(opts, onChunk)` returning a promise that resolves when the stream ends, where `onChunk(chunk)` is invoked on the event loop per received body chunk.
-- [ ] Expose **response status and headers** at stream start (and ideally for the non-streaming path too), so the SSE content-type, rate-limit headers, and `retry-after` become visible to Lua.
-- [ ] Implement in the Poco client exchange (read the response stream in chunks on `ioPool`, marshal each chunk to the event loop via the runtime — reuse the `runOnPool`/promise plumbing pattern) and in the emscripten fetch driver (incremental fetch / streaming reader).
-- [ ] Keep `maxResponseBytes` and timeout semantics; allow cancellation to stop reading.
-- [ ] Tests for the streaming client against a local chunked/SSE server (the socket/http test harness can host one), Windows/Linux/macOS in CI.
-- [ ] Follow project comment/format rules; wrap any lambdas in `// clang-format off/on`.
-
-> Optional (nice-to-have, not required): a startup/shutdown lifecycle hook a component can register, so the scheduler can drain gracefully on SIGTERM. Without it, durability + boot-time recovery already cover the kill case.
+- [ ] Add a streaming request to the HTTP client: `http.client.stream(opts, onChunk)` returning a promise that resolves when the stream ends; `onChunk(chunk)` fires on the event loop per body chunk.
+- [ ] Expose **response status + headers** at stream start (and add headers to the non-streaming response too) so SSE content-type, rate-limit, and `retry-after` reach Lua.
+- [ ] Implement in the Poco client exchange (read the response stream in chunks on `ioPool`, marshal each chunk to the event loop via the runtime, reuse the `runOnPool`/promise plumbing) and the emscripten fetch driver (incremental reader). Refactor the client architecture as needed — do not preserve the full-body-only path as a constraint.
+- [ ] Keep `maxResponseBytes`/timeout; support cancellation to stop reading.
+- [ ] Tests against a local chunked/SSE server on Windows/Linux/macOS CI. Project comment/format rules; wrap lambdas in `// clang-format off/on`.
 
 ---
 
 ## Part 4 — Cross-cutting
+- [ ] Both components follow the `components/` pattern over `http`/`json`/`crypto`/`fs`/`async`/`vdo`.
+- [ ] Comment + doc style per project rules (single-line lowercase `//`/`--`, no trailing period/colon, no `;`-split, English, intent-not-restatement, no header member comments; objective READMEs with a capabilities section; usage examples in docs).
+- [ ] Per-capability examples + individual tests wired into the runner; live-network tests gated on env keys, skipped in CI.
+- [ ] Server-side `ai` demo for the site (wasm browser cannot reach provider APIs without a proxy/keys).
 
-- [ ] Both components follow the established `components/` pattern (dir + `init.lua`), built on `http`/`json`/`crypto`/`fs`/`async`/`ffi`.
-- [ ] Comment + doc style per project rules: single-line lowercase `//`/`--` comments, no trailing period/colon, no `;`-split, English, intent-not-restatement, no header member comments, objective READMEs with a capabilities section, usage examples in docs not comments.
-- [ ] Per-capability examples + individual tests, wired into the test runner; live-network tests gated on env keys and skipped in CI.
-- [ ] Decide storage default for `scheduler` (sqlite-via-ffi vs jsonl) and document the trade-off.
-- [ ] Update the playground/site examples once the components stabilize (an `ai` text demo is a strong showcase; note wasm cannot reach provider APIs from the browser without a proxy/keys, so keep live-AI demos server-side).
+## Build order
+1. **Part 3** streaming HTTP core change (+ response headers) → unblocks `ai` streaming and `retry-after`.
+2. **`ai`** — OpenAI Chat baseline + the compatible providers, then Anthropic + Gemini native adapters, then streaming, then image gen, then native extras.
+3. **`scheduler`** — vdo store + state machine + recovery + tick loop, then triggers, retries, history, then examples/tests.
 
----
-
-## Open decisions for the user
-1. **`ai` streaming now or later?** Non-streaming text + image ships as a pure component immediately; streaming needs the Part 3 core change. Build non-streaming first, then streaming?
-2. **Scheduler store**: default to **sqlite via ffi** (atomic claims, queryable history, best resilience) or **fs+jsonl** (zero deps, simpler, needs compaction)? Recommendation: sqlite default, jsonl fallback.
-3. **Provider breadth for v1 of `ai`**: ship OpenAI + Claude + Gemini + the OpenAI-compatible adapter (covers Grok/DeepSeek/Kimi/Groq/Together/OpenRouter/Ollama) first, then native extras?
-4. **Live research refresh**: the Claude/Gemini/compatible/scheduler sections need the LIVE VERIFY pass (blocked by API load now) before coding those adapters — rerun the web research when ready?
+## Remaining open question
+- Provider breadth for `ai` v1: ship OpenAI + Claude + Gemini + the OpenAI-compatible adapter (covers Grok/Kimi/DeepSeek/Groq/Together/OpenRouter/Ollama) first, with Mistral's typed-reasoning parser and Ollama-native as fast-follows?
