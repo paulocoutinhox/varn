@@ -126,10 +126,17 @@ void *varn_ffi_dl_open(const char *path, int global_flag)
 void *varn_ffi_dl_sym(void *handle, const char *name)
 {
   varn_dl_errbuf[0] = '\0';
-  if (handle == VARN_FFI_DL_DEFAULT) {
-    return dlsym(RTLD_DEFAULT, name);
+
+  /* clear any stale error so a failing dlsym is reported and not confused with a previous one */
+  dlerror();
+  void *sym = dlsym(handle == VARN_FFI_DL_DEFAULT ? RTLD_DEFAULT : handle, name);
+  if (!sym) {
+    const char *e = dlerror();
+    if (e) {
+      snprintf(varn_dl_errbuf, sizeof varn_dl_errbuf, "%s", e);
+    }
   }
-  return dlsym(handle, name);
+  return sym;
 }
 
 void varn_ffi_dl_close(void *handle)

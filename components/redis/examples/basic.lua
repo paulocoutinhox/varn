@@ -1,4 +1,4 @@
--- basic redis strings and counters over a single connection, pointed at a server with VARN_REDIS_HOST / VARN_REDIS_PORT (and VARN_REDIS_USER / VARN_REDIS_PASS).
+-- basic redis strings and counters over a single connection, pointed at a server with VARN_REDIS_HOST / VARN_REDIS_PORT (and VARN_REDIS_USER / VARN_REDIS_PASS)
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 
@@ -15,7 +15,7 @@ async.run(function()
 
     print("ping:", client:command("PING"))
 
-    -- dynamic dispatch turns any method name into the matching redis command.
+    -- dynamic dispatch turns any method name into the matching redis command
     client:set("greeting", "hello from varn")
     print("get:", client:get("greeting"))
 
@@ -23,7 +23,7 @@ async.run(function()
     print("incr:", client:incr("hits"))
     print("incrby:", client:incrby("hits", 9))
 
-    -- a multi-key read returns an array with nil for any missing key.
+    -- a multi-key read returns an array with nil for any missing key
     client:set("a", "1")
     client:set("b", "2")
     local values = client:mget("a", "missing", "b")

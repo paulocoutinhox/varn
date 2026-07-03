@@ -1,4 +1,4 @@
--- real-application integration test for the redis client covering endpoint failover and the data structures an app leans on (cached values with expiry, counters, hashes, lists, sets, sorted-set leaderboards, MULTI/EXEC transactions, and pipelines), pointed at a server with VARN_REDIS_HOST / VARN_REDIS_PORT (and VARN_REDIS_USER / VARN_REDIS_PASS).
+-- real-application integration test for the redis client covering endpoint failover and the data structures an app leans on (cached values with expiry, counters, hashes, lists, sets, sorted-set leaderboards, MULTI/EXEC transactions, and pipelines), pointed at a server with VARN_REDIS_HOST / VARN_REDIS_PORT (and VARN_REDIS_USER / VARN_REDIS_PASS)
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 
@@ -17,7 +17,7 @@ local function key(name)
 end
 
 async.run(function()
-    -- failover: a dead endpoint is listed first so a working client proves the client moved on to the live one behind it.
+    -- a dead endpoint is listed first so a working client proves failover moved on to the live one behind it
     local client = redis.connect({
         hosts = {
             { host = "127.0.0.1", port = 1 },
@@ -29,7 +29,7 @@ async.run(function()
     assert(client:command("PING") == "PONG", "failover reached a live endpoint")
     print("failover ok: connected past a dead endpoint")
 
-    -- cache entry with a time to live.
+    -- cache entry with a time to live
     local cacheKey = key("cache")
     client:set(cacheKey, "cached-value", "EX", 100)
     assert(client:get(cacheKey) == "cached-value", "cache get")
@@ -37,7 +37,7 @@ async.run(function()
     assert(ttl > 0 and ttl <= 100, "cache ttl in range, got " .. tostring(ttl))
     print("cache ok: ttl=" .. ttl)
 
-    -- counters.
+    -- counters
     local counter = key("counter")
     client:set(counter, "10")
     assert(client:incr(counter) == 11, "incr")
@@ -46,7 +46,7 @@ async.run(function()
     assert(client:decrby(counter, 5) == 10, "decrby")
     print("counters ok")
 
-    -- a hash modelling a user record.
+    -- a hash modelling a user record
     local user = key("user")
     client:hset(user, "name", "alice", "age", "30", "role", "admin")
     assert(client:hget(user, "name") == "alice", "hget")
@@ -62,7 +62,7 @@ async.run(function()
     assert(fields.name == "alice" and fields.role == "admin" and fields.age == nil, "hgetall")
     print("hash ok")
 
-    -- a list used as a queue.
+    -- a list used as a queue
     local queue = key("queue")
     client:rpush(queue, "a", "b", "c")
     assert(client:llen(queue) == 3, "llen")
@@ -72,7 +72,7 @@ async.run(function()
     assert(#rest == 1 and rest[1] == "b", "lrange")
     print("list ok")
 
-    -- a set with membership checks.
+    -- a set with membership checks
     local tags = key("tags")
     client:sadd(tags, "x", "y", "z", "x")
     assert(client:scard(tags) == 3, "scard ignores the duplicate")
@@ -82,7 +82,7 @@ async.run(function()
     assert(client:scard(tags) == 2, "srem")
     print("set ok")
 
-    -- a sorted set used as a leaderboard.
+    -- a sorted set used as a leaderboard
     local board = key("board")
     client:zadd(board, 100, "alice", 200, "bob", 150, "carol")
     local top = client:zrevrange(board, 0, -1)
@@ -91,7 +91,7 @@ async.run(function()
     assert(client:zrevrank(board, "bob") == 0, "zrevrank leader")
     print("sorted set ok")
 
-    -- a MULTI/EXEC transaction where queued commands answer QUEUED and then EXEC returns every result in order.
+    -- a MULTI/EXEC transaction where queued commands answer QUEUED and then EXEC returns every result in order
     local txKey = key("tx")
     assert(client:command("MULTI") == "OK", "multi")
     assert(client:set(txKey, "1") == "QUEUED", "queued set")
@@ -101,7 +101,7 @@ async.run(function()
     assert(results[1] == "OK" and results[2] == 2 and results[3] == 12, "exec results in order")
     print("MULTI/EXEC ok")
 
-    -- a pipeline issues several commands in one round trip.
+    -- a pipeline issues several commands in one round trip
     local pipeKey = key("pipe")
     local replies = client:pipeline(function(p)
         p:set(pipeKey, "100")
@@ -111,7 +111,7 @@ async.run(function()
     assert(replies[1] == "OK" and replies[2] == 105 and replies[3] == "105", "pipeline replies")
     print("pipeline ok")
 
-    -- a short expiry actually elapses, with a generous window so a slow round trip to a remote server cannot expire the key before the first check observes it.
+    -- a short expiry actually elapses, with a generous window so a slow round trip to a remote server cannot expire the key before the first check observes it
     local volatile = key("volatile")
     client:set(volatile, "soon", "PX", 600)
     assert(client:exists(volatile) == 1, "exists before expiry")
@@ -119,7 +119,7 @@ async.run(function()
     assert(client:exists(volatile) == 0, "key expired")
     print("expiry ok")
 
-    -- clean up every key this run created.
+    -- clean up every key this run created
     client:del(cacheKey, counter, user, queue, tags, board, txKey, pipeKey, volatile)
     client:close()
 

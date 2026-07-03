@@ -1,5 +1,6 @@
 #include "varn/fs/FsStorage.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <ctime>
@@ -217,6 +218,8 @@ std::string FsStorage::mkdtemp(const std::string& prefix)
         std::error_code ec;
         if (std::filesystem::create_directory(candidate, ec) && !ec)
         {
+            // restrict the directory to its owner like posix mkdtemp so its contents stay private to this user
+            std::filesystem::permissions(candidate, std::filesystem::perms::owner_all, std::filesystem::perm_options::replace, ec);
             return candidate.string();
         }
     }
@@ -242,19 +245,32 @@ public:
             throw std::runtime_error("[FsStorage] The file handle is closed.");
         }
 
-        std::string buffer(maxBytes, '\0');
-        stream.read(buffer.data(), static_cast<std::streamsize>(maxBytes));
-        const std::streamsize got = stream.gcount();
-
-        // report a read fault instead of returning a short read
-        if (stream.bad())
+        // grow the buffer in chunks so a large maxBytes never pre-allocates more than the file actually holds
+        constexpr std::size_t kChunk = 1u << 16;
+        std::string buffer;
+        while (buffer.size() < maxBytes)
         {
-            throw std::runtime_error("[FsStorage] The file handle could not be read.");
+            const std::size_t want = std::min<std::size_t>(kChunk, maxBytes - buffer.size());
+            const std::size_t base = buffer.size();
+            buffer.resize(base + want);
+            stream.read(buffer.data() + base, static_cast<std::streamsize>(want));
+            const std::streamsize got = stream.gcount();
+
+            // report a read fault instead of returning a short read
+            if (stream.bad())
+            {
+                throw std::runtime_error("[FsStorage] The file handle could not be read.");
+            }
+
+            buffer.resize(base + static_cast<std::size_t>(got));
+            if (static_cast<std::size_t>(got) < want)
+            {
+                break;
+            }
         }
 
         // clear eof and fail bits to keep the handle usable
         stream.clear();
-        buffer.resize(static_cast<std::size_t>(got));
         return buffer;
     }
 

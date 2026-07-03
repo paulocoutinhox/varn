@@ -128,7 +128,7 @@ void WasmHost::pumpDeferredWork(varn::runtime::Runtime& rt)
             }
         } while (progressed);
 
-        // a pending fetch resumes via a JS callback, and an undue timer matures on the next pump, so either condition means more work is expected even though no job ran this iteration.
+        // a pending fetch resumes via a js callback and an undue timer matures on the next pump, so either condition still expects more work even when no job ran this iteration
         const bool fetchPending = varn::wasm::WasmAsyncHost::fetchInflight().load(std::memory_order_acquire) > 0;
         const bool timerPending = rt.mainLoop().hasPendingTimers();
         if (fetchPending || timerPending)
@@ -150,7 +150,7 @@ std::unique_ptr<varn::runtime::Runtime>& WasmHost::runtime()
 
 void WasmHost::resetRuntime()
 {
-    // drop the cached runtime so the next chunk starts on a fresh lua_State instead of inheriting globals, listeners, and pending coroutines from earlier chunks.
+    // drop the cached runtime so the next chunk starts on a fresh lua_State instead of inheriting globals, listeners and pending coroutines from earlier chunks
     auto& rtPtr = runtime();
     if (rtPtr)
     {

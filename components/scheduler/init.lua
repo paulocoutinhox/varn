@@ -239,23 +239,29 @@ function Scheduler:_dispatch(row)
     self.active = self.active + 1
 
     async.spawn(function()
-        local startedAt = os.time()
-        local handler = self.handlers[row.name]
+        -- run the whole dispatch under pcall so a failing settle or failure-fallback cannot skip the slot release below
+        pcall(function()
+            local startedAt = os.time()
+            local handler = self.handlers[row.name]
 
-        local ok, value
-        if handler then
-            ok, value = pcall(handler, decode(row.payload), row)
-        else
-            ok, value = false, "no handler registered for task " .. row.name
-        end
+            local ok, value
+            if handler then
+                ok, value = pcall(handler, decode(row.payload), row)
+            else
+                ok, value = false, "no handler registered for task " .. row.name
+            end
 
-        local settled = pcall(function()
-            self:_settle(row, ok, value, startedAt)
+            local settled = pcall(function()
+                self:_settle(row, ok, value, startedAt)
+            end)
+            if not settled then
+                pcall(function()
+                    self:_exec("UPDATE scheduler_tasks SET state = 'failed', updated_at = :now WHERE id = :id", { now = os.time(), id = row.id })
+                end)
+            end
         end)
-        if not settled then
-            self:_exec("UPDATE scheduler_tasks SET state = 'failed', updated_at = :now WHERE id = :id", { now = os.time(), id = row.id })
-        end
 
+        -- always release the concurrency slot so a dispatch error can never starve the scheduler
         self.active = self.active - 1
     end)
 end

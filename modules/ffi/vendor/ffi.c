@@ -1489,6 +1489,9 @@ static int cdata_call(lua_State *L)
         return luaL_error(L, "wrong number of arguments for function call");
     }
 
+    if (narg > MAX_FUNC_ARGS)
+        return luaL_error(L, "too many arguments for function call");
+
     for (i = 0; i < func->narg; i++) {
         args[i] = ctype_ft(func->args[i]);
         values[i] = alloca(args[i]->size);
@@ -2908,7 +2911,10 @@ static int lua_ffi_copy(lua_State *L)
         memcpy(dst, src, len);
         ((char *)dst)[len++] = '\0';
     } else {
-        len = luaL_checkinteger(L, 3);
+        lua_Integer requested = luaL_checkinteger(L, 3);
+        if (requested < 0)
+            return luaL_error(L, "copy length must not be negative");
+        len = (size_t)requested;
 
         if (lua_type(L, 2) == LUA_TSTRING)
             src = lua_tostring(L, 2);
@@ -2926,10 +2932,13 @@ static int lua_ffi_copy(lua_State *L)
 static int lua_ffi_fill(lua_State *L)
 {
     struct cdata *cd = (struct cdata *)luaL_checkudata(L, 1, CDATA_MT);
-    int len = luaL_checkinteger(L, 2);
+    lua_Integer requested = luaL_checkinteger(L, 2);
     int c = luaL_optinteger(L, 3, 0);
 
-    memset(cdata_ptr(cd), c, len);
+    if (requested < 0)
+        return luaL_error(L, "fill length must not be negative");
+
+    memset(cdata_ptr(cd), c, (size_t)requested);
 
     return 0;
 }

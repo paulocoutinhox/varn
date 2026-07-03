@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 
 namespace varn::socket
@@ -75,20 +76,26 @@ Poco::Net::Context::Ptr tlsClientContext(bool verify)
 #if defined(_WIN32)
     if (verify)
     {
+        // verify against the system root store since the personal store holds no trusted roots
         static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
             Poco::Net::Context::TLS_CLIENT_USE, "", Poco::Net::Context::VERIFY_STRICT,
-            Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_MY);
+            Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_ROOT);
         return strict;
     }
 
     static Poco::Net::Context::Ptr insecure = new Poco::Net::Context(
         Poco::Net::Context::TLS_CLIENT_USE, "", Poco::Net::Context::VERIFY_NONE,
-        Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_MY);
+        Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_ROOT);
     return insecure;
 #else
     if (verify)
     {
         static const std::string caBundle = resolveCaBundle();
+        if (caBundle.empty())
+        {
+            throw std::runtime_error("[SocketTls] No system CA trust store was found for certificate verification.");
+        }
+
         static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
             Poco::Net::Context::TLS_CLIENT_USE, "", "", caBundle, Poco::Net::Context::VERIFY_STRICT, 9, true,
             "DEFAULT@SECLEVEL=2");

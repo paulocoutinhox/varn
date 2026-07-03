@@ -1,9 +1,11 @@
 #include "varn/process/ProcessRunner.h"
 
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -91,49 +93,60 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     HANDLE errRead = nullptr;
     HANDLE errWrite = nullptr;
 
-    if (!CreatePipe(&outRead, &outWrite, &inheritable, 0) || !CreatePipe(&errRead, &errWrite, &inheritable, 0))
-    {
-        closeHandle(outRead);
-        closeHandle(outWrite);
-        closeHandle(errRead);
-        closeHandle(errWrite);
-        throw std::runtime_error("[ProcessRunner] A pipe could not be created.");
-    }
-
-    // keeps the parent read ends out of child inheritance
-    SetHandleInformation(outRead, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(errRead, HANDLE_FLAG_INHERIT, 0);
-
-    const std::wstring commandLine = L"cmd.exe /c " + toWide(command);
-    std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
-    mutableCommand.push_back(L'\0');
-
-    STARTUPINFOW startup{};
-    startup.cb = static_cast<DWORD>(sizeof(startup));
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    startup.hStdOutput = outWrite;
-    startup.hStdError = errWrite;
-
+    // serialize handle creation and process start so a concurrent spawn cannot inherit these write handles
+    static std::mutex spawnMutex;
     PROCESS_INFORMATION process{};
-
-    const BOOL started = CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
-    if (!started)
     {
-        closeHandle(outRead);
-        closeHandle(outWrite);
-        closeHandle(errRead);
-        closeHandle(errWrite);
-        throw std::runtime_error("[ProcessRunner] The process could not be started.");
-    }
+        std::lock_guard<std::mutex> lock(spawnMutex);
 
-    // closes the parent copies of the write ends so the reads terminate when the child exits
-    closeHandle(outWrite);
-    closeHandle(errWrite);
+        if (!CreatePipe(&outRead, &outWrite, &inheritable, 0) || !CreatePipe(&errRead, &errWrite, &inheritable, 0))
+        {
+            closeHandle(outRead);
+            closeHandle(outWrite);
+            closeHandle(errRead);
+            closeHandle(errWrite);
+            throw std::runtime_error("[ProcessRunner] A pipe could not be created.");
+        }
+
+        // keep the parent read ends out of child inheritance
+        SetHandleInformation(outRead, HANDLE_FLAG_INHERIT, 0);
+        SetHandleInformation(errRead, HANDLE_FLAG_INHERIT, 0);
+
+        const std::wstring commandLine = L"cmd.exe /c " + toWide(command);
+        std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+        mutableCommand.push_back(L'\0');
+
+        STARTUPINFOW startup{};
+        startup.cb = static_cast<DWORD>(sizeof(startup));
+        startup.dwFlags = STARTF_USESTDHANDLES;
+        startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        startup.hStdOutput = outWrite;
+        startup.hStdError = errWrite;
+
+        const BOOL started = CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
+        if (!started)
+        {
+            closeHandle(outRead);
+            closeHandle(outWrite);
+            closeHandle(errRead);
+            closeHandle(errWrite);
+            throw std::runtime_error("[ProcessRunner] The process could not be started.");
+        }
+
+        // close the parent copies of the write ends inside the lock so the reads terminate and no later spawn inherits them
+        closeHandle(outWrite);
+        closeHandle(errWrite);
+    }
 
     ProcessResult result;
+
+    // drain stderr on a helper thread so a child that fills one pipe buffer while writing the other never deadlocks the parent
+    std::string errData;
+    std::thread errReader([&errData, errRead]
+                          { errData = drainPipe(errRead); });
     result.stdoutData = drainPipe(outRead);
-    result.stderrData = drainPipe(errRead);
+    errReader.join();
+    result.stderrData = std::move(errData);
 
     closeHandle(outRead);
     closeHandle(errRead);

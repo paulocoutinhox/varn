@@ -1,10 +1,14 @@
--- redis client built on the native socket module speaking RESP2 over a single connection, where every socket operation (redis.connect, client:command, client:pipeline, client:close) yields on the event loop so the whole lifecycle must run inside an async coroutine (async.spawn/async.run), and with no __gc finalizer a forgotten client leaks until the runtime exits since :close() cannot run outside an async coroutine, so always close in the same scope that opened the client, ideally via pcall to cover the error path.
+-- redis client built on the native socket module speaking RESP2 over a single connection.
+-- every socket operation yields on the event loop so the whole lifecycle must run inside an async coroutine.
+-- with no __gc finalizer a forgotten client leaks until the runtime exits since :close() cannot run outside an async coroutine.
+-- always close in the same scope that opened the client, ideally via pcall to cover the error path.
 local socket = require("socket")
 local async = require("async")
 
 local READ_CHUNK = 4096
 
--- a server error reply is represented as a value instead of raised mid-parse so an error nested in an array does not desync the stream, with command() raising only when the top-level reply is an error.
+-- a server error reply is represented as a value instead of raised mid-parse so an error nested in an array does not desync the stream.
+-- command() raises only when the top-level reply is an error.
 local function makeServerError(message)
     return setmetatable({ message = message }, { __index = { isRedisError = true } })
 end
@@ -13,7 +17,7 @@ local function isServerError(value)
     return type(value) == "table" and getmetatable(value) ~= nil and value.isRedisError == true
 end
 
--- buffered reader over a socket: socket:receive returns up to n bytes, so RESP framing needs its own buffer to serve exact byte counts and crlf-terminated lines.
+-- a buffered reader gives RESP framing exact byte counts and crlf-terminated lines since socket:receive returns only up to n bytes
 local Reader = {}
 Reader.__index = Reader
 
@@ -30,7 +34,7 @@ function Reader:pull()
         error("[Redis] Connection closed by server.")
     end
 
-    -- drop the already-consumed prefix before appending so the buffer stays bounded.
+    -- drop the already-consumed prefix before appending so the buffer stays bounded
     if self.cursor > 1 then
         self.buffer = self.buffer:sub(self.cursor)
         self.cursor = 1
@@ -100,7 +104,7 @@ function Reader:reply()
     error("[Redis] Unexpected reply type: " .. tostring(line))
 end
 
--- real methods live in a separate table so __index can fall through to dynamic command dispatch.
+-- real methods live in a separate table so __index can fall through to dynamic command dispatch
 local methods = {}
 
 local Client = {}
@@ -110,7 +114,7 @@ Client.__index = function(_, key)
         return method
     end
 
-    -- any other access becomes a redis command named after the key (redis names are case-insensitive).
+    -- any other access becomes a redis command named after the key (redis names are case-insensitive)
     return function(self, ...)
         return self:command(key, ...)
     end
@@ -127,7 +131,7 @@ local function encodeArgument(value)
     error("[Redis] Command arguments must be string or number, got " .. kind .. ".")
 end
 
--- encodes one command as a RESP array of bulk strings.
+-- encodes one command as a RESP array of bulk strings
 local function encodeCommand(...)
     local args = table.pack(...)
     if args.n == 0 then
@@ -149,12 +153,12 @@ function methods:command(...)
 
     local _, err = self.sock:send(encodeCommand(...)):await()
     if err then
-        -- a send failure can leave a partial frame on the wire, so the connection is unsafe to reuse.
+        -- a send failure can leave a partial frame on the wire, so the connection is unsafe to reuse
         self.dead = true
         error("[Redis] Send failed: " .. tostring(err))
     end
 
-    -- any throw from the parser means the byte stream is unsynchronized so the connection is marked dead before re-raising, whereas a clean server error reply leaves the stream synchronized and is not poisoning.
+    -- any throw from the parser means the byte stream is unsynchronized so the connection is marked dead before re-raising, whereas a clean server error reply leaves the stream synchronized and is not poisoning
     local parseOk, reply = pcall(self.reader.reply, self.reader)
     if not parseOk then
         self.dead = true
@@ -167,7 +171,7 @@ function methods:command(...)
     return reply
 end
 
--- a pipeline records commands without sending, then flushes them in one write and reads every reply in order via the same dynamic dispatch where p:set(...) and p:get(...) queue their commands.
+-- a pipeline records commands without sending, then flushes them in one write and reads every reply in order via the same dynamic dispatch where p:set(...) and p:get(...) queue their commands
 local pipelineMethods = {}
 
 local Pipeline = {}
@@ -205,7 +209,7 @@ function methods:pipeline(builder)
         error("[Redis] Pipeline send failed: " .. tostring(err))
     end
 
-    -- read every reply before raising so a single server error cannot desync the stream, whereas a parser throw means the bytes after the failed reply are unrecoverable.
+    -- read every reply before raising so a single server error cannot desync the stream, whereas a parser throw means the bytes after the failed reply are unrecoverable
     local replies = {}
     local firstError
     for i = 1, batch.count do
@@ -236,10 +240,11 @@ function methods:close()
     self.sock = nil
 end
 
--- a multiplexed client: many concurrent commands share one connection, the ioredis model. each command
--- queues its frame and awaits a per-command deferred; a writer coroutine batches everything queued into
--- a single send (auto-pipelining), and a reader coroutine resolves the awaiting commands as replies
--- arrive in request order. opt in with redis.connect({ pipeline = true }).
+-- a multiplexed client shares one connection across many concurrent commands, the ioredis model.
+-- each command queues its frame and awaits a per-command deferred.
+-- a writer coroutine batches everything queued into a single send for auto-pipelining.
+-- a reader coroutine resolves the awaiting commands as replies arrive in request order.
+-- opt in with redis.connect({ pipeline = true }).
 local muxMethods = {}
 
 local MuxClient = {}
@@ -297,7 +302,7 @@ function muxMethods:command(...)
 end
 
 local function startMux(self)
-    -- writer: drain the queue into one send so a burst of concurrent commands costs a single syscall.
+    -- the writer drains the queue into one send so a burst of concurrent commands costs a single syscall
     async.spawn(function()
         while not self.closed do
             if #self.writeQueue == 0 then
@@ -323,7 +328,7 @@ local function startMux(self)
         end
     end)
 
-    -- reader: replies arrive in request order, so each one resolves the oldest awaiting command.
+    -- the reader sees replies in request order so each one resolves the oldest awaiting command
     async.spawn(function()
         while not self.closed do
             local ok, reply = pcall(self.reader.reply, self.reader)
@@ -365,19 +370,19 @@ end
 
 local redis = {}
 
--- opens one endpoint and brings it fully online (auth and database select), with any failure closing the socket and propagating so the caller can move on to the next endpoint.
+-- opens one endpoint and brings it fully online (auth and database select), with any failure closing the socket and propagating so the caller can move on to the next endpoint
 local function dial(options, host, port)
     local sock, err = socket.tcp.connect(host, port):await()
     if err then
         error("[Redis] Connect to " .. host .. ":" .. port .. " failed: " .. tostring(err), 0)
     end
 
-    -- dead must be a real field: __index turns any missing key into a command, so without it the very
-    -- first `self.dead` check would dispatch a bogus command and read as truthy.
+    -- dead must be a real field because __index turns any missing key into a command.
+    -- without it the very first `self.dead` check would dispatch a bogus command and read as truthy.
     local client = setmetatable({ sock = sock, reader = Reader.new(sock), dead = false }, Client)
 
     local ok, handshakeError = pcall(function()
-        -- authenticate before anything else so a wrong credential fails fast.
+        -- authenticate before anything else so a wrong credential fails fast
         if options.username then
             client:command("AUTH", options.username, options.password or "")
         elseif options.password then
@@ -397,8 +402,8 @@ local function dial(options, host, port)
     return client
 end
 
--- the multiplexed variant of dial: bring the writer/reader loops up first, then run the auth and
--- database-select handshake through them like any other command.
+-- the multiplexed variant of dial brings the writer/reader loops up first.
+-- then it runs the auth and database-select handshake through them like any other command.
 local function dialMux(options, host, port)
     local sock, err = socket.tcp.connect(host, port):await()
     if err then
@@ -437,7 +442,8 @@ local function dialMux(options, host, port)
     return client
 end
 
--- connects to the first reachable endpoint, taking a single host/port or a list of { host, port } tables in `hosts` for failover where each is tried in order until one connects and answers. with pipeline = true the connection is multiplexed so concurrent commands share it.
+-- connects to the first reachable endpoint, taking a single host/port or a list of { host, port } tables in `hosts` for failover where each is tried in order until one connects and answers.
+-- with pipeline = true the connection is multiplexed so concurrent commands share it.
 function redis.connect(options)
     options = options or {}
 

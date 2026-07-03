@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -30,6 +31,22 @@ using varn::runtime::Runtime;
 
 #if defined(VARN_HAVE_LIBZIP) && VARN_HAVE_LIBZIP
 
+namespace
+{
+struct ZipDiscarder
+{
+    void operator()(zip_t* archive) const { zip_discard(archive); }
+};
+
+struct ZipFileCloser
+{
+    void operator()(zip_file_t* file) const { zip_fclose(file); }
+};
+
+using ZipHandle = std::unique_ptr<zip_t, ZipDiscarder>;
+using ZipFileHandle = std::unique_ptr<zip_file_t, ZipFileCloser>;
+} // namespace
+
 Runtime& ZipModule::luaRuntime(lua_State* L)
 {
     return *static_cast<Runtime*>(varn::lua::LuaHelpers::getRuntime(L));
@@ -38,7 +55,7 @@ Runtime& ZipModule::luaRuntime(lua_State* L)
 void ZipModule::performExtract(const std::string& zipPath, const std::string& destDir)
 {
     int err = 0;
-    zip_t* za = zip_open(zipPath.c_str(), ZIP_RDONLY, &err);
+    ZipHandle za(zip_open(zipPath.c_str(), ZIP_RDONLY, &err));
     if (!za)
     {
         throw std::runtime_error("[ZipModule] The archive could not be opened.");
@@ -51,17 +68,16 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
     constexpr zip_uint64_t kMaxEntries = 100000;
     constexpr std::uint64_t kMaxTotalBytes = 2ull * 1024 * 1024 * 1024;
 
-    const zip_int64_t n = zip_get_num_entries(za, 0);
+    const zip_int64_t n = zip_get_num_entries(za.get(), 0);
     if (n < 0 || static_cast<zip_uint64_t>(n) > kMaxEntries)
     {
-        zip_discard(za);
         throw std::runtime_error("[ZipModule] The archive declares too many entries.");
     }
 
     std::uint64_t totalWritten = 0;
     for (zip_uint64_t i = 0; i < static_cast<zip_uint64_t>(n); ++i)
     {
-        const char* name = zip_get_name(za, i, ZIP_FL_ENC_GUESS);
+        const char* name = zip_get_name(za.get(), i, ZIP_FL_ENC_GUESS);
         if (name == nullptr)
         {
             continue;
@@ -70,7 +86,6 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
         const std::string nm(name);
         if (!ZipPath::entryPathSafe(nm))
         {
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] The archive contains an unsafe entry name.");
         }
 
@@ -81,7 +96,6 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
         const fs::path canonParent = fs::weakly_canonical(parentDir);
         if (!ZipPath::isSubpath(destRoot, canonParent))
         {
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] An entry tried to escape the destination directory.");
         }
 
@@ -92,37 +106,30 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             continue;
         }
 
-        zip_file_t* zf = zip_fopen_index(za, i, 0);
+        ZipFileHandle zf(zip_fopen_index(za.get(), i, 0));
         if (!zf)
         {
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] An entry inside the archive could not be opened.");
         }
 
         // refuses to follow a pre-existing symlink at the target name
         if (fs::is_symlink(outFile))
         {
-            zip_fclose(zf);
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] An entry target already exists as a symlink.");
         }
 
         std::ofstream out(outFile, std::ios::binary);
         if (!out)
         {
-            zip_fclose(zf);
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] An output file could not be created.");
         }
 
         char buf[8192];
         while (true)
         {
-            const zip_int64_t r = zip_fread(zf, buf, sizeof(buf));
+            const zip_int64_t r = zip_fread(zf.get(), buf, sizeof(buf));
             if (r < 0)
             {
-                zip_fclose(zf);
-                zip_discard(za);
                 throw std::runtime_error("[ZipModule] An entry could not be read from the archive.");
             }
 
@@ -134,8 +141,6 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
             totalWritten += static_cast<std::uint64_t>(r);
             if (totalWritten > kMaxTotalBytes)
             {
-                zip_fclose(zf);
-                zip_discard(za);
                 throw std::runtime_error("[ZipModule] The archive expands beyond the allowed size.");
             }
 
@@ -145,24 +150,23 @@ void ZipModule::performExtract(const std::string& zipPath, const std::string& de
         out.flush();
         if (!out)
         {
-            zip_fclose(zf);
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] An extracted file could not be fully written.");
         }
-
-        zip_fclose(zf);
     }
 
-    if (zip_close(za) != 0)
+    // release only after a clean close since a failed close leaves the handle for the deleter to discard
+    if (zip_close(za.get()) != 0)
     {
         throw std::runtime_error("[ZipModule] The archive could not be closed after extraction.");
     }
+
+    za.release();
 }
 
 void ZipModule::performCreate(const std::string& zipPath, const std::vector<std::pair<std::string, std::string>>& items)
 {
     int err = 0;
-    zip_t* za = zip_open(zipPath.c_str(), ZIP_CREATE | ZIP_TRUNCATE, &err);
+    ZipHandle za(zip_open(zipPath.c_str(), ZIP_CREATE | ZIP_TRUNCATE, &err));
     if (!za)
     {
         throw std::runtime_error("[ZipModule] The archive could not be created.");
@@ -172,58 +176,55 @@ void ZipModule::performCreate(const std::string& zipPath, const std::vector<std:
     {
         if (!ZipPath::entryPathSafe(entryName))
         {
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] An entry name is unsafe.");
         }
 
         if (!fs::is_regular_file(localPath))
         {
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] A source path is not a regular file.");
         }
 
-        zip_source_t* s = zip_source_file(za, localPath.c_str(), 0, 0);
+        zip_source_t* s = zip_source_file(za.get(), localPath.c_str(), 0, 0);
         if (!s)
         {
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] A source file could not be read.");
         }
 
-        const zip_int64_t idx = zip_file_add(za, entryName.c_str(), s, ZIP_FL_ENC_UTF_8);
+        const zip_int64_t idx = zip_file_add(za.get(), entryName.c_str(), s, ZIP_FL_ENC_UTF_8);
         if (idx < 0)
         {
             zip_source_free(s);
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] An entry could not be added to the archive.");
         }
     }
 
-    if (zip_close(za) != 0)
+    if (zip_close(za.get()) != 0)
     {
         throw std::runtime_error("[ZipModule] The archive could not be closed after creation.");
     }
+
+    za.release();
 }
 
 std::vector<std::string> ZipModule::performList(const std::string& zipPath)
 {
     int err = 0;
-    zip_t* za = zip_open(zipPath.c_str(), ZIP_RDONLY, &err);
+    ZipHandle za(zip_open(zipPath.c_str(), ZIP_RDONLY, &err));
     if (!za)
     {
         throw std::runtime_error("[ZipModule] The archive could not be opened.");
     }
 
-    const zip_int64_t n = zip_get_num_entries(za, 0);
+    const zip_int64_t n = zip_get_num_entries(za.get(), 0);
     if (n < 0)
     {
-        zip_discard(za);
         throw std::runtime_error("[ZipModule] The archive directory could not be read.");
     }
 
     std::vector<std::string> names;
     for (zip_uint64_t i = 0; i < static_cast<zip_uint64_t>(n); ++i)
     {
-        const char* name = zip_get_name(za, i, ZIP_FL_ENC_GUESS);
+        const char* name = zip_get_name(za.get(), i, ZIP_FL_ENC_GUESS);
         if (name == nullptr)
         {
             continue;
@@ -232,18 +233,18 @@ std::vector<std::string> ZipModule::performList(const std::string& zipPath)
         const std::string nm(name);
         if (!ZipPath::entryPathSafe(nm))
         {
-            zip_discard(za);
             throw std::runtime_error("[ZipModule] The archive contains an unsafe entry name.");
         }
 
         names.push_back(nm);
     }
 
-    if (zip_close(za) != 0)
+    if (zip_close(za.get()) != 0)
     {
         throw std::runtime_error("[ZipModule] The archive could not be closed after listing.");
     }
 
+    za.release();
     return names;
 }
 

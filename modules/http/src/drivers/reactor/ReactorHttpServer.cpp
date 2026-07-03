@@ -191,7 +191,8 @@ const char* reasonPhrase(int code)
     case 504:
         return "Gateway Timeout";
     default:
-        return "OK";
+        // leave the reason phrase empty for an unlisted code since http allows it and inventing "OK" would misdescribe the status
+        return "";
     }
 }
 
@@ -545,6 +546,12 @@ public:
 
     void submitResponse(std::string data, bool keepAliveAfter)
     {
+        // drop the response if the connection was already force-closed while the handler was still awaiting
+        if (closed)
+        {
+            return;
+        }
+
         writeBuffer = std::move(data);
         writeOffset = 0;
         lastWriteMs = nowMs();
@@ -581,6 +588,12 @@ public:
 
     void streamFile(std::string head, std::string path, std::uint64_t start, std::uint64_t length, bool headersOnly, bool keepAliveAfter)
     {
+        // drop the response if the connection was already force-closed while the handler was still awaiting
+        if (closed)
+        {
+            return;
+        }
+
         writeBuffer = std::move(head);
         writeOffset = 0;
         lastWriteMs = nowMs();

@@ -1,4 +1,4 @@
--- parses a pdo-style data source name into a driver key plus connection parameters.
+-- parses a pdo-style data source name into a driver key plus connection parameters
 local dsn = {}
 
 local function parseKeyValues(body)
@@ -24,7 +24,7 @@ function dsn.parse(source)
     end
     scheme = scheme:lower()
 
-    -- sqlite keeps the remainder verbatim: a filesystem path or the :memory: token.
+    -- sqlite keeps the remainder verbatim as a filesystem path or the :memory: token
     if scheme == "sqlite" or scheme == "sqlite3" then
         return { driver = "sqlite", path = body }
     end

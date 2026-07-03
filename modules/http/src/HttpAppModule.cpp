@@ -1056,10 +1056,48 @@ int HttpApp::luaContextEtag(lua_State* L)
 
     // a matching If-None-Match short-circuits to 304 so the client reuses its cached copy and a later json or html call is a no-op on the finished response
     const std::string ifNoneMatch = requestHeaderCI(L, "If-None-Match");
-    if (!ifNoneMatch.empty() && (ifNoneMatch == "*" || ifNoneMatch.find(tag) != std::string::npos))
+    if (!ifNoneMatch.empty())
     {
-        context->response->setStatus(304);
-        context->response->end("");
+        // compare each listed validator by weak equality rather than a loose substring so a prefix tag never yields a false 304
+        std::string wantTag = tag;
+        if (wantTag.rfind("W/", 0) == 0)
+        {
+            wantTag = wantTag.substr(2);
+        }
+
+        bool matched = ifNoneMatch == "*";
+        std::size_t pos = 0;
+        while (!matched && pos <= ifNoneMatch.size())
+        {
+            const std::size_t comma = ifNoneMatch.find(',', pos);
+            const std::size_t end = comma == std::string::npos ? ifNoneMatch.size() : comma;
+
+            std::string entry = ifNoneMatch.substr(pos, end - pos);
+            const std::size_t begin = entry.find_first_not_of(" \t");
+            if (begin != std::string::npos)
+            {
+                entry = entry.substr(begin, entry.find_last_not_of(" \t") - begin + 1);
+                if (entry.rfind("W/", 0) == 0)
+                {
+                    entry = entry.substr(2);
+                }
+
+                matched = entry == wantTag;
+            }
+
+            if (comma == std::string::npos)
+            {
+                break;
+            }
+
+            pos = comma + 1;
+        }
+
+        if (matched)
+        {
+            context->response->setStatus(304);
+            context->response->end("");
+        }
     }
 
     lua_pushvalue(L, 1);

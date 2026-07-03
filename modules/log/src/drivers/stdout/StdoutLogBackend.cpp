@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -26,6 +27,8 @@ public:
         case Level::Error:
             return "ERROR";
         }
+
+        throw std::runtime_error("[Log] The log level is unknown.");
     }
 
     static std::mutex& mutex()
@@ -79,7 +82,16 @@ void Log::setLevel(Level level)
 void Log::addFileSink(std::string_view path, bool /*rotating*/)
 {
     std::lock_guard<std::mutex> lock(StdoutBridge::mutex());
-    StdoutBridge::file().open(std::string(path), std::ios::out | std::ios::app | std::ios::binary);
+    std::ofstream& file = StdoutBridge::file();
+
+    // close any previous sink and clear stale error state so a second call reliably reopens
+    if (file.is_open())
+    {
+        file.close();
+    }
+
+    file.clear();
+    file.open(std::string(path), std::ios::out | std::ios::app | std::ios::binary);
 }
 
 } // namespace varn::log

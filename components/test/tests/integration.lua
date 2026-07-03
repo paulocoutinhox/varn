@@ -1,4 +1,4 @@
--- the test runner's own suite, written with the runner (dogfooding). it exercises every matcher and verifies the matchers fail on the wrong input by calling expect-driven assertions through pcall, then runs the suite which prints the summary and exits non-zero on any failure.
+-- the test runner's own suite written with the runner, exercising every matcher and verifying they fail on wrong input before running the suite
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

@@ -1,4 +1,4 @@
--- postgres backend for vdo, binding libpq through ffi with real server-side prepared statements.
+-- postgres backend for vdo, binding libpq through ffi with real server-side prepared statements
 local ffi = require("ffi")
 local platform = require("platform")
 local sql = require("vdo.sql")
@@ -44,7 +44,7 @@ local OID_NUMERIC = 1700
 
 local lib
 
--- a c NULL pointer is never equal to lua nil under cffi, so test it against the null cdata.
+-- a c NULL pointer is never equal to lua nil under cffi, so test it against the null cdata
 local function isNull(ptr)
     return ptr == ffi.nullptr
 end
@@ -77,7 +77,7 @@ local function buildConnInfo(params, username, password)
     return table.concat(pairs_out, " ")
 end
 
--- converts a bound lua value to the text representation libpq expects, or nil for a sql NULL.
+-- converts a bound lua value to the text representation libpq expects, or nil for a sql NULL
 local function toParamText(value)
     if value == nil then
         return nil
@@ -125,7 +125,7 @@ local function checkResult(conn, result, context)
     return result
 end
 
--- wraps a tuple result so fetch can walk it row by row, capturing column names and type oids once.
+-- wraps a tuple result so fetch can walk it row by row, capturing column names and type oids once
 local function wrapResult(result)
     local fields = {}
     local count = lib.PQnfields(result)
@@ -138,7 +138,7 @@ local function wrapResult(result)
         fields = fields,
         fieldCount = count,
         total = lib.PQntuples(result),
-        -- empty for a select, the affected total for an insert, update or delete.
+        -- empty for a select, the affected total for an insert, update or delete
         affected = tonumber(ffi.string(lib.PQcmdTuples(result))) or 0,
         cursor = 0,
     }
@@ -149,7 +149,7 @@ function Statement:execute(params)
         self:clearResult()
     end
 
-    -- copy each value into an owned, nul-terminated c buffer and keep it alive for the call, so the pointers handed to libpq never depend on the lifetime of a temporary string conversion.
+    -- copy each value into an owned, nul-terminated c buffer and keep it alive for the call, so the pointers handed to libpq never depend on the lifetime of a temporary string conversion
     local count = #self.parsed.order
     local values = ffi.new("const char *[?]", count == 0 and 1 or count)
     local pinned = {}
@@ -162,14 +162,14 @@ function Statement:execute(params)
             local buffer = ffi.new("char[?]", #text + 1)
             ffi.copy(buffer, text, #text)
             pinned[index] = buffer
-            -- cffi does not implicitly decay a char array to const char *, so cast before storing.
+            -- cffi does not implicitly decay a char array to const char *, so cast before storing
             values[index - 1] = ffi.cast("const char *", buffer)
         end
     end
 
     local result = checkResult(
-        self.conn,
-        lib.PQexecPrepared(self.conn, self.name, count, values, nil, nil, 0),
+        self.connection.handle,
+        lib.PQexecPrepared(self.connection.handle, self.name, count, values, nil, nil, 0),
         "Execute"
     )
 
@@ -215,7 +215,7 @@ function Statement:fetchAll()
 end
 
 function Statement:rowCount()
-    -- a select reports its retrieved rows, a write reports the rows it changed.
+    -- a select reports its retrieved rows, a write reports the rows it changed
     if self.fieldCount and self.fieldCount > 0 then
         return self.total or 0
     end
@@ -235,10 +235,20 @@ end
 
 function Statement:close()
     self:clearResult()
+
+    -- release the server-side prepared statement, but only while the connection is still open so a late gc never touches a finished handle
+    if self.name and self.connection and self.connection.handle then
+        local deallocated = lib.PQexec(self.connection.handle, "DEALLOCATE " .. self.name)
+        if deallocated ~= nil then
+            lib.PQclear(deallocated)
+        end
+    end
+
+    self.name = nil
     self.cursor = nil
 end
 
--- a statement left unclosed frees its result when collected, so result memory cannot leak.
+-- a statement left unclosed frees its result when collected, so result memory cannot leak
 Statement.__gc = Statement.close
 
 function Connection:prepare(statement)
@@ -256,7 +266,7 @@ function Connection:prepare(statement)
     local prepared = checkResult(self.handle, lib.PQprepare(self.handle, name, text, #parsed.order, nil), "Prepare")
     lib.PQclear(prepared)
 
-    return setmetatable({ conn = self.handle, name = name, parsed = parsed, cursor = 0 }, Statement)
+    return setmetatable({ connection = self, name = name, parsed = parsed, cursor = 0 }, Statement)
 end
 
 function Connection:query(statement, params)
@@ -279,7 +289,7 @@ function Connection:exec(statement)
 end
 
 function Connection:lastInsertId(sequence)
-    -- the sequence name is interpolated into the statement, so reject anything that is not a plain identifier (letters, digits, underscore, dot) before handing it to the server.
+    -- the sequence name is interpolated into the statement, so reject anything that is not a plain identifier (letters, digits, underscore, dot) before handing it to the server
     if sequence ~= nil then
         if type(sequence) ~= "string" or not sequence:match("^[%w_.]+$") then
             error("[VdoPgsql] The lastInsertId sequence must be a plain identifier.")
@@ -318,7 +328,7 @@ function Connection:inTransaction()
     return self.inTx == true
 end
 
--- runs fn inside a transaction (committing on success, rolling back and re-raising on any error so a partial change can never be left behind), passing the connection to fn and returning its value.
+-- runs fn inside a transaction (committing on success, rolling back and re-raising on any error so a partial change can never be left behind), passing the connection to fn and returning its value
 function Connection:transaction(fn)
     self:beginTransaction()
 
@@ -327,7 +337,7 @@ function Connection:transaction(fn)
         local rollbackOk, rollbackErr = pcall(function()
             self:rollBack()
         end)
-        -- the original error takes priority, with a rollback failure appended so the caller knows the connection may still hold an open transaction on the server.
+        -- the original error takes priority, with a rollback failure appended so the caller knows the connection may still hold an open transaction on the server
         self.inTx = false
         if not rollbackOk then
             error(tostring(result) .. " | rollback also failed: " .. tostring(rollbackErr), 0)

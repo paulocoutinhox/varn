@@ -130,7 +130,8 @@ void XmlConvert::buildElement(pugi::xml_node parent, lua_State* L, int nodeIndex
     {
         size_t len = 0;
         const char* s = lua_tolstring(L, -1, &len);
-        el.text().set(s, len);
+        const std::string text = XmlSerializer::sanitizeText(s, len);
+        el.text().set(text.c_str(), text.size());
     }
 
     lua_pop(L, 1);

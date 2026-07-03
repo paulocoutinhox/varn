@@ -36,9 +36,16 @@ TaskPool::~TaskPool()
 
 void TaskPool::post(Job job)
 {
-    ledger->enter();
     {
         std::lock_guard<std::mutex> lock(mutex);
+
+        // drop work once stopped so a job no worker will ever run cannot leak a ledger entry
+        if (!running)
+        {
+            return;
+        }
+
+        ledger->enter();
         jobs.push([ledger = ledger, j = std::move(job)]() mutable
                   {
             j();

@@ -1,16 +1,21 @@
--- retry: retry-with-backoff plus a tiny scheduler, built on async. retry.run re-invokes a function until it succeeds or runs out of attempts, sleeping between tries with exponential backoff; retry.after and retry.every schedule one-shot and repeating work on background coroutines, each returning a handle that can be cancelled. everything yields on the event loop, so it must run inside an async coroutine (async.spawn / async.run).
+-- retry provides retry-with-backoff plus a tiny scheduler built on async.
+-- retry.run re-invokes a function until it succeeds or runs out of attempts, sleeping between tries with exponential backoff.
+-- retry.after and retry.every schedule one-shot and repeating work on background coroutines, each returning a cancellable handle.
+-- everything yields on the event loop so it must run inside an async coroutine.
 local async = require("async")
 
 local retry = {}
 
--- calls fn and normalizes the outcome: a function that raises is a failure, and a function that returns a promise is awaited so a rejected promise is also a failure. returns ok, result-or-error.
+-- calls fn and normalizes the outcome where a function that raises is a failure.
+-- a returned promise is awaited so a rejected promise is also a failure.
+-- returns ok plus the result or error.
 local function callOnce(fn)
     local ok, value = pcall(fn)
     if not ok then
         return false, value
     end
 
-    -- a promise (anything with :await) is awaited so async failures count as retryable too.
+    -- a promise (anything with :await) is awaited so async failures count as retryable too
     if type(value) == "table" and type(value.await) == "function" then
         local awaited, err = value:await()
         if err ~= nil then
@@ -22,7 +27,9 @@ local function callOnce(fn)
     return true, value
 end
 
--- run(fn, opts) calls fn, retrying on failure up to opts.attempts times (default 3) with an exponential backoff starting at opts.backoffMs (default 100) and multiplied by opts.factor (default 2) each retry. fn may return a promise. on success returns its value; after the last failed attempt it re-raises the final error.
+-- run calls fn and retries on failure up to opts.attempts times (default 3) with exponential backoff starting at opts.backoffMs (default 100) and multiplied by opts.factor (default 2) each retry.
+-- fn may return a promise.
+-- on success it returns the value and after the last failed attempt it re-raises the final error.
 function retry.run(fn, opts)
     opts = opts or {}
     local attempts = opts.attempts or 3
@@ -37,7 +44,7 @@ function retry.run(fn, opts)
         end
 
         lastError = value
-        -- sleep before every retry but not after the final failure.
+        -- sleep before every retry but not after the final failure
         if attempt < attempts then
             async.sleep(backoff):await()
             backoff = backoff * factor
@@ -47,7 +54,7 @@ function retry.run(fn, opts)
     error("[Retry] All " .. attempts .. " attempt(s) failed: " .. tostring(lastError), 0)
 end
 
--- a handle for scheduled work: :cancel() stops a pending or repeating task, and :isCancelled() reports its state.
+-- a handle for scheduled work whose :cancel() stops a pending or repeating task and :isCancelled() reports its state
 local Handle = {}
 Handle.__index = Handle
 
@@ -63,7 +70,8 @@ local function newHandle()
     return setmetatable({ cancelled = false }, Handle)
 end
 
--- after(ms, fn) runs fn once after ms milliseconds on a background coroutine. returns a handle whose :cancel() prevents fn from firing if called before the delay elapses.
+-- after runs fn once after ms milliseconds on a background coroutine.
+-- it returns a handle whose :cancel() prevents fn from firing if called before the delay elapses.
 function retry.after(ms, fn)
     local handle = newHandle()
     async.spawn(function()
@@ -75,7 +83,9 @@ function retry.after(ms, fn)
     return handle
 end
 
--- every(ms, fn) runs fn repeatedly, waiting ms milliseconds before each run, on a background coroutine. returns a handle whose :cancel() stops the loop; the cancel is observed before fn is called and again before the next sleep, so an in-flight run finishes but no further run starts.
+-- every runs fn repeatedly on a background coroutine, waiting ms milliseconds before each run.
+-- it returns a handle whose :cancel() stops the loop.
+-- the cancel is observed before fn is called and again before the next sleep, so an in-flight run finishes but no further run starts.
 function retry.every(ms, fn)
     local handle = newHandle()
     async.spawn(function()

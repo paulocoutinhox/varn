@@ -87,6 +87,10 @@ end
 
 function async.race(list)
     return async.promise(function()
+        if #list == 0 then
+            error("async.race: cannot race an empty list", 0)
+        end
+
         local settled = false
         local settledValue = nil
         local settledError = nil
@@ -198,8 +202,16 @@ function async.mapLimit(list, limit, fn)
             nextIndex = nextIndex + 1
             inFlight = inFlight + 1
             async.spawn(function()
-                local value, err = fn(list[index]):await()
-                if err ~= nil then
+                -- guard the mapper so a throwing fn or a non-promise result still settles the counters instead of hanging the whole map
+                local ok, value, err = pcall(function()
+                    return fn(list[index]):await()
+                end)
+                if not ok then
+                    if not failed then
+                        failed = true
+                        failure = value
+                    end
+                elseif err ~= nil then
                     if not failed then
                         failed = true
                         failure = err

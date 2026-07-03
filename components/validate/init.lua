@@ -1,7 +1,10 @@
--- validate: check a Lua table against a declarative schema, returning ok plus a flat table of field errors. each schema field is a rule built by validate.string{...}, validate.number{...}, etc.; validate.check(schema, data) walks the schema and reports every problem at once instead of failing on the first.
+-- validate checks a Lua table against a declarative schema and returns ok plus a flat table of field errors.
+-- each schema field is a rule built by validate.string, validate.number and similar constructors.
+-- validate.check walks the schema and reports every problem at once instead of failing on the first.
 local validate = {}
 
--- builds a rule descriptor for one field. type drives which checks apply; opts carries required/min/max/pattern/enum/default and, for tables and arrays, the nested schema or element rule.
+-- builds a rule descriptor for one field where kind drives which checks apply.
+-- opts carries required, min, max, pattern, enum and default plus the nested schema or element rule for tables and arrays.
 local function rule(kind, opts, extra)
     opts = opts or {}
     local descriptor = {
@@ -21,7 +24,7 @@ local function rule(kind, opts, extra)
     return descriptor
 end
 
--- a field is required by default; pass { required = false } to make it optional.
+-- a field is required by default unless opts sets required to false
 function validate.string(opts)
     return rule("string", opts)
 end
@@ -30,7 +33,7 @@ function validate.number(opts)
     return rule("number", opts)
 end
 
--- an integer is a number that must also have no fractional part.
+-- an integer is a number that must also have no fractional part
 function validate.integer(opts)
     return rule("integer", opts)
 end
@@ -39,22 +42,22 @@ function validate.boolean(opts)
     return rule("boolean", opts)
 end
 
--- a nested object: schema is a table of field-name -> rule, validated recursively.
+-- a nested object whose schema is a table of field-name to rule validated recursively
 function validate.table(schema, opts)
     return rule("table", opts, { schema = schema })
 end
 
--- a list whose every element must satisfy elementRule; min/max constrain the element count.
+-- a list whose every element must satisfy elementRule with min and max constraining the element count
 function validate.array(elementRule, opts)
     return rule("array", opts, { element = elementRule })
 end
 
--- records "<path>: <message>" into errors, prefixing nested fields with their parent path.
+-- records a field message into errors keyed by its path
 local function fail(errors, path, message)
     errors[path] = message
 end
 
--- the length used for min/max on a string (characters) or array (element count); other kinds compare the value itself.
+-- the measure used for min and max is the character count of a string, the element count of an array, or the value itself for other kinds
 local function lengthOf(kind, value)
     if kind == "string" then
         return #value
@@ -65,7 +68,8 @@ local function lengthOf(kind, value)
     return value
 end
 
--- validates one value against one rule, writing any problems into errors under path. returns the value to store (a default substitutes a missing optional field).
+-- validates one value against one rule and writes any problems into errors under path.
+-- returns the value to store where a default substitutes a missing optional field.
 local function checkValue(descriptor, value, path, errors)
     if value == nil then
         if descriptor.default ~= nil then
@@ -101,7 +105,7 @@ local function checkValue(descriptor, value, path, errors)
         end
     end
 
-    -- enum membership.
+    -- enum membership
     if descriptor.enum then
         local allowed = false
         for _, option in ipairs(descriptor.enum) do
@@ -115,7 +119,7 @@ local function checkValue(descriptor, value, path, errors)
         end
     end
 
-    -- min/max compare a length for strings and arrays, the value itself for numbers.
+    -- min and max compare a length for strings and arrays and the value itself for numbers
     if descriptor.min ~= nil or descriptor.max ~= nil then
         local measure = lengthOf(kind, value)
         if descriptor.min ~= nil and measure < descriptor.min then
@@ -126,19 +130,19 @@ local function checkValue(descriptor, value, path, errors)
         end
     end
 
-    -- pattern only applies to strings.
+    -- pattern only applies to strings
     if descriptor.pattern and kind == "string" and not value:match(descriptor.pattern) then
         fail(errors, path, "has an invalid format")
     end
 
-    -- recurse into a nested object schema.
+    -- recurse into a nested object schema
     if kind == "table" and descriptor.schema then
         for field, fieldRule in pairs(descriptor.schema) do
             checkValue(fieldRule, value[field], path .. "." .. field, errors)
         end
     end
 
-    -- validate every array element against the element rule.
+    -- validate every array element against the element rule
     if kind == "array" and descriptor.element then
         for index, item in ipairs(value) do
             checkValue(descriptor.element, item, path .. "[" .. index .. "]", errors)
@@ -148,7 +152,8 @@ local function checkValue(descriptor, value, path, errors)
     return value
 end
 
--- validates data against schema (a table of field-name -> rule). returns true on success, or false plus a table mapping each failing field path to its message.
+-- validates data against schema which is a table of field-name to rule.
+-- returns true on success or false plus a table mapping each failing field path to its message.
 function validate.check(schema, data)
     if type(data) ~= "table" then
         return false, { ["_"] = "value must be a table" }

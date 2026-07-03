@@ -1,4 +1,4 @@
--- a small suite showing describe/it/expect and the pass/fail summary the runner prints.
+-- a small suite showing describe/it/expect and the pass/fail summary the runner prints
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

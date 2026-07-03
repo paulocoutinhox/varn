@@ -15,6 +15,7 @@ public:
     static std::string encodeNode(lua_State* L, int index, int indent);
     static bool parse(lua_State* L, const std::string& text);
     static std::string sanitizeElementName(const std::string& raw);
+    static std::string sanitizeText(const char* data, std::size_t size);
 };
 
 } // namespace varn::xml

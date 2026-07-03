@@ -1,4 +1,4 @@
--- sqlite backend for vdo, binding the sqlite3 c api through ffi.
+-- sqlite backend for vdo, binding the sqlite3 c api through ffi
 local ffi = require("ffi")
 local platform = require("platform")
 local sql = require("vdo.sql")
@@ -49,12 +49,12 @@ local SQLITE_BLOB = 4
 local SQLITE_OPEN_READWRITE = 0x00000002
 local SQLITE_OPEN_CREATE = 0x00000004
 
--- forces sqlite to copy bound buffers, so a lua string can be collected right after the bind call.
+-- forces sqlite to copy bound buffers, so a lua string can be collected right after the bind call
 local SQLITE_TRANSIENT = ffi.cast("void *", -1)
 
 local lib
 
--- cffi returns small 64-bit integers as plain lua numbers but wide ones as cdata, so normalize both.
+-- cffi returns small 64-bit integers as plain lua numbers but wide ones as cdata, so normalize both
 local function asNumber(value)
     if type(value) == "number" then
         return value
@@ -62,7 +62,7 @@ local function asNumber(value)
     return ffi.tonumber(value)
 end
 
--- a c NULL pointer is never equal to lua nil under cffi, so test it against the null cdata.
+-- a c NULL pointer is never equal to lua nil under cffi, so test it against the null cdata
 local function isNull(ptr)
     return ptr == ffi.nullptr
 end
@@ -153,10 +153,10 @@ function Statement:execute(params)
         bindValue(self.handle, self.db, index, sql.valueFor(self.parsed, params, index))
     end
 
-    -- step once so the statement actually runs now, buffering the first row for fetch.
+    -- step once so the statement actually runs now, buffering the first row for fetch
     self.pending = self:step()
 
-    -- sqlite only tracks rows changed by data modification, so this is the affected count for an insert, update or delete rather than a row total for a select, matching pdo's sqlite behaviour.
+    -- sqlite only tracks rows changed by data modification, so this is the affected count for an insert, update or delete rather than a row total for a select, matching pdo's sqlite behaviour
     self.affected = lib.sqlite3_changes(self.db)
     return self
 end
@@ -200,7 +200,7 @@ function Statement:close()
     self.handle = nil
 end
 
--- a statement left unclosed (for example db:query(sql):fetchAll()) is finalized when collected, so a forgotten cursor cannot keep holding a lock on its table.
+-- a statement left unclosed (for example db:query(sql):fetchAll()) is finalized when collected, so a forgotten cursor cannot keep holding a lock on its table
 Statement.__gc = Statement.close
 
 local function prepareStatement(self, statement)
@@ -227,7 +227,7 @@ function Connection:query(statement, params)
 end
 
 function Connection:exec(statement)
-    -- sqlite3_exec runs every statement in the string, so a multi-statement script is not silently truncated to its first command like a single prepared step would be.
+    -- sqlite3_exec runs every statement in the string, so a multi-statement script is not silently truncated to its first command like a single prepared step would be
     local errmsg = ffi.new("char *[1]")
     if lib.sqlite3_exec(self.handle, statement, nil, nil, errmsg) ~= SQLITE_OK then
         local message = not isNull(errmsg[0]) and ffi.string(errmsg[0]) or ffi.string(lib.sqlite3_errmsg(self.handle))
@@ -263,7 +263,7 @@ function Connection:inTransaction()
     return self.inTx == true
 end
 
--- runs fn inside a transaction (committing on success, rolling back and re-raising on any error so a partial change can never be left behind), passing the connection to fn and returning its value.
+-- runs fn inside a transaction (committing on success, rolling back and re-raising on any error so a partial change can never be left behind), passing the connection to fn and returning its value
 function Connection:transaction(fn)
     self:beginTransaction()
 
@@ -272,7 +272,7 @@ function Connection:transaction(fn)
         local rollbackOk, rollbackErr = pcall(function()
             self:rollBack()
         end)
-        -- the original error takes priority, with a rollback failure appended so the caller knows the connection may still hold an open transaction on the server.
+        -- the original error takes priority, with a rollback failure appended so the caller knows the connection may still hold an open transaction on the server
         self.inTx = false
         if not rollbackOk then
             error(tostring(result) .. " | rollback also failed: " .. tostring(rollbackErr), 0)

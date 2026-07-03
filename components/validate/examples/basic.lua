@@ -1,4 +1,4 @@
--- validates a user payload against a schema with strings, numbers, an enum, a pattern, an array, and a nested table, printing the errors a bad payload produces.
+-- validates a user payload against a schema with strings, numbers, an enum, a pattern, an array and a nested table then prints the errors a bad payload produces
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

@@ -8,8 +8,10 @@
 
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace varn::log
 {
@@ -44,6 +46,8 @@ public:
         case Level::Error:
             return spdlog::level::err;
         }
+
+        throw std::runtime_error("[Log] The log level is unknown.");
     }
 };
 
@@ -75,10 +79,16 @@ void Log::addFileSink(std::string_view path, bool rotating)
         sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(file);
     }
 
-    spdlog::default_logger()->sinks().push_back(std::move(sink));
+    // build a fresh logger with the added sink and swap it in atomically so concurrent emit calls never see a mutating sink vector
+    const auto current = spdlog::default_logger();
+    std::vector<spdlog::sink_ptr> sinks = current->sinks();
+    sinks.push_back(std::move(sink));
 
+    auto logger = std::make_shared<spdlog::logger>("varn", sinks.begin(), sinks.end());
+    logger->set_level(current->level());
     // flush each record so readers see it immediately
-    spdlog::default_logger()->flush_on(spdlog::level::trace);
+    logger->flush_on(spdlog::level::trace);
+    spdlog::set_default_logger(std::move(logger));
 }
 
 } // namespace varn::log

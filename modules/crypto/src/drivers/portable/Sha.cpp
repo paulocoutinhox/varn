@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <stdexcept>
 
 namespace varn::crypto::portable
 {
@@ -414,8 +415,12 @@ std::string Sha::hashByName(std::string_view algorithm, std::string_view data)
     {
         return sha384(data);
     }
+    if (name == "SHA512")
+    {
+        return sha512(data);
+    }
 
-    return sha512(data);
+    throw std::runtime_error("[Sha] The hash algorithm is not supported.");
 }
 
 } // namespace varn::crypto::portable

@@ -254,13 +254,25 @@ struct EventLoop::Poller
         }
     }
 
+    void wakeAsync()
+    {
+        // serialize the wakeup with clear so a cross-thread send never races the handle being closed
+        std::lock_guard<std::mutex> lock(commandMutex);
+        if (!closed)
+        {
+            uv_async_send(&async);
+        }
+    }
+
     void submit(std::function<void()> command)
     {
+        std::lock_guard<std::mutex> lock(commandMutex);
+        if (closed)
         {
-            std::lock_guard<std::mutex> lock(commandMutex);
-            commands.push_back(std::move(command));
+            return;
         }
 
+        commands.push_back(std::move(command));
         uv_async_send(&async);
     }
 
@@ -291,14 +303,15 @@ struct EventLoop::Poller
 
     void clear()
     {
-        if (closed)
         {
-            return;
-        }
-
-        closed = true;
-        {
+            // mark closed under the same mutex the wakeups use so no cross-thread send can target the async handle after this
             std::lock_guard<std::mutex> lock(commandMutex);
+            if (closed)
+            {
+                return;
+            }
+
+            closed = true;
             commands.clear();
         }
 
@@ -361,9 +374,9 @@ void EventLoop::wakeFromAnotherThread()
 {
 #if !defined(__EMSCRIPTEN__)
     // interrupt the wait only for a cross-thread post since the loop re-checks its job queue before every poll
-    if (poller && !poller->closed && !onLoopThread())
+    if (poller && !onLoopThread())
     {
-        uv_async_send(&poller->async);
+        poller->wakeAsync();
     }
 #endif
 }
@@ -538,7 +551,7 @@ void EventLoop::run()
         uv_timer_stop(&poller->timer);
     }
 
-    // clear the io state on the loop thread that owns it with no race once the loop has exited
+    // clear the io state on the loop thread that owns it once the loop has exited
     shutdownIo();
 #endif
 }
@@ -547,9 +560,9 @@ void EventLoop::stop()
 {
     running.store(false, std::memory_order_release);
 #if !defined(__EMSCRIPTEN__)
-    if (poller && !poller->closed)
+    if (poller)
     {
-        uv_async_send(&poller->async);
+        poller->wakeAsync();
     }
 #endif
 }
@@ -575,9 +588,9 @@ void EventLoop::clearPendingJobs()
 void EventLoop::wake()
 {
 #if !defined(__EMSCRIPTEN__)
-    if (poller && !poller->closed)
+    if (poller)
     {
-        uv_async_send(&poller->async);
+        poller->wakeAsync();
     }
 #endif
 }

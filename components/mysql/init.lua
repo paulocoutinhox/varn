@@ -1,7 +1,4 @@
--- async mysql client speaking the text protocol (COM_QUERY) over the native socket and
--- authenticating with mysql_native_password. every socket operation yields on the event loop, so one
--- process keeps many queries in flight at once instead of blocking on each. runs inside an async
--- coroutine (async.spawn/async.run); pair it with the pool component to share connections.
+-- async mysql client speaking the text protocol (COM_QUERY) over the native socket and authenticating with mysql_native_password, where every socket operation yields on the event loop so one process keeps many queries in flight instead of blocking on each, running inside an async coroutine (async.spawn/async.run) and pairing with the pool component to share connections
 local socket = require("socket")
 local crypto = require("crypto")
 
@@ -22,7 +19,7 @@ local READ_CHUNK = 65536
 local COM_QUIT = 0x01
 local COM_QUERY = 0x03
 
--- buffered byte reader: socket:receive yields up to n bytes, so packet framing needs exact-count reads.
+-- buffered byte reader over the socket where socket:receive yields up to n bytes so packet framing needs exact-count reads
 local Reader = {}
 Reader.__index = Reader
 
@@ -56,7 +53,7 @@ function Reader:bytes(count)
     return data
 end
 
--- a length-encoded integer: one marker byte selects an inline value or a 2/3/8-byte little-endian tail.
+-- a length-encoded integer whose marker byte selects an inline value or a 2/3/8-byte little-endian tail
 local function lenencInt(s, pos)
     local first = string.byte(s, pos)
     if first < 0xFB then
@@ -166,8 +163,7 @@ function Client:handshake(options)
     local marker = string.byte(result, 1)
 
     if marker == 0xFE then
-        -- the server defaults to caching_sha2 but the account is native_password, so it asks to switch
-        -- plugins and re-scramble with the fresh nonce it sends here.
+        -- the server defaults to caching_sha2 but the account is native_password so it asks to switch plugins and re-scramble with the fresh nonce it sends here
         local nameEnd = result:find("\0", 2, true)
         local switchScramble = result:sub(nameEnd + 1):sub(1, 20)
         self:sendPacket(nativePassword(options.password or "", switchScramble), self.lastSeq + 1)
@@ -184,8 +180,7 @@ function Client:handshake(options)
     end
 end
 
--- query(sql) -> an array of row tables keyed by column name. all values come back as strings, matching
--- the text protocol; convert numerics at the call site when needed.
+-- query(sql) -> an array of row tables keyed by column name where all values come back as strings matching the text protocol so convert numerics at the call site when needed
 function Client:query(sql)
     self:sendPacket(string.char(COM_QUERY) .. sql, 0)
 
@@ -210,7 +205,7 @@ function Client:query(sql)
         columns[i] = (lenencStr(definition, pos))
     end
 
-    -- the eof packet that closes the column definitions (no CLIENT_DEPRECATE_EOF negotiated).
+    -- the eof packet that closes the column definitions (no CLIENT_DEPRECATE_EOF negotiated)
     self:readPacket()
 
     local rows = {}
@@ -242,11 +237,11 @@ function Client:close()
         self:sendPacket(string.char(COM_QUIT), 0)
     end)
     pcall(function()
-        self.sock:close()
+        self.sock:close():await()
     end)
 end
 
--- connect({ host, port, user, password, database }) -> a ready client, authenticated and database-selected.
+-- connect({ host, port, user, password, database }) -> a ready client, authenticated and database-selected
 function mysql.connect(options)
     options = options or {}
 

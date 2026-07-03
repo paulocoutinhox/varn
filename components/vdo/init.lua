@@ -1,7 +1,7 @@
--- vdo (varn data objects): a pdo-style facade over sqlite, mysql/mariadb, and postgres, implemented in lua on top of the native ffi module, with the driver chosen from the DSN scheme.
+-- vdo (varn data objects) is a pdo-style facade over sqlite, mysql/mariadb, and postgres, implemented in lua on top of the native ffi module, with the driver chosen from the DSN scheme
 local dsn = require("vdo.dsn")
 
--- drivers are required lazily so loading vdo never forces a client library that is not installed.
+-- drivers are required lazily so loading vdo never forces a client library that is not installed
 local loaders = {
     sqlite = function()
         return require("vdo.driver.sqlite")

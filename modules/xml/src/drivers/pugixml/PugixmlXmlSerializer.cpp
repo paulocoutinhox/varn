@@ -18,7 +18,8 @@ std::string XmlSerializer::sanitizeElementName(const std::string& raw)
     out.reserve(raw.size());
     for (char c : raw)
     {
-        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.')
+        // keep ascii name characters and pass utf-8 bytes through so non-ascii names are not mangled
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.' || static_cast<unsigned char>(c) >= 0x80)
         {
             out += c;
         }
@@ -36,6 +37,26 @@ std::string XmlSerializer::sanitizeElementName(const std::string& raw)
     if (std::isdigit(static_cast<unsigned char>(out[0])))
     {
         out.insert(out.begin(), 'n');
+    }
+
+    return out;
+}
+
+std::string XmlSerializer::sanitizeText(const char* data, std::size_t size)
+{
+    std::string out;
+    out.reserve(size);
+    for (std::size_t i = 0; i < size; ++i)
+    {
+        const unsigned char c = static_cast<unsigned char>(data[i]);
+
+        // drop the control characters xml 1.0 forbids so the emitted text stays well-formed and round-trips
+        if (c < 0x20 && c != 0x09 && c != 0x0A && c != 0x0D)
+        {
+            continue;
+        }
+
+        out += static_cast<char>(c);
     }
 
     return out;
@@ -72,7 +93,8 @@ std::string XmlSerializer::serialize(lua_State* L, int index)
         {
             size_t len = 0;
             const char* s = lua_tolstring(L, -1, &len);
-            el.text().set(s, len);
+            const std::string text = sanitizeText(s, len);
+            el.text().set(text.c_str(), text.size());
         }
         else if (lua_isboolean(L, -1))
         {
