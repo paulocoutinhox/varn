@@ -73,7 +73,7 @@ constexpr long long kSweepIntervalMs = 1000;
 constexpr int kSslWantRead = -2;
 constexpr int kSslWantWrite = -3;
 
-#if defined(__linux__) || defined(__APPLE__)
+#if (defined(__linux__) || defined(__APPLE__)) && !defined(VARN_NO_SENDFILE)
 #define VARN_HAS_SENDFILE 1
 #endif
 
@@ -1814,7 +1814,9 @@ private:
     std::string filePath;
     std::uint64_t fileOffset = 0;
     std::uint64_t fileRemaining = 0;
+#if defined(VARN_HAS_SENDFILE)
     int fileFd = -1;
+#endif
 
     bool wsMode = false;
     std::string wsMessage;

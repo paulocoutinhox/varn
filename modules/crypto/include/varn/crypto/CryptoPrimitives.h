@@ -42,6 +42,8 @@ public:
 
     static std::string hkdf(std::string_view key, std::string_view salt, std::string_view info, std::size_t keyLen, std::string_view algorithm);
 
+    static std::string rsaEncryptPublic(std::string_view pemPublicKey, std::string_view data);
+
 private:
     static std::string trimAlgo(std::string_view in);
 

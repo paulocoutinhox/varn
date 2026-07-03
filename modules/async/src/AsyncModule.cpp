@@ -409,6 +409,16 @@ int AsyncModule::luaPromise(lua_State* L)
     return 1;
 }
 
+namespace
+{
+constexpr const char* kResolverGuardMeta = "varn.ResolverGuard";
+
+struct ResolverGuardUserdata
+{
+    std::shared_ptr<Promise> promise;
+};
+} // namespace
+
 int AsyncModule::luaResolveDeferred(lua_State* L)
 {
     Promise* promise = Promise::check(L, lua_upvalueindex(1));
@@ -416,15 +426,54 @@ int AsyncModule::luaResolveDeferred(lua_State* L)
     return 0;
 }
 
+int AsyncModule::luaResolverGc(lua_State* L)
+{
+    auto* guard = static_cast<ResolverGuardUserdata*>(luaL_checkudata(L, 1, kResolverGuardMeta));
+
+    // the resolver closure that held this guard was collected without resolving, so break the promise to resume and release its awaiters
+    if (guard->promise)
+    {
+        guard->promise->breakIfPending();
+    }
+
+    guard->promise.~shared_ptr<Promise>();
+    return 0;
+}
+
+void AsyncModule::installResolverMetatable(lua_State* L)
+{
+    if (luaL_newmetatable(L, kResolverGuardMeta) == 0)
+    {
+        lua_pop(L, 1);
+        return;
+    }
+
+    lua_pushcfunction(L, &AsyncModule::luaResolverGc);
+    lua_setfield(L, -2, "__gc");
+
+    lua_pop(L, 1);
+}
+
 int AsyncModule::luaDeferred(lua_State* L)
 {
     auto& rt = luaRuntime(L);
     auto promise = std::make_shared<Promise>(rt);
 
-    // returns the awaitable alongside a one-shot resolve function
+    // the awaitable is returned alongside a one-shot resolve function
     Promise::push(L, promise);
-    lua_pushvalue(L, -1);
-    lua_pushcclosure(L, &AsyncModule::luaResolveDeferred, 1);
+
+    // a finalizable guard rides along as an upvalue of the resolve closure so dropping the resolver breaks a still-pending promise
+    void* memory = lua_newuserdatauv(L, sizeof(ResolverGuardUserdata), 0);
+    new (memory) ResolverGuardUserdata{promise};
+    luaL_getmetatable(L, kResolverGuardMeta);
+    lua_setmetatable(L, -2);
+
+    lua_pushvalue(L, -2);
+    lua_pushvalue(L, -2);
+    lua_pushcclosure(L, &AsyncModule::luaResolveDeferred, 2);
+
+    // drop the bare guard now that the closure owns it, leaving the awaitable and the resolve function on the stack
+    lua_remove(L, -2);
     return 2;
 }
 
@@ -440,6 +489,8 @@ int AsyncModule::luaRun(lua_State* L)
 
 int AsyncModule::luaOpen(lua_State* L)
 {
+    installResolverMetatable(L);
+
     lua_newtable(L);
 
     lua_pushcfunction(L, &AsyncModule::luaSleep);

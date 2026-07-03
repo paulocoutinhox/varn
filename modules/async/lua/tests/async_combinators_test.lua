@@ -1,4 +1,4 @@
--- async combinators covering all order and failure, allSettled capture, race and any selection, timeout firing, and mapLimit bounding concurrency while preserving order
+-- async combinators covering all order and failure, allSettled capture, race and any selection, timeout firing, mapLimit bounding concurrency while preserving order, empty-list handling, and mapper failures
 local async = require("async")
 
 -- a promise that resolves to value after ms milliseconds
@@ -75,6 +75,31 @@ async.run(function()
     assert(table.concat(mapped, ",") == "10,20,30,40,50,60", "mapLimit should preserve input order")
     assert(peak <= 2, "mapLimit should never exceed the concurrency limit")
     assert(peak == 2, "mapLimit should reach the concurrency limit")
+
+    -- all and allSettled of an empty list resolve immediately to an empty result
+    local emptyAll = async.all({}):await()
+    assert(type(emptyAll) == "table" and #emptyAll == 0, "all of an empty list should resolve to an empty table")
+    local emptySettled = async.allSettled({}):await()
+    assert(type(emptySettled) == "table" and #emptySettled == 0, "allSettled of an empty list should resolve to an empty table")
+
+    -- race of an empty list rejects instead of hanging forever with nothing to settle it
+    local emptyRaceValue, emptyRaceErr = async.race({}):await()
+    assert(emptyRaceValue == nil, "race of an empty list should not resolve")
+    assert(type(emptyRaceErr) == "string" and emptyRaceErr:find("empty"), "race of an empty list should reject")
+
+    -- mapLimit rejects when the mapper raises rather than leaving the map hanging on a lost counter
+    local throwValue, throwErr = async.mapLimit({ 1, 2, 3 }, 2, function(item)
+        error("mapper boom " .. item)
+    end):await()
+    assert(throwValue == nil, "mapLimit should not resolve when the mapper raises")
+    assert(type(throwErr) == "string" and throwErr:find("boom"), "mapLimit should surface the mapper error")
+
+    -- mapLimit rejects when a mapped promise rejects
+    local rejValue, rejErr = async.mapLimit({ 1, 2 }, 1, function(item)
+        return rejectAfter(1, "mapped rejection " .. item)
+    end):await()
+    assert(rejValue == nil, "mapLimit should not resolve when a mapped promise rejects")
+    assert(type(rejErr) == "string" and rejErr:find("rejection"), "mapLimit should surface a mapped rejection")
 
     print("async combinators ok")
 end)

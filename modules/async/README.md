@@ -19,7 +19,7 @@ end)
 | `async.run(fn)` | Run `fn` as the program's async entry point; the process exits when it returns, or non-zero if an error escapes. |
 | `async.spawn(fn)` | Run `fn` as a background coroutine that can `:await()` promises. |
 | `async.promise(fn)` | Run `fn` as a coroutine and return a promise that resolves with its return value or rejects with its error. |
-| `async.deferred()` | Return a pending promise plus a one-shot `resolve` function that settles it from elsewhere. |
+| `async.deferred()` | Return a pending promise plus a one-shot `resolve` function that settles it from elsewhere; if the `resolve` function is garbage-collected without being called, the pending promise is broken so its awaiters resume with an error instead of leaking. |
 | `async.sleep(ms)` | A promise that resolves after `ms` milliseconds. |
 | `async.all(list)` | Resolve to an array of every promise's result in input order; reject as soon as any input rejects. |
 | `async.allSettled(list)` | Resolve to an array of `{ ok = true, value = ... }` / `{ ok = false, error = ... }` in input order; never reject. |

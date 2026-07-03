@@ -18,7 +18,9 @@
 #if defined(VARN_CRYPTO_DRIVER_OPENSSL) && VARN_CRYPTO_DRIVER_OPENSSL
 #include <openssl/evp.h>
 #include <openssl/opensslv.h>
+#include <openssl/pem.h>
 #include <openssl/rand.h>
+#include <openssl/rsa.h>
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/core_names.h>
 #include <openssl/kdf.h>
@@ -650,6 +652,59 @@ std::string CryptoPrimitives::aesGcmDecrypt(std::string_view key, std::string_vi
 
     plain.resize(static_cast<std::size_t>(plainLen));
     return plain;
+}
+
+std::string CryptoPrimitives::rsaEncryptPublic(std::string_view pemPublicKey, std::string_view data)
+{
+    BIO* bio = BIO_new_mem_buf(pemPublicKey.data(), static_cast<int>(pemPublicKey.size()));
+    if (!bio)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The public key buffer could not be read.");
+    }
+
+    EVP_PKEY* key = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    if (!key)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The RSA public key could not be parsed.");
+    }
+
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(key, nullptr);
+    if (!ctx)
+    {
+        EVP_PKEY_free(key);
+        throw std::runtime_error("[CryptoPrimitives] The RSA context could not be created.");
+    }
+
+    // oaep padding with openssl's default sha1 digest is what mysql caching_sha2 full auth expects
+    if (EVP_PKEY_encrypt_init(ctx) <= 0 || EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_OAEP_PADDING) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(key);
+        throw std::runtime_error("[CryptoPrimitives] The RSA encryption could not be initialized.");
+    }
+
+    const auto* input = reinterpret_cast<const unsigned char*>(data.data());
+    std::size_t outLen = 0;
+    if (EVP_PKEY_encrypt(ctx, nullptr, &outLen, input, data.size()) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(key);
+        throw std::runtime_error("[CryptoPrimitives] The RSA output size could not be determined.");
+    }
+
+    std::string out(outLen, '\0');
+    if (EVP_PKEY_encrypt(ctx, reinterpret_cast<unsigned char*>(out.data()), &outLen, input, data.size()) <= 0)
+    {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(key);
+        throw std::runtime_error("[CryptoPrimitives] The RSA encryption failed.");
+    }
+
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(key);
+    out.resize(outLen);
+    return out;
 }
 
 } // namespace varn::crypto

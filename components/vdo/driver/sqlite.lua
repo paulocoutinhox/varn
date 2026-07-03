@@ -185,6 +185,7 @@ function Statement:fetchAll()
 end
 
 function Statement:rowCount()
+    -- for a select this is sqlite's last-changed count rather than the selected-row total, so use #fetchAll() for a portable select count
     return self.affected or 0
 end
 

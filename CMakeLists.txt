@@ -41,6 +41,7 @@ option(VARN_ENABLE_TLS "enable TLS (HTTPS) support" ON)
 option(VARN_ENABLE_STATIC_FILES "enable public static file serving" ON)
 option(VARN_WARNINGS_AS_ERRORS "treat warnings as errors" OFF)
 option(VARN_ENABLE_ZIP "build the zip module (libzip + zlib)" ON)
+option(VARN_NO_SENDFILE "disable the zero-copy sendfile fast path and serve files portably" OFF)
 option(VARN_BUILD_TESTS "build the native C++ test target (googletest)" OFF)
 set(VARN_SANITIZE "" CACHE STRING "comma-separated sanitizers to build with, e.g. address,undefined (clang/gcc only)")
 

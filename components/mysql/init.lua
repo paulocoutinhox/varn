@@ -1,4 +1,4 @@
--- async mysql client speaking the text protocol (COM_QUERY) over the native socket and authenticating with mysql_native_password, where every socket operation yields on the event loop so one process keeps many queries in flight instead of blocking on each, running inside an async coroutine (async.spawn/async.run) and pairing with the pool component to share connections
+-- async mysql client speaking the text protocol (COM_QUERY) over the native socket and authenticating with caching_sha2_password (full auth via the server rsa public key) or mysql_native_password, where every socket operation yields on the event loop so one process keeps many queries in flight instead of blocking on each, running inside an async coroutine (async.spawn/async.run) and pairing with the pool component to share connections
 local socket = require("socket")
 local crypto = require("crypto")
 
@@ -7,6 +7,7 @@ local mysql = {}
 local CLIENT_LONG_PASSWORD = 0x00000001
 local CLIENT_CONNECT_WITH_DB = 0x00000008
 local CLIENT_PROTOCOL_41 = 0x00000200
+local CLIENT_SSL = 0x00000800
 local CLIENT_TRANSACTIONS = 0x00002000
 local CLIENT_SECURE_CONNECTION = 0x00008000
 local CLIENT_PLUGIN_AUTH = 0x00080000
@@ -108,6 +109,45 @@ local function nativePassword(password, scramble)
     return table.concat(out)
 end
 
+-- caching_sha2 scramble is sha256(password) xored with sha256(sha256(sha256(password)) .. nonce)
+local function cachingSha2Password(password, scramble)
+    if password == "" then
+        return ""
+    end
+
+    local d1 = crypto.digest("SHA256", password, "raw")
+    local d2 = crypto.digest("SHA256", d1, "raw")
+    local d3 = crypto.digest("SHA256", d2 .. scramble, "raw")
+
+    local out = {}
+    for i = 1, 32 do
+        out[i] = string.char(string.byte(d1, i) ~ string.byte(d3, i))
+    end
+
+    return table.concat(out)
+end
+
+-- xors the nul-terminated password with the repeating nonce for the caching_sha2 full-auth path
+local function xorPassword(password, scramble)
+    local pw = password .. "\0"
+    local out = {}
+    for i = 1, #pw do
+        local s = string.byte(scramble, ((i - 1) % #scramble) + 1)
+        out[i] = string.char(string.byte(pw, i) ~ s)
+    end
+
+    return table.concat(out)
+end
+
+-- builds the initial auth response for whichever plugin the server offers
+local function authResponseFor(plugin, password, scramble)
+    if plugin == "caching_sha2_password" then
+        return cachingSha2Password(password, scramble)
+    end
+
+    return nativePassword(password, scramble)
+end
+
 local Client = {}
 Client.__index = Client
 
@@ -144,39 +184,85 @@ function Client:handshake(options)
     local part2 = payload:sub(pos, pos + part2Len - 1)
     local scramble = part1 .. part2:sub(1, 12)
 
+    -- the auth plugin name follows the auth data and drives which scramble the server expects
+    pos = pos + part2Len
+    local pluginEnd = payload:find("\0", pos, true)
+    local serverPlugin = pluginEnd and payload:sub(pos, pluginEnd - 1) or "mysql_native_password"
+    local plugin = serverPlugin == "caching_sha2_password" and "caching_sha2_password" or "mysql_native_password"
+
     local user = options.user or "root"
     local database = options.database or ""
-    local authResponse = nativePassword(options.password or "", scramble)
+    local authResponse = authResponseFor(plugin, options.password or "", scramble)
 
-    local response = string.pack("<I4", CAPABILITIES)
+    -- advertise ssl in the handshake capabilities when the caller asked for tls
+    local capabilities = options.tls and (CAPABILITIES | CLIENT_SSL) or CAPABILITIES
+    local preamble = string.pack("<I4", capabilities)
         .. string.pack("<I4", 16777216)
         .. string.char(33)
         .. string.rep("\0", 23)
+
+    local response = preamble
         .. user .. "\0"
         .. string.char(#authResponse) .. authResponse
         .. database .. "\0"
-        .. "mysql_native_password\0"
+        .. plugin .. "\0"
 
-    self:sendPacket(response, 1)
+    if options.tls then
+        -- send the ssl request preamble, upgrade the raw socket to tls, then send the real handshake response over it
+        self:sendPacket(preamble, 1)
+        local _, tlsError = self.sock:startTls(self.host, { insecure = options.insecure }):await()
+        if tlsError then
+            error("[Mysql] TLS negotiation failed: " .. tostring(tlsError))
+        end
 
-    local result = self:readPacket()
-    local marker = string.byte(result, 1)
-
-    if marker == 0xFE then
-        -- the server defaults to caching_sha2 but the account is native_password so it asks to switch plugins and re-scramble with the fresh nonce it sends here
-        local nameEnd = result:find("\0", 2, true)
-        local switchScramble = result:sub(nameEnd + 1):sub(1, 20)
-        self:sendPacket(nativePassword(options.password or "", switchScramble), self.lastSeq + 1)
-
-        result = self:readPacket()
-        marker = string.byte(result, 1)
+        self.tls = true
+        self:sendPacket(response, 2)
+    else
+        self:sendPacket(response, 1)
     end
 
-    if marker == 0xFF then
-        errorMessage(result, "Auth failed")
-    end
-    if marker ~= 0x00 then
-        error("[Mysql] Unexpected auth result byte.")
+    self:finishAuth(options, plugin, scramble)
+end
+
+function Client:finishAuth(options, plugin, scramble)
+    while true do
+        local result = self:readPacket()
+        local marker = string.byte(result, 1)
+
+        if marker == 0x00 then
+            return
+        end
+
+        if marker == 0xFF then
+            errorMessage(result, "Auth failed")
+        end
+
+        if marker == 0xFE then
+            -- the server asks to switch plugins and re-scramble with the fresh nonce it sends here
+            local nameEnd = result:find("\0", 2, true)
+            plugin = result:sub(2, nameEnd - 1)
+            scramble = result:sub(nameEnd + 1):sub(1, 20)
+            self:sendPacket(authResponseFor(plugin, options.password or "", scramble), self.lastSeq + 1)
+        elseif marker == 0x01 then
+            -- caching_sha2 auth-more-data selects fast (0x03) or full (0x04) authentication
+            local status = string.byte(result, 2)
+            if status == 0x04 then
+                if self.tls then
+                    -- over tls the password is safe to send in the clear, nul-terminated
+                    self:sendPacket((options.password or "") .. "\0", self.lastSeq + 1)
+                else
+                    -- full auth over a plaintext socket requests the server rsa public key, then sends the password xored with the nonce and rsa-encrypted
+                    self:sendPacket(string.char(0x02), self.lastSeq + 1)
+                    local keyPacket = self:readPacket()
+                    local pem = keyPacket:sub(2)
+                    self:sendPacket(crypto.rsaEncryptPublic(pem, xorPassword(options.password or "", scramble)), self.lastSeq + 1)
+                end
+            elseif status ~= 0x03 then
+                error("[Mysql] Unexpected caching_sha2 auth status.")
+            end
+        else
+            error("[Mysql] Unexpected auth result byte.")
+        end
     end
 end
 
@@ -250,7 +336,7 @@ function mysql.connect(options)
         error("[Mysql] Connect failed: " .. tostring(err))
     end
 
-    local self = setmetatable({ sock = sock, reader = Reader.new(sock) }, Client)
+    local self = setmetatable({ sock = sock, reader = Reader.new(sock), host = options.host or "127.0.0.1", tls = false }, Client)
     self:handshake(options)
     return self
 end

@@ -370,9 +370,18 @@ end
 
 local redis = {}
 
+-- opens the raw transport, negotiating tls first when the client opted in with tls = true
+local function connectSocket(options, host, port)
+    if options.tls then
+        return socket.tls.connect(host, port, { insecure = options.insecure }):await()
+    end
+
+    return socket.tcp.connect(host, port):await()
+end
+
 -- opens one endpoint and brings it fully online (auth and database select), with any failure closing the socket and propagating so the caller can move on to the next endpoint
 local function dial(options, host, port)
-    local sock, err = socket.tcp.connect(host, port):await()
+    local sock, err = connectSocket(options, host, port)
     if err then
         error("[Redis] Connect to " .. host .. ":" .. port .. " failed: " .. tostring(err), 0)
     end
@@ -405,7 +414,7 @@ end
 -- the multiplexed variant of dial brings the writer/reader loops up first.
 -- then it runs the auth and database-select handshake through them like any other command.
 local function dialMux(options, host, port)
-    local sock, err = socket.tcp.connect(host, port):await()
+    local sock, err = connectSocket(options, host, port)
     if err then
         error("[Redis] Connect to " .. host .. ":" .. port .. " failed: " .. tostring(err), 0)
     end

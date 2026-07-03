@@ -73,4 +73,22 @@ assert(crypto.equals("", "") == true, "equals matches empty")
 assert(crypto.equals("a\0b", "a\0b") == true, "equals is nul-aware")
 assert(crypto.equals("a\0b", "a\0c") == false, "equals compares past a nul")
 
+-- rsaEncryptPublic (oaep) produces a modulus-sized ciphertext and rejects a malformed key
+local rsaPublicKey = [[
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu6x7u0bmx3OlJio/0Xig
+iNBbNgNGOW5gj7X3v+CEHSsqyREp4MkM+O9DrkLJp9M2F291SsSlXsamCuY+t7Jp
+SUPlf7EpM+h050Wu+HVEoJSsis2QshMt0M9THWKhdZ2m8B2uLRcm16r5V4WFv7U1
+4cn7cjUwphkvw2/KzCpZgdHbCNEXilHnOWevUPOJLSdF+u/wBa1qeNlrTr85xnYi
+QrpSIe8Chgt9S2SW2y73ZMVhmON225WR8beBlVJT3YKgU8K3Hn6U/TvJyXZogBH1
++CbgohBYTUeQhpYO340wf74SI/d3liFO4NVGjwhb4pourYnXZdBBQytYegLFfNyy
+/QIDAQAB
+-----END PUBLIC KEY-----
+]]
+local cipher = crypto.rsaEncryptPublic(rsaPublicKey, "secret payload")
+assert(#cipher == 256, "a 2048-bit key yields a 256-byte ciphertext, got " .. #cipher)
+-- oaep padding is randomized, so two encryptions of the same input differ
+assert(crypto.rsaEncryptPublic(rsaPublicKey, "secret payload") ~= cipher, "oaep encryption is randomized")
+assert(not pcall(crypto.rsaEncryptPublic, "not a pem key", "x"), "a malformed public key is rejected")
+
 print("crypto features ok")

@@ -119,8 +119,8 @@ local function checkValue(descriptor, value, path, errors)
         end
     end
 
-    -- min and max compare a length for strings and arrays and the value itself for numbers
-    if descriptor.min ~= nil or descriptor.max ~= nil then
+    -- min and max compare a length for strings and arrays and the value itself for numbers, and do not apply to tables or booleans
+    if (descriptor.min ~= nil or descriptor.max ~= nil) and (kind == "string" or kind == "array" or kind == "number" or kind == "integer") then
         local measure = lengthOf(kind, value)
         if descriptor.min ~= nil and measure < descriptor.min then
             fail(errors, path, "must be at least " .. tostring(descriptor.min))

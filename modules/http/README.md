@@ -31,7 +31,8 @@ end):listen(3000)
 | `http.client.request(options)` | Sends a request from one options table (`url`, `method`, `headers`, `body`, `query`, `json`, …) and resolves to a response. |
 | `http.client.get(url, options?)` | Convenience GET; resolves to a response with `status`, `ok`, `headers`, `body`, and `json()`. |
 | `http.client.post(url, options?)` | Convenience POST; the `json` option serializes the body and sets `Content-Type: application/json`. |
-| `http.client.requestRaw(options)` | Low-level call resolving to the raw `VARN/1 <status> <length>\n` wire string followed by the body. |
+| `http.client.requestRaw(options)` | Low-level call resolving to a `{ status, headers, body }` table that the higher-level helpers wrap with `ok` and `json()`. |
+| `http.client.stream(opts, onChunk)` | Streams a response body, invoking `onChunk` per chunk and the optional `opts.onResponse(status, headers)` once the head arrives. |
 
 ## Availability
 

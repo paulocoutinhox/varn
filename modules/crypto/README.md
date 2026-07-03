@@ -27,12 +27,13 @@ print(crypto.digest("SHA256", "varn"))
 | `crypto.decrypt(key, blob)` | AES-256-GCM decrypt; raises if the authentication tag does not verify. |
 | `crypto.pbkdf2(password, salt, iterations, keyLen, algorithm?)` | A `keyLen`-byte key via PBKDF2-HMAC. |
 | `crypto.hkdf(key, salt, info, keyLen, algorithm?)` | A `keyLen`-byte key via HKDF (extract + expand). |
+| `crypto.rsaEncryptPublic(pemPublicKey, data)` | RSA encrypt `data` with a PEM public key using OAEP padding. |
 
 ## Availability
 
 Native on every desktop and mobile platform. In the browser (wasm) the **essential subset** is
 available — `digest`, `hmac`, `randomBytes`, `equals`, the base64/hex codecs, and the UUIDs — while
-`encrypt`/`decrypt`, `hashPassword`/`verifyPassword`, `pbkdf2`, and `hkdf` are native-only. See the
+`encrypt`/`decrypt`, `hashPassword`/`verifyPassword`, `pbkdf2`, `hkdf`, and `rsaEncryptPublic` are native-only. See the
 [platform matrix](../../docs/platform-availability.md).
 
 ## Reference, examples, and tests

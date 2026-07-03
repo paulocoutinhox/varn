@@ -106,6 +106,12 @@ async.run(function()
     assert(statusBody(get("/tagged")) == 200, "etag fresh request failed")
     assert(statusBody(get("/tagged", { ["If-None-Match"] = '"v1"' })) == 304, "etag did not honor If-None-Match")
 
+    -- If-None-Match matching handles a comma-separated list, the wildcard, and a weak validator, and ignores a non-match
+    assert(statusBody(get("/tagged", { ["If-None-Match"] = '"other", "v1"' })) == 304, "etag should match a tag listed among others")
+    assert(statusBody(get("/tagged", { ["If-None-Match"] = "*" })) == 304, "etag should honor the wildcard")
+    assert(statusBody(get("/tagged", { ["If-None-Match"] = 'W/"v1"' })) == 304, "etag should match a weak validator by weak comparison")
+    assert(statusBody(get("/tagged", { ["If-None-Match"] = '"v2"' })) == 200, "etag should not short-circuit a non-matching validator")
+
     -- content negotiation returns json or html based on Accept
     local _, negJson = statusBody(get("/negotiate", { ["Accept"] = "application/json" }))
     assert(negJson:find("json", 1, true), "negotiation did not pick json")

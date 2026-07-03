@@ -34,6 +34,7 @@ public:
     void resolve(std::string value = {});
     void resolveCustom(std::function<void(lua_State* L)> pushResolved);
     void reject(std::string error);
+    void breakIfPending();
 
     State state() const;
 

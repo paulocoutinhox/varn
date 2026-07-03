@@ -136,6 +136,13 @@ public:
         ManagedSocket::close(loop, socket);
     }
 
+    void startTlsAsync(std::string host, bool verify, SendCallback callback) override;
+
+    varn::runtime::EventLoop& eventLoop() { return loop; }
+
+    // swaps the plaintext transport for the handshaked secure socket so later reads and writes run over tls
+    void adoptSecure(const Poco::Net::StreamSocket& secure) { socket = secure; }
+
 private:
     Poco::Net::StreamSocket socket;
     varn::runtime::EventLoop& loop;

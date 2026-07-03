@@ -19,11 +19,16 @@ function pool.new(options)
         free = {},
         open = 0,
         waiters = {},
+        closed = false,
     }, Pool)
 end
 
 function Pool:acquire()
     while true do
+        if self.closed then
+            error("[Pool] the pool is closed.")
+        end
+
         local conn = table.remove(self.free)
         if conn then
             return conn
@@ -47,6 +52,13 @@ function Pool:acquire()
 end
 
 function Pool:release(conn)
+    -- a connection returned after the pool closed is closed rather than pooled back into a pool that no longer hands them out
+    if self.closed then
+        self.open = self.open - 1
+        pcall(self.closeConn, conn)
+        return
+    end
+
     self.free[#self.free + 1] = conn
 
     local wake = table.remove(self.waiters, 1)
@@ -81,11 +93,21 @@ function Pool:with(fn)
 end
 
 function Pool:closeAll()
+    self.closed = true
+
     for _, conn in ipairs(self.free) do
         pcall(self.closeConn, conn)
     end
+
+    -- drop only the free connections from the open count so it keeps reflecting the ones still checked out
+    self.open = self.open - #self.free
     self.free = {}
-    self.open = 0
+
+    -- wake every blocked acquirer so it stops waiting on a pool that will never hand out a connection
+    for _, wake in ipairs(self.waiters) do
+        wake()
+    end
+    self.waiters = {}
 end
 
 return pool

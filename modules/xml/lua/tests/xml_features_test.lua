@@ -67,4 +67,17 @@ assert(not pcall(xml.decode, "<unclosed>"), "unclosed tag raises")
 assert(not pcall(xml.decode, "not xml at all"), "non-xml input raises")
 assert(not pcall(xml.decode, ""), "empty input raises")
 
+-- a utf-8 element name survives encoding instead of being mangled to underscores
+local utf8Encoded = xml.encode({ name = "caf\xc3\xa9", text = "x" })
+assert(utf8Encoded:find("caf\xc3\xa9", 1, true), "a utf-8 element name should survive encoding")
+assert(xml.decode(utf8Encoded).name == "caf\xc3\xa9", "a utf-8 element name should round-trip")
+
+-- xml-illegal control characters are stripped so the emitted document stays well-formed
+local cleaned = xml.decode(xml.encode({ name = "a", text = "x\1\2\3y" }))
+assert(cleaned.text == "xy", "control characters should be stripped from text")
+
+-- tab, newline and carriage return are legal xml characters and survive encoding
+local preserved = xml.decode(xml.encode({ name = "a", text = "a\tb\nc" }))
+assert(preserved.text == "a\tb\nc", "tab, newline and carriage return should be preserved")
+
 print("xml features ok")

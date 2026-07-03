@@ -37,13 +37,14 @@ The `DUMMY` backend keeps the module loadable but makes its calls return a clear
 | `VARN_HTTP_SERVER_DRIVER` | `POCO`, `DUMMY` | web server transport |
 | `VARN_HTTP_CLIENT_DRIVER` | `POCO`, `EMSCRIPTEN_FETCH`, `DUMMY` | http client transport |
 | `VARN_SOCKET_DRIVER` | `POCO`, `DUMMY` | tcp and udp sockets |
-| `VARN_CRYPTO_DRIVER` | `OPENSSL`, `DUMMY` | crypto primitives |
+| `VARN_CRYPTO_DRIVER` | `OPENSSL`, `PORTABLE`, `DUMMY` | crypto primitives (`PORTABLE` is dependency-free and offers digest/hmac/random/uuid only; it backs the browser build) |
 | `VARN_JSON_DRIVER` | `NLOHMANN`, `DUMMY` | json serializer |
 | `VARN_XML_DRIVER` | `PUGIXML`, `DUMMY` | xml serializer |
 | `VARN_LOG_DRIVER` | `SPDLOG`, `STDOUT`, `DUMMY` | log backend |
 | `VARN_FS_DRIVER` | `STD`, `DUMMY` | filesystem storage |
 | `VARN_FFI_DRIVER` | `LIBFFI`, `DUMMY` | native function calls |
 | `VARN_ENABLE_TLS` | `ON`, `OFF` | TLS for http and sockets (pulls in OpenSSL on its own, independent of `VARN_CRYPTO_DRIVER`) |
+| `VARN_NO_SENDFILE` | `OFF`, `ON` | disables the zero-copy `sendfile` fast path so the http server serves files portably |
 
 ## 🌍 Browser demo
 

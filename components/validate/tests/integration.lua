@@ -85,4 +85,9 @@ assert(errors["profile.city"] == "must be at least 1", "nested field path")
 ok, errors = validate.check(schema, "not a table")
 assert(not ok and errors._ ~= nil, "non-table data rejected")
 
+-- min and max on a table rule are ignored rather than raising a comparison error
+local tableMinMax = { cfg = validate.table({ a = validate.string() }, { min = 1, max = 3 }) }
+ok, errors = validate.check(tableMinMax, { cfg = { a = "x" } })
+assert(ok == true, "min and max on a table rule should not raise and should pass")
+
 print("validate integration ok")

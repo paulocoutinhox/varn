@@ -116,9 +116,10 @@ connection until it returns. HTTP requests are bounded by `requestTimeoutMs` (th
 One process runs one event loop, so it uses one CPU core. Set `VARN_WORKERS=N` to run `N`
 worker processes: a master forks them, each binds the same port with `SO_REUSEPORT`, and the
 master restarts any worker that exits. This is the model Node's `cluster` and nginx use — on
-Linux the kernel load-balances new connections across the workers. `VARN_WORKERS` defaults to
-`1` and is capped at `1024`. Windows and tvOS/watchOS have no `fork`, so the server stays
-single-process there.
+Linux the kernel load-balances new connections across the workers. On Windows, which has no
+`fork`, the master relaunches itself as the worker processes instead. `VARN_WORKERS` defaults to
+`1` and is capped at `1024`. tvOS, watchOS, visionOS, and the browser have no multi-process model,
+so the server stays single-process there.
 
 ## Request hardening
 

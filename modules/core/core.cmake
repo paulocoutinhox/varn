@@ -6,8 +6,8 @@ if(NOT VARN_BUILDING_FOR_EMSCRIPTEN)
     set(VARN_NEEDS_LIBUV ON)
 endif()
 
-# tvos and watchos prohibit fork, so the multi-process worker path is compiled out there like poco's process launch is.
-if(CMAKE_SYSTEM_NAME MATCHES "^(tvOS|watchOS|visionOS)$")
+# tvos, watchos and visionos prohibit fork, and wasm has no process model, so the multi-process worker path is compiled out on all of them
+if(CMAKE_SYSTEM_NAME MATCHES "^(tvOS|watchOS|visionOS)$" OR VARN_BUILDING_FOR_EMSCRIPTEN)
     list(APPEND VARN_COMPILE_DEFS "VARN_NO_FORK=1")
 endif()
 

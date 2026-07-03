@@ -109,6 +109,17 @@ Promise::State Promise::state() const
     return phase;
 }
 
+void Promise::breakIfPending()
+{
+    // reject a still-pending promise whose only resolver was discarded, mirroring std::promise broken-promise semantics so awaiters resume and their coroutine refs are released
+    if (runtime.stopped())
+    {
+        return;
+    }
+
+    reject("[Promise] The deferred resolver was discarded before the promise settled.");
+}
+
 int Promise::prepareAwait(lua_State* L)
 {
     lua_pushthread(L);

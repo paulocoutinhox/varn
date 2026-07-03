@@ -16,6 +16,13 @@
 #include <unistd.h>
 #endif
 
+#if defined(_WIN32) && !defined(VARN_NO_FORK)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace varn::runtime
 {
 
@@ -33,6 +40,38 @@ void resetChildSignals()
     // restore default signal handlers so a worker terminates on the parent's shutdown signal
     signal(SIGINT, SIG_DFL);
     signal(SIGTERM, SIG_DFL);
+}
+} // namespace
+#endif
+
+#if defined(_WIN32) && !defined(VARN_NO_FORK)
+namespace
+{
+volatile LONG gWinWorkerShutdown = 0;
+
+BOOL WINAPI onWorkerConsoleEvent(DWORD)
+{
+    // any console control event asks the supervisor to stop restarting and tear the workers down
+    InterlockedExchange(&gWinWorkerShutdown, 1);
+    return TRUE;
+}
+
+HANDLE spawnWorker(const std::wstring& commandLine)
+{
+    STARTUPINFOW startup{};
+    startup.cb = static_cast<DWORD>(sizeof(startup));
+    PROCESS_INFORMATION process{};
+
+    std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+    mutableCommand.push_back(L'\0');
+
+    if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process))
+    {
+        return nullptr;
+    }
+
+    CloseHandle(process.hThread);
+    return process.hProcess;
 }
 } // namespace
 #endif
@@ -144,6 +183,86 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
 }
 #endif
 
+#if defined(_WIN32) && !defined(VARN_NO_FORK)
+int App::superviseWorkers(int count, const std::function<int()>& runChild)
+{
+    // windows has no fork, so each worker is a relaunch of this executable flagged so it runs the script instead of supervising again
+    SetConsoleCtrlHandler(&onWorkerConsoleEvent, TRUE);
+    SetEnvironmentVariableW(L"VARN_WORKER_CHILD", L"1");
+
+    const std::wstring commandLine = GetCommandLineW();
+
+    std::vector<HANDLE> workers;
+    workers.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i)
+    {
+        HANDLE worker = spawnWorker(commandLine);
+        if (worker != nullptr)
+        {
+            workers.push_back(worker);
+            continue;
+        }
+
+        log::Log::error("App", "Failed to spawn a worker process.");
+    }
+
+    // if not a single worker could be launched, fall back to serving in this process rather than exiting having done nothing
+    if (workers.empty())
+    {
+        SetConsoleCtrlHandler(&onWorkerConsoleEvent, FALSE);
+        return runChild();
+    }
+
+    // restart any worker that exits unexpectedly and stop on the first console control event
+    while (InterlockedCompareExchange(&gWinWorkerShutdown, 0, 0) == 0 && !workers.empty())
+    {
+        Sleep(100);
+        if (InterlockedCompareExchange(&gWinWorkerShutdown, 0, 0) != 0)
+        {
+            break;
+        }
+
+        for (HANDLE& worker : workers)
+        {
+            if (WaitForSingleObject(worker, 0) != WAIT_OBJECT_0)
+            {
+                continue;
+            }
+
+            CloseHandle(worker);
+            HANDLE replacement = spawnWorker(commandLine);
+            if (replacement == nullptr)
+            {
+                log::Log::error("App", "Failed to restart a worker process.");
+            }
+
+            worker = replacement;
+        }
+
+        workers.erase(std::remove(workers.begin(), workers.end(), static_cast<HANDLE>(nullptr)), workers.end());
+    }
+
+    for (HANDLE worker : workers)
+    {
+        TerminateProcess(worker, 0);
+    }
+
+    for (HANDLE worker : workers)
+    {
+        WaitForSingleObject(worker, INFINITE);
+        CloseHandle(worker);
+    }
+
+    return 0;
+}
+#endif
+
+bool App::isWorkerChild()
+{
+    const char* value = std::getenv("VARN_WORKER_CHILD");
+    return value != nullptr && value[0] != '\0';
+}
+
 int App::run(int argc, char** argv)
 {
     if (argc < 2)
@@ -182,13 +301,14 @@ int App::run(int argc, char** argv)
         return runtime.runScript(chunk.c_str());
     };
 
+    // a relaunched worker child runs the script directly instead of supervising, which would otherwise recurse
     const int workers = workerCount();
-    if (workers > 1)
+    if (workers > 1 && !isWorkerChild())
     {
-#if !defined(_WIN32) && !defined(VARN_NO_FORK)
+#if !defined(VARN_NO_FORK)
         return superviseWorkers(workers, runChild);
 #else
-        log::Log::line("App", "Worker processes are not supported on this platform, running a single process.");
+        log::Log::line("App", "Worker processes are not supported in this build, running a single process.");
 #endif
     }
 

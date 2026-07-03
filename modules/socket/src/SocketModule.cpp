@@ -364,6 +364,41 @@ int SocketModule::luaTcpSocketReceive(lua_State* L)
     return 1;
 }
 
+int SocketModule::luaTcpSocketStartTls(lua_State* L)
+{
+    auto* holder = checkTcpSocket(L, 1);
+    const std::string host = luaL_checkstring(L, 2);
+
+    bool verify = true;
+    if (lua_istable(L, 3))
+    {
+        lua_getfield(L, 3, "insecure");
+        verify = !lua_toboolean(L, -1);
+        lua_pop(L, 1);
+    }
+
+    auto* runtime = &luaRuntime(L);
+    auto conn = *holder;
+    auto promise = std::make_shared<Promise>(*runtime);
+
+    runtime->retainBackgroundDriver();
+    conn->startTlsAsync(host, verify, [promise, runtime](bool ok, const std::string& error)
+                        {
+        if (ok)
+        {
+            promise->resolve("ok");
+        }
+        else
+        {
+            promise->reject(error);
+        }
+
+        runtime->releaseBackgroundDriver(); });
+
+    Promise::push(L, promise);
+    return 1;
+}
+
 int SocketModule::luaTcpSocketClose(lua_State* L)
 {
     auto* holder = checkTcpSocket(L, 1);
@@ -546,6 +581,8 @@ void SocketModule::createMetatables(lua_State* L)
         lua_setfield(L, -2, "send");
         lua_pushcfunction(L, &SocketModule::luaTcpSocketReceive);
         lua_setfield(L, -2, "receive");
+        lua_pushcfunction(L, &SocketModule::luaTcpSocketStartTls);
+        lua_setfield(L, -2, "startTls");
         lua_pushcfunction(L, &SocketModule::luaTcpSocketClose);
         lua_setfield(L, -2, "close");
         lua_setfield(L, -2, "__index");

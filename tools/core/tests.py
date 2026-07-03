@@ -64,8 +64,14 @@ def run(args: Namespace) -> None:
         raise SystemExit(1)
 
     # component tests with no external dependency run alongside the module tests; ones needing a database
-    # or server (scheduler over vdo/sqlite, redis, mysql) are run separately where that backend exists
-    for relative in ("components/ai/tests/mock_test.lua",):
+    # or server (scheduler and vdo over sqlite/ffi, redis, mysql) are run separately where that backend exists
+    for relative in (
+        "components/ai/tests/mock_test.lua",
+        "components/validate/tests/integration.lua",
+        "components/retry/tests/integration.lua",
+        "components/pool/tests/integration.lua",
+        "components/test/tests/integration.lua",
+    ):
         candidate = helper.PROJECT_DIR / relative
         if candidate.exists():
             tests.append(candidate)

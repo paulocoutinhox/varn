@@ -10,7 +10,18 @@
 #include <cstring>
 #include <stdexcept>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
+#include <bcrypt.h>
+#elif defined(__APPLE__)
+#include <cstdlib>
+#else
 #include <sys/random.h>
+#endif
 
 namespace varn::crypto
 {
@@ -72,10 +83,25 @@ std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string
 std::string CryptoPrimitives::randomBytes(std::size_t count)
 {
     std::string out(count, '\0');
+    if (count == 0)
+    {
+        return out;
+    }
 
+#if defined(_WIN32)
+    // draw from the system-preferred csprng so the portable driver is seeded correctly on windows
+    if (BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(out.data()), static_cast<ULONG>(count), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0)
+    {
+        throw std::runtime_error("[CryptoPrimitives] The system random source failed.");
+    }
+#elif defined(__APPLE__)
+    // arc4random_buf is the platform csprng and cannot fail
+    arc4random_buf(out.data(), count);
+#else
     std::size_t filled = 0;
     while (filled < count)
     {
+        // getentropy fills at most 256 bytes per call
         const std::size_t chunk = std::min<std::size_t>(256, count - filled);
         if (getentropy(out.data() + filled, chunk) != 0)
         {
@@ -84,6 +110,7 @@ std::string CryptoPrimitives::randomBytes(std::size_t count)
 
         filled += chunk;
     }
+#endif
 
     return out;
 }
@@ -174,6 +201,11 @@ std::string CryptoPrimitives::pbkdf2(std::string_view /*password*/, std::string_
 std::string CryptoPrimitives::hkdf(std::string_view /*key*/, std::string_view /*salt*/, std::string_view /*info*/, std::size_t /*keyLen*/, std::string_view /*algorithm*/)
 {
     unavailable("HKDF");
+}
+
+std::string CryptoPrimitives::rsaEncryptPublic(std::string_view /*pemPublicKey*/, std::string_view /*data*/)
+{
+    unavailable("RSA public-key encryption");
 }
 
 } // namespace varn::crypto

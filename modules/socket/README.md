@@ -20,6 +20,7 @@ local conn = socket.tcp.connect("127.0.0.1", 9000):await()
 | `socket.udp.bind(host, port)` | Bind a UDP socket to the address. |
 | `sock:send(data)` | Send bytes over a TCP/TLS/unix socket. |
 | `sock:receive(maxBytes?)` | Receive up to `maxBytes` bytes (default `65536`, capped at 16 MB). |
+| `sock:startTls(host, opts?)` | Upgrade an already-connected TCP socket to TLS in place, for protocols that negotiate TLS mid-stream (such as MySQL); `opts` takes `insecure = true` to skip cert verification. |
 | `sock:sendTo(host, port, data)` | Send a UDP datagram to an address. |
 | `sock:recvFrom(maxBytes?)` | Receive a UDP datagram (default `65536`, capped at 64 KB); resolves to `{ data, host, port }`. |
 | `listener:accept()` | Accept the next incoming connection, resolving to a socket. |

@@ -31,6 +31,7 @@ private:
     static int luaVerifyPassword(lua_State* L);
     static int luaEncrypt(lua_State* L);
     static int luaDecrypt(lua_State* L);
+    static int luaRsaEncryptPublic(lua_State* L);
     static int luaPbkdf2(lua_State* L);
     static int luaHkdf(lua_State* L);
     static int luaOpen(lua_State* L);

@@ -29,6 +29,8 @@ end)
 | `fs.rename(from, to)` | Promise resolving to `"ok"`. |
 | `fs.copy(from, to)` | Promise resolving to `"ok"`; overwrites the destination if it already exists. |
 | `fs.append(path, data)` | Promise resolving to `"ok"`; binary append, creating parent directories as needed. |
+| `fs.mkdir(path)` | Promise resolving to `"ok"`; creates the directory and any missing parents. |
+| `fs.removeRecursive(path)` | Promise resolving to `"ok"`; removes a file or a directory tree. |
 | `fs.mkdtemp(prefix)` | Promise resolving to the path of a freshly created unique temporary directory whose name starts with `prefix`. |
 
 ## Reference, examples, and tests

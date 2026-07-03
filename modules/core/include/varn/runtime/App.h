@@ -14,7 +14,8 @@ public:
 private:
     static bool isEvalFlag(std::string_view flag);
     static int workerCount();
-#if !defined(_WIN32) && !defined(VARN_NO_FORK)
+    static bool isWorkerChild();
+#if !defined(VARN_NO_FORK)
     static int superviseWorkers(int count, const std::function<int()>& runChild);
 #endif
 };

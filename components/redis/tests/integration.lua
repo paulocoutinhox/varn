@@ -123,5 +123,35 @@ async.run(function()
     client:del(cacheKey, counter, user, queue, tags, board, txKey, pipeKey, volatile)
     client:close()
 
+    -- the multiplexed client opts into auto-pipelining but speaks the same command api
+    local mux = redis.connect({ host = HOST, port = PORT, username = USER, password = PASS, pipeline = true })
+    assert(mux:command("PING") == "PONG", "mux client reaches the server")
+
+    local muxKey = key("mux")
+    assert(mux:set(muxKey, "10") == "OK", "mux set")
+    assert(mux:incrby(muxKey, 5) == 15, "mux incrby")
+    assert(mux:get(muxKey) == "15", "mux get")
+
+    -- commands issued from concurrent coroutines are batched into one send yet each resolves with its own reply in request order
+    local first, second
+    local remaining = 2
+    async.spawn(function()
+        first = mux:get(muxKey)
+        remaining = remaining - 1
+    end)
+    async.spawn(function()
+        second = mux:incrby(muxKey, 1)
+        remaining = remaining - 1
+    end)
+    while remaining > 0 do
+        async.sleep(1):await()
+    end
+    assert(first == "15", "the concurrent mux get resolved with its own reply")
+    assert(second == 16, "the concurrent mux incrby resolved with its own reply")
+
+    mux:del(muxKey)
+    mux:close()
+    print("multiplexed client ok")
+
     print("redis integration ok")
 end)

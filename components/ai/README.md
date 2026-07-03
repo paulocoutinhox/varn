@@ -22,8 +22,8 @@ Every call yields on the event loop, so the whole lifecycle must run inside an a
 | `ai.client(config)` | Build a client; `config` takes `provider`, `model`, optional `apiKey` (else read from the provider env var), `baseUrl`, `headers`, `imageModel`, `embedModel`, `timeoutSeconds`. |
 | `client:generate(request)` | One-shot completion, returns `{ text, finishReason, toolCalls, reasoning, usage, raw }`. |
 | `client:stream(request, onEvent)` | Streaming completion; `onEvent` receives `{ type = "text"/"reasoning"/"done", delta, ... }` and runs synchronously so it must not yield. Returns the same accumulated result as `generate`. |
-| `client:image(request)` | Image generation, returns `{ images = { { base64, url, revisedPrompt } }, raw }`. |
-| `client:embed(request)` | Embeddings, returns `{ embeddings = { vector }, usage, raw }`. |
+| `client:image(request)` | Image generation, returns `{ images = { ... }, raw }`; each image is `{ base64, url, revisedPrompt }` on OpenAI and `{ base64, mediaType }` on Gemini. |
+| `client:embed(request)` | Embeddings, returns `{ embeddings = { vector }, usage, raw }`; implemented over the OpenAI wire only, so a provider without an embeddings endpoint raises. |
 
 A `request` is normalized across providers: `messages` (each `{ role, content }` where `content` is a string or a list of `{ type = "text"/"image", text/url/base64 }` parts), plus optional `system`, `model`, `temperature`, `maxTokens`, `topP`, `stop`, `tools`, `toolChoice`, `responseFormat`, `reasoningEffort`, and `extra` for raw passthrough. A `tool` is `{ name, description, parameters }`; a tool result is a message `{ role = "tool", toolCallId, name, content }`.
 

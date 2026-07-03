@@ -86,4 +86,9 @@ std::string CryptoPrimitives::hkdf(std::string_view /*key*/, std::string_view /*
     throw std::runtime_error("[CryptoPrimitives] The crypto module is not available in this build.");
 }
 
+std::string CryptoPrimitives::rsaEncryptPublic(std::string_view /*pemPublicKey*/, std::string_view /*data*/)
+{
+    throw std::runtime_error("[CryptoPrimitives] The crypto module is not available in this build.");
+}
+
 } // namespace varn::crypto

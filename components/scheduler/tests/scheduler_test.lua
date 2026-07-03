@@ -72,5 +72,29 @@ async.run(function()
     restarted:close()
     os.remove(path)
 
+    -- multi-instance: a task with a live lease from a peer is left alone, while an expired lease is reclaimed
+    local multiPath = (os.getenv("VARN_TEST_DIR") or ".") .. "/varn_scheduler_multi.db"
+    os.remove(multiPath)
+    local seedMulti = scheduler.new({ dsn = "sqlite:" .. multiPath })
+    local now = os.time()
+    seedMulti:_exec(
+        "INSERT INTO scheduler_tasks (id, name, payload, state, priority, run_at, attempts, max_attempts, lease_epoch, lease_expires_at, created_at, updated_at) VALUES ('live', 'ok_task', NULL, 'running', 0, :now, 0, 1, 'peer', :future, :now, :now)",
+        { now = now, future = now + 3600 }
+    )
+    seedMulti:_exec(
+        "INSERT INTO scheduler_tasks (id, name, payload, state, priority, run_at, attempts, max_attempts, lease_epoch, lease_expires_at, created_at, updated_at) VALUES ('dead', 'ok_task', NULL, 'running', 0, :now, 0, 1, 'peer', :past, :now, :now)",
+        { now = now, past = now - 1 }
+    )
+    seedMulti:close()
+
+    local peer = scheduler.new({ dsn = "sqlite:" .. multiPath })
+    peer:pause()
+    peer:start()
+    peer:stop()
+    assert(peer:get("live").state == "running", "a task with a live peer lease must not be reclaimed")
+    assert(peer:get("dead").state == "queued", "a task with an expired lease must be reclaimed")
+    peer:close()
+    os.remove(multiPath)
+
     print("scheduler ok")
 end)

@@ -21,6 +21,7 @@ local SCHEMA = {
         attempts INTEGER NOT NULL DEFAULT 0,
         max_attempts INTEGER NOT NULL DEFAULT 1,
         lease_epoch TEXT,
+        lease_expires_at INTEGER,
         last_error TEXT,
         result TEXT,
         created_at INTEGER NOT NULL,
@@ -68,11 +69,17 @@ function scheduler.new(config)
         pollMs = config.pollMs or 1000,
         backoffSeconds = config.backoffSeconds or 1,
         maxBackoffSeconds = config.maxBackoffSeconds or 300,
+        leaseSeconds = config.leaseSeconds or 30,
     }, Scheduler)
 
     for _, statement in ipairs(SCHEMA) do
         instance.db:exec(statement)
     end
+
+    -- best-effort column add so a store created before leases gains the column, ignoring the duplicate-column error on a fresh table
+    pcall(function()
+        instance.db:exec("ALTER TABLE scheduler_tasks ADD COLUMN lease_expires_at INTEGER")
+    end)
 
     return instance
 end
@@ -266,8 +273,20 @@ function Scheduler:_dispatch(row)
     end)
 end
 
+-- returns a task to the queue only when its lease is missing or expired, so a task owned by another live instance that keeps renewing its lease is never stolen
+function Scheduler:_reclaimExpired(now)
+    self:_exec(
+        "UPDATE scheduler_tasks SET state = 'queued', lease_epoch = NULL, lease_expires_at = NULL, updated_at = :now WHERE state = 'running' AND (lease_expires_at IS NULL OR lease_expires_at < :now)",
+        { now = now }
+    )
+end
+
 function Scheduler:_tick()
     local now = os.time()
+
+    -- renew the lease on tasks this instance still runs so a peer does not reclaim them, then pick up any whose owner died
+    self:_exec("UPDATE scheduler_tasks SET lease_expires_at = :until WHERE state = 'running' AND lease_epoch = :epoch", { ["until"] = now + self.leaseSeconds, epoch = self.epoch })
+    self:_reclaimExpired(now)
 
     self:_exec("UPDATE scheduler_tasks SET state = 'queued', updated_at = :now WHERE state = 'scheduled' AND run_at <= :now", { now = now })
 
@@ -287,8 +306,8 @@ function Scheduler:_tick()
 
     for _, row in ipairs(rows) do
         local claimed = self:_exec(
-            "UPDATE scheduler_tasks SET state = 'running', lease_epoch = :epoch, updated_at = :now WHERE id = :id AND state = 'queued'",
-            { epoch = self.epoch, now = now, id = row.id }
+            "UPDATE scheduler_tasks SET state = 'running', lease_epoch = :epoch, lease_expires_at = :until, updated_at = :now WHERE id = :id AND state = 'queued'",
+            { epoch = self.epoch, ["until"] = now + self.leaseSeconds, now = now, id = row.id }
         )
         if claimed == 1 then
             self:_dispatch(row)
@@ -296,14 +315,14 @@ function Scheduler:_tick()
     end
 end
 
--- boots the scheduler returning any orphaned running task to the queue then starts the tick loop and is idempotent
+-- boots the scheduler returning any task whose lease has lapsed to the queue then starts the tick loop and is idempotent, safe to run alongside other instances on the same store
 function Scheduler:start()
     if self.running then
         return
     end
 
     self.epoch = crypto.uuidV7()
-    self:_exec("UPDATE scheduler_tasks SET state = 'queued', lease_epoch = NULL, updated_at = :now WHERE state = 'running'", { now = os.time() })
+    self:_reclaimExpired(os.time())
 
     self.running = true
 

@@ -37,6 +37,10 @@ function(varn_apply_usage target scope)
         target_compile_definitions(${target} ${scope} VARN_ENABLE_TLS=1)
     endif()
 
+    if(VARN_NO_SENDFILE)
+        target_compile_definitions(${target} ${scope} VARN_NO_SENDFILE=1)
+    endif()
+
     target_link_libraries(${target} ${scope} varn_vendor_lua)
     if(NOT VARN_BUILDING_FOR_EMSCRIPTEN)
         target_link_libraries(${target} ${scope} Threads::Threads)
@@ -88,6 +92,11 @@ function(varn_apply_usage target scope)
         endif()
     elseif(VARN_CRYPTO_DRIVER STREQUAL "OPENSSL")
         target_link_libraries(${target} ${scope} OpenSSL::Crypto)
+    endif()
+
+    # the portable crypto driver draws randomness from bcrypt on windows
+    if(WIN32 AND VARN_CRYPTO_DRIVER STREQUAL "PORTABLE")
+        target_link_libraries(${target} ${scope} bcrypt)
     endif()
 
     if(VARN_NEEDS_POCO)

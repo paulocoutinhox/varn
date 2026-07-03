@@ -118,3 +118,31 @@ jobs:
           ASAN_OPTIONS: abort_on_error=1:halt_on_error=1:detect_leaks=0
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ./build/asan/bin/varn_tests
+
+  portable-crypto:
+    name: Portable crypto driver (no OpenSSL)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CPM_SOURCE_CACHE }}
+            build/portable/_deps
+          key: cpm-portable-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}
+          restore-keys: cpm-portable-
+
+      # compile-gate the dependency-free crypto driver so its per-platform CSPRNG and pure-C++ SHA keep building
+      - name: Configure
+        run: cmake -B build/portable -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DVARN_ENABLE_TLS=OFF -DVARN_CRYPTO_DRIVER=PORTABLE
+
+      - name: Build
+        run: cmake --build build/portable --config ${{ env.BUILD_TYPE }} -j$(nproc)
+
+      - name: Smoke the portable crypto primitives
+        run: |
+          VARN_TEST_DIR=$(mktemp -d) build/portable/bin/varn modules/crypto/lua/tests/crypto_test.lua
+          VARN_TEST_DIR=$(mktemp -d) build/portable/bin/varn modules/crypto/lua/tests/crypto_security_test.lua

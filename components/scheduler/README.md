@@ -22,14 +22,15 @@ The tick loop and handlers run on the event loop, so the whole lifecycle must li
 ## Durability contract
 
 - Tasks reference a **named handler plus a json payload**, never a closure, so the queue is fully reconstructable from the store after a restart.
-- `start()` returns any task left in `running` by a dead process back to `queued`, so a task interrupted by a crash or restart runs again.
+- A running task carries a **lease** that its owning instance renews every tick. `start()` and the tick loop return a task to `queued` only when its lease has lapsed, so a task interrupted by a crash or restart runs again after at most `leaseSeconds`.
+- The lease makes the store **safe to share across multiple scheduler instances**: a peer that is still alive keeps renewing its lease, so its in-flight tasks are never stolen, and only a dead peer's tasks are reclaimed.
 - Delivery is **at-least-once**, so handlers should be idempotent.
 
 ## Constructor
 
 | Function | What it does |
 |---|---|
-| `scheduler.new(config)` | Open the store and ensure the schema; `config` takes `dsn` (default `sqlite:scheduler.db`), `concurrency` (default 4), `pollMs` (default 1000), `backoffSeconds` (default 1), `maxBackoffSeconds` (default 300). |
+| `scheduler.new(config)` | Open the store and ensure the schema; `config` takes `dsn` (default `sqlite:scheduler.db`), `concurrency` (default 4), `pollMs` (default 1000), `backoffSeconds` (default 1), `maxBackoffSeconds` (default 300), `leaseSeconds` (default 30, how long a running task is held before an idle lease is reclaimable). |
 
 ## Triggers
 

@@ -168,7 +168,97 @@ void driveHandshake(EventLoop& loop, std::shared_ptr<Poco::Net::SecureStreamSock
     (*shared)(std::make_shared<PocoStreamConnection>(*socket, loop), "");
 }
 
+void driveStartTls(std::shared_ptr<PocoStreamConnection> conn, std::shared_ptr<Poco::Net::SecureStreamSocket> secure,
+                   std::shared_ptr<bool> settled, std::shared_ptr<SendCallback> done);
+
+void watchStartTls(std::shared_ptr<PocoStreamConnection> conn, std::shared_ptr<Poco::Net::SecureStreamSocket> secure,
+                   bool onWrite, std::shared_ptr<bool> settled, std::shared_ptr<SendCallback> done)
+{
+    // clang-format off
+    auto handler = [conn, secure, settled, done]() -> bool
+    {
+        if (*settled)
+        {
+            return true;
+        }
+
+        driveStartTls(conn, secure, settled, done);
+        return true;
+    };
+    // clang-format on
+
+    if (onWrite)
+    {
+        conn->eventLoop().watchWrite(*secure, handler);
+        return;
+    }
+
+    conn->eventLoop().watchRead(*secure, handler);
+}
+
+void driveStartTls(std::shared_ptr<PocoStreamConnection> conn, std::shared_ptr<Poco::Net::SecureStreamSocket> secure,
+                   std::shared_ptr<bool> settled, std::shared_ptr<SendCallback> done)
+{
+    int result = 0;
+    try
+    {
+        result = secure->completeHandshake();
+    }
+    catch (const std::exception& ex)
+    {
+        *settled = true;
+        (*done)(false, ex.what());
+        return;
+    }
+
+    // the handshake may need another readable or writable turn before it settles
+    if (result == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ)
+    {
+        watchStartTls(conn, secure, false, settled, done);
+        return;
+    }
+
+    if (result == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE)
+    {
+        watchStartTls(conn, secure, true, settled, done);
+        return;
+    }
+
+    // the handshake settled so the secure socket becomes the connection's transport
+    *settled = true;
+    conn->adoptSecure(*secure);
+    (*done)(true, std::string());
+}
+
 } // namespace
+
+void PocoStreamConnection::startTlsAsync(std::string host, bool verify, SendCallback callback)
+{
+    if (closed)
+    {
+        callback(false, "[PocoStreamConnection] The connection is closed.");
+        return;
+    }
+
+    std::shared_ptr<Poco::Net::SecureStreamSocket> secure;
+    try
+    {
+        secure = std::make_shared<Poco::Net::SecureStreamSocket>(
+            Poco::Net::SecureStreamSocket::attach(socket, host, tlsClientContext(verify)));
+        secure->setLazyHandshake(true);
+        secure->setBlocking(false);
+    }
+    catch (const std::exception& ex)
+    {
+        callback(false, ex.what());
+        return;
+    }
+
+    auto conn = std::static_pointer_cast<PocoStreamConnection>(shared_from_this());
+    auto settled = std::make_shared<bool>(false);
+    auto done = std::make_shared<SendCallback>(std::move(callback));
+    driveStartTls(conn, secure, settled, done);
+}
 
 void SocketTransport::connectTlsAsync(varn::runtime::Runtime& runtime, const std::string& host, int port,
                                       int timeoutMs, bool verify, ConnectCallback callback)

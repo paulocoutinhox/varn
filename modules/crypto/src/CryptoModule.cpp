@@ -300,6 +300,23 @@ int CryptoModule::luaEncrypt(lua_State* L)
     }
 }
 
+int CryptoModule::luaRsaEncryptPublic(lua_State* L)
+{
+    const std::string pem = varn::lua::LuaHelpers::checkString(L, 1);
+    const std::string data = varn::lua::LuaHelpers::checkString(L, 2);
+
+    try
+    {
+        const std::string out = CryptoPrimitives::rsaEncryptPublic(pem, data);
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
+}
+
 int CryptoModule::luaDecrypt(lua_State* L)
 {
     const std::string key = varn::lua::LuaHelpers::checkString(L, 1);
@@ -423,6 +440,9 @@ int CryptoModule::luaOpen(lua_State* L)
 
     lua_pushcfunction(L, &CryptoModule::luaDecrypt);
     lua_setfield(L, -2, "decrypt");
+
+    lua_pushcfunction(L, &CryptoModule::luaRsaEncryptPublic);
+    lua_setfield(L, -2, "rsaEncryptPublic");
 
     lua_pushcfunction(L, &CryptoModule::luaPbkdf2);
     lua_setfield(L, -2, "pbkdf2");
