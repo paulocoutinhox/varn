@@ -60,18 +60,38 @@ HANDLE spawnWorker(const std::wstring& commandLine)
 {
     STARTUPINFOW startup{};
     startup.cb = static_cast<DWORD>(sizeof(startup));
-    PROCESS_INFORMATION process{};
 
+    // inherit the supervisor's standard streams so redirected stdout and stderr reach the workers like a posix fork does
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    for (HANDLE stream : {startup.hStdInput, startup.hStdOutput, startup.hStdError})
+    {
+        if (stream != nullptr && stream != INVALID_HANDLE_VALUE)
+        {
+            SetHandleInformation(stream, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+        }
+    }
+
+    PROCESS_INFORMATION process{};
     std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
     mutableCommand.push_back(L'\0');
 
-    if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process))
+    if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup, &process))
     {
         return nullptr;
     }
 
     CloseHandle(process.hThread);
     return process.hProcess;
+}
+
+void clearWorkerChildMarker()
+{
+    // drop the recursion guard from the child environment so os.getenv never exposes the supervisor detail
+    _putenv("VARN_WORKER_CHILD=");
+    SetEnvironmentVariableW(L"VARN_WORKER_CHILD", nullptr);
 }
 } // namespace
 #endif
@@ -114,6 +134,12 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
         }
 
         workers.push_back(pid);
+    }
+
+    // if not a single worker could be forked, run in this process rather than exiting having done nothing
+    if (workers.empty())
+    {
+        return runChild();
     }
 
     // install handlers without SA_RESTART so the blocking waitpid returns EINTR on a shutdown signal
@@ -303,7 +329,8 @@ int App::run(int argc, char** argv)
 
     // a relaunched worker child runs the script directly instead of supervising, which would otherwise recurse
     const int workers = workerCount();
-    if (workers > 1 && !isWorkerChild())
+    const bool workerChild = isWorkerChild();
+    if (workers > 1 && !workerChild)
     {
 #if !defined(VARN_NO_FORK)
         return superviseWorkers(workers, runChild);
@@ -311,6 +338,13 @@ int App::run(int argc, char** argv)
         log::Log::line("App", "Worker processes are not supported in this build, running a single process.");
 #endif
     }
+
+#if defined(_WIN32) && !defined(VARN_NO_FORK)
+    if (workerChild)
+    {
+        clearWorkerChildMarker();
+    }
+#endif
 
     return runChild();
 }

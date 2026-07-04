@@ -8,15 +8,86 @@
 #include <Poco/Net/PrivateKeyPassphraseHandler.h>
 #include <Poco/Net/SSLManager.h>
 
-#include <cctype>
 #include <filesystem>
 #include <mutex>
 #include <stdexcept>
 #include <string>
-#include <string_view>
+
+#if defined(_WIN32)
+#include <openssl/bio.h>
+#include <openssl/pem.h>
+#include <openssl/pkcs12.h>
+#include <openssl/x509.h>
+
+#include <memory>
+#include <vector>
+#endif
 
 namespace varn::http
 {
+
+#if defined(_WIN32)
+namespace
+{
+// bundle the pem certificate and private key into an in-memory pkcs12 with an empty passphrase, the only shape schannel imports
+std::vector<char> buildPkcs12FromPem(const std::string& keyFile, const std::string& certFile)
+{
+    std::unique_ptr<BIO, decltype(&BIO_free)> certBio(BIO_new_file(certFile.c_str(), "rb"), BIO_free);
+    if (!certBio)
+    {
+        throw std::runtime_error("[TlsServerContext] The TLS certificate file could not be opened.");
+    }
+
+    std::unique_ptr<X509, decltype(&X509_free)> certificate(PEM_read_bio_X509(certBio.get(), nullptr, nullptr, nullptr), X509_free);
+    if (!certificate)
+    {
+        throw std::runtime_error("[TlsServerContext] The TLS certificate is not valid PEM.");
+    }
+
+    std::unique_ptr<BIO, decltype(&BIO_free)> keyBio(BIO_new_file(keyFile.c_str(), "rb"), BIO_free);
+    if (!keyBio)
+    {
+        throw std::runtime_error("[TlsServerContext] The TLS private key file could not be opened.");
+    }
+
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> privateKey(PEM_read_bio_PrivateKey(keyBio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+    if (!privateKey)
+    {
+        throw std::runtime_error("[TlsServerContext] The TLS private key is not valid PEM.");
+    }
+
+    // leave the certificate bag unencrypted since it is public, which also avoids the legacy cipher openssl 3 no longer enables by default
+    std::unique_ptr<PKCS12, decltype(&PKCS12_free)> bundle(
+        PKCS12_create("", "varn", privateKey.get(), certificate.get(), nullptr, 0, -1, 0, 0, 0), PKCS12_free);
+    if (!bundle)
+    {
+        throw std::runtime_error("[TlsServerContext] The TLS key material could not be bundled for the platform.");
+    }
+
+    std::unique_ptr<BIO, decltype(&BIO_free)> sink(BIO_new(BIO_s_mem()), BIO_free);
+    if (!sink || i2d_PKCS12_bio(sink.get(), bundle.get()) != 1)
+    {
+        throw std::runtime_error("[TlsServerContext] The TLS key material could not be serialized.");
+    }
+
+    char* data = nullptr;
+    const long length = BIO_get_mem_data(sink.get(), &data);
+    return std::vector<char>(data, data + length);
+}
+
+// import the key material straight from memory so the private key never touches disk, unlike the file path schannel documents
+class MemoryPkcs12Context : public Poco::Net::Context
+{
+public:
+    explicit MemoryPkcs12Context(const std::vector<char>& bundle)
+        : Poco::Net::Context(Poco::Net::Context::TLS_SERVER_USE, "", Poco::Net::Context::VERIFY_NONE,
+                             Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_MY)
+    {
+        importCertificate(bundle.data(), bundle.size());
+    }
+};
+} // namespace
+#endif
 
 Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts)
 {
@@ -24,6 +95,11 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts)
 
     static Poco::Crypto::OpenSSLInitializer openSslInitializer;
 
+#if defined(_WIN32)
+    // schannel imports one pkcs12 blob, so bundle the same pem key and certificate in memory to keep the lua config identical across desktop os
+    const std::vector<char> bundle = buildPkcs12FromPem(opts.keyFile, opts.certFile);
+    Poco::Net::Context::Ptr context = new MemoryPkcs12Context(bundle);
+#else
     // a modern suite of forward-secret aead ciphers, leaving tls 1.3 to negotiate its own
     constexpr const char* kCipherList =
         "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
@@ -31,30 +107,6 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts)
         "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
         "DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
 
-#if defined(_WIN32)
-    // windows tls uses one pkcs12 bundle instead of separate pem key and certificate paths
-    std::string pkcs12Path;
-    if (pathLooksLikePkcs12(opts.certFile))
-    {
-        pkcs12Path = opts.certFile;
-    }
-    else if (pathLooksLikePkcs12(opts.keyFile))
-    {
-        pkcs12Path = opts.keyFile;
-    }
-    else
-    {
-        throw std::runtime_error("[TlsServerContext] On Windows the TLS certificate must be a single bundle file.");
-    }
-
-    const int winOptions = Poco::Net::Context::OPT_DEFAULTS | Poco::Net::Context::OPT_LOAD_CERT_FROM_FILE;
-    Poco::Net::Context::Ptr context = new Poco::Net::Context(
-        Poco::Net::Context::TLS_SERVER_USE,
-        pkcs12Path,
-        Poco::Net::Context::VERIFY_NONE,
-        winOptions,
-        Poco::Net::Context::CERT_STORE_MY);
-#else
     Poco::Net::Context::Ptr context = new Poco::Net::Context(
         Poco::Net::Context::TLS_SERVER_USE,
         opts.keyFile,
@@ -103,33 +155,6 @@ void TlsServerContext::requireKeyMaterial(const HttpServerOptions& opts)
         }
     }
 }
-
-#if defined(_WIN32)
-bool TlsServerContext::endsWithIgnoreCase(std::string_view value, std::string_view suffix)
-{
-    if (value.size() < suffix.size())
-    {
-        return false;
-    }
-
-    for (std::size_t i = 0; i < suffix.size(); ++i)
-    {
-        const unsigned char a = static_cast<unsigned char>(value[value.size() - suffix.size() + i]);
-        const unsigned char b = static_cast<unsigned char>(suffix[i]);
-        if (std::tolower(a) != std::tolower(b))
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool TlsServerContext::pathLooksLikePkcs12(const std::string& path)
-{
-    return endsWithIgnoreCase(path, ".pfx") || endsWithIgnoreCase(path, ".p12");
-}
-#endif
 
 } // namespace varn::http
 

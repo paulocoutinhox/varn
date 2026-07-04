@@ -36,8 +36,7 @@ public:
     virtual void sendAsync(std::string data, SendCallback callback) = 0;
     virtual void close() = 0;
 
-    // upgrades an already-connected plaintext socket to tls in place, for protocols that negotiate tls mid-stream such as mysql
-    virtual void startTlsAsync(std::string /*host*/, bool /*verify*/, SendCallback callback)
+    virtual void startTlsAsync(varn::runtime::Runtime& /*runtime*/, std::string /*host*/, bool /*verify*/, SendCallback callback)
     {
         callback(false, "[TcpConnection] TLS upgrade is not supported by this transport.");
     }

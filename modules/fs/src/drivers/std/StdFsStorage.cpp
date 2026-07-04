@@ -15,9 +15,25 @@
 namespace varn::fs
 {
 
+namespace
+{
+// build a path from utf-8 code units so windows converts to the native wide encoding instead of the active code page
+std::filesystem::path toPath(const std::string& utf8)
+{
+    return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+}
+
+// return a native path as utf-8 so listings and generated names read the same across desktop os
+std::string fromPath(const std::filesystem::path& path)
+{
+    const std::u8string encoded = path.u8string();
+    return std::string(encoded.begin(), encoded.end());
+}
+} // namespace
+
 std::string FsStorage::readAll(const std::string& path)
 {
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(toPath(path), std::ios::binary);
     if (!file)
     {
         throw std::runtime_error("[FsStorage] The file could not be opened for reading.");
@@ -49,13 +65,13 @@ std::string FsStorage::readAll(const std::string& path)
 
 void FsStorage::writeAll(const std::string& path, const std::string& content)
 {
-    std::filesystem::path p(path);
+    const std::filesystem::path p = toPath(path);
     if (p.has_parent_path())
     {
         std::filesystem::create_directories(p.parent_path());
     }
 
-    std::ofstream file(path, std::ios::binary);
+    std::ofstream file(p, std::ios::binary);
     if (!file)
     {
         throw std::runtime_error("[FsStorage] The file could not be opened for writing.");
@@ -71,13 +87,13 @@ void FsStorage::writeAll(const std::string& path, const std::string& content)
 
 bool FsStorage::exists(const std::string& path)
 {
-    return std::filesystem::exists(path);
+    return std::filesystem::exists(toPath(path));
 }
 
 void FsStorage::mkdir(const std::string& path)
 {
     std::error_code ec;
-    std::filesystem::create_directories(path, ec);
+    std::filesystem::create_directories(toPath(path), ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -87,7 +103,7 @@ void FsStorage::mkdir(const std::string& path)
 void FsStorage::removeRecursive(const std::string& path)
 {
     std::error_code ec;
-    std::filesystem::remove_all(path, ec);
+    std::filesystem::remove_all(toPath(path), ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -96,16 +112,17 @@ void FsStorage::removeRecursive(const std::string& path)
 
 FsStat FsStorage::stat(const std::string& path)
 {
+    const std::filesystem::path p = toPath(path);
     std::error_code ec;
 
     // read symlink status without following the target
-    const std::filesystem::file_status linkStatus = std::filesystem::symlink_status(path, ec);
+    const std::filesystem::file_status linkStatus = std::filesystem::symlink_status(p, ec);
     if (ec || linkStatus.type() == std::filesystem::file_type::not_found)
     {
         throw std::runtime_error("[FsStorage] The path does not exist.");
     }
 
-    const std::filesystem::file_status status = std::filesystem::status(path, ec);
+    const std::filesystem::file_status status = std::filesystem::status(p, ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -118,14 +135,14 @@ FsStat FsStorage::stat(const std::string& path)
 
     if (result.isFile)
     {
-        result.size = std::filesystem::file_size(path, ec);
+        result.size = std::filesystem::file_size(p, ec);
         if (ec)
         {
             result.size = 0;
         }
     }
 
-    const auto fileTime = std::filesystem::last_write_time(path, ec);
+    const auto fileTime = std::filesystem::last_write_time(p, ec);
     if (!ec)
     {
         // map the file clock onto the system clock to get epoch seconds
@@ -140,7 +157,7 @@ FsStat FsStorage::stat(const std::string& path)
 std::vector<std::string> FsStorage::readdir(const std::string& path)
 {
     std::error_code ec;
-    std::filesystem::directory_iterator it(path, ec);
+    std::filesystem::directory_iterator it(toPath(path), ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -149,7 +166,7 @@ std::vector<std::string> FsStorage::readdir(const std::string& path)
     std::vector<std::string> names;
     for (const auto& entry : it)
     {
-        names.push_back(entry.path().filename().string());
+        names.push_back(fromPath(entry.path().filename()));
     }
 
     return names;
@@ -158,7 +175,7 @@ std::vector<std::string> FsStorage::readdir(const std::string& path)
 void FsStorage::rename(const std::string& from, const std::string& to)
 {
     std::error_code ec;
-    std::filesystem::rename(from, to, ec);
+    std::filesystem::rename(toPath(from), toPath(to), ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -168,7 +185,7 @@ void FsStorage::rename(const std::string& from, const std::string& to)
 void FsStorage::copy(const std::string& from, const std::string& to)
 {
     std::error_code ec;
-    std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+    std::filesystem::copy_file(toPath(from), toPath(to), std::filesystem::copy_options::overwrite_existing, ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -177,13 +194,13 @@ void FsStorage::copy(const std::string& from, const std::string& to)
 
 void FsStorage::append(const std::string& path, const std::string& data)
 {
-    std::filesystem::path p(path);
+    const std::filesystem::path p = toPath(path);
     if (p.has_parent_path())
     {
         std::filesystem::create_directories(p.parent_path());
     }
 
-    std::ofstream file(path, std::ios::binary | std::ios::app);
+    std::ofstream file(p, std::ios::binary | std::ios::app);
     if (!file)
     {
         throw std::runtime_error("[FsStorage] The file could not be opened for appending.");
@@ -199,7 +216,7 @@ void FsStorage::append(const std::string& path, const std::string& data)
 
 std::string FsStorage::mkdtemp(const std::string& prefix)
 {
-    std::filesystem::path base = prefix;
+    const std::filesystem::path base = toPath(prefix);
     if (base.has_parent_path())
     {
         std::filesystem::create_directories(base.parent_path());
@@ -213,14 +230,15 @@ std::string FsStorage::mkdtemp(const std::string& prefix)
     for (int attempt = 0; attempt < 256; ++attempt)
     {
         const std::string suffix = std::to_string(distribution(generator));
-        std::filesystem::path candidate = base.string() + suffix;
+        std::filesystem::path candidate = base;
+        candidate += suffix;
 
         std::error_code ec;
         if (std::filesystem::create_directory(candidate, ec) && !ec)
         {
             // restrict the directory to its owner like posix mkdtemp so its contents stay private to this user
             std::filesystem::permissions(candidate, std::filesystem::perms::owner_all, std::filesystem::perm_options::replace, ec);
-            return candidate.string();
+            return fromPath(candidate);
         }
     }
 
@@ -339,17 +357,17 @@ std::ios::openmode openmodeFor(const std::string& mode)
 std::shared_ptr<FsHandle> FsStorage::open(const std::string& path, const std::string& mode)
 {
     const std::ios::openmode flags = openmodeFor(mode);
+    const std::filesystem::path p = toPath(path);
 
     if (mode == "w" || mode == "a" || mode == "w+" || mode == "a+")
     {
-        std::filesystem::path p(path);
         if (p.has_parent_path())
         {
             std::filesystem::create_directories(p.parent_path());
         }
     }
 
-    std::fstream stream(path, flags);
+    std::fstream stream(p, flags);
     if (!stream.is_open())
     {
         throw std::runtime_error("[FsStorage] The file could not be opened.");

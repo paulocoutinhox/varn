@@ -14,6 +14,7 @@
 #include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Poco/Timespan.h>
 
 #include <cstdlib>
 #include <exception>
@@ -109,130 +110,9 @@ Poco::Net::Context::Ptr tlsClientContext(bool verify)
 #endif
 }
 
-void driveHandshake(EventLoop& loop, std::shared_ptr<Poco::Net::SecureStreamSocket> socket,
-                    std::shared_ptr<bool> settled, std::shared_ptr<ConnectCallback> shared);
-
-void watchHandshake(EventLoop& loop, std::shared_ptr<Poco::Net::SecureStreamSocket> socket, bool onWrite,
-                    std::shared_ptr<bool> settled, std::shared_ptr<ConnectCallback> shared)
-{
-    auto handler = [&loop, socket, settled, shared]() -> bool
-    {
-        if (*settled)
-        {
-            return true;
-        }
-
-        driveHandshake(loop, socket, settled, shared);
-        return true;
-    };
-
-    if (onWrite)
-    {
-        loop.watchWrite(*socket, handler);
-        return;
-    }
-
-    loop.watchRead(*socket, handler);
-}
-
-void driveHandshake(EventLoop& loop, std::shared_ptr<Poco::Net::SecureStreamSocket> socket,
-                    std::shared_ptr<bool> settled, std::shared_ptr<ConnectCallback> shared)
-{
-    int result = 0;
-    try
-    {
-        result = socket->completeHandshake();
-    }
-    catch (const std::exception& ex)
-    {
-        *settled = true;
-        loop.closeSocket(*socket);
-        (*shared)(nullptr, ex.what());
-        return;
-    }
-
-    // the handshake may need another readable or writable turn before it settles
-    if (result == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ)
-    {
-        watchHandshake(loop, socket, false, settled, shared);
-        return;
-    }
-
-    if (result == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE)
-    {
-        watchHandshake(loop, socket, true, settled, shared);
-        return;
-    }
-
-    *settled = true;
-    (*shared)(std::make_shared<PocoStreamConnection>(*socket, loop), "");
-}
-
-void driveStartTls(std::shared_ptr<PocoStreamConnection> conn, std::shared_ptr<Poco::Net::SecureStreamSocket> secure,
-                   std::shared_ptr<bool> settled, std::shared_ptr<SendCallback> done);
-
-void watchStartTls(std::shared_ptr<PocoStreamConnection> conn, std::shared_ptr<Poco::Net::SecureStreamSocket> secure,
-                   bool onWrite, std::shared_ptr<bool> settled, std::shared_ptr<SendCallback> done)
-{
-    // clang-format off
-    auto handler = [conn, secure, settled, done]() -> bool
-    {
-        if (*settled)
-        {
-            return true;
-        }
-
-        driveStartTls(conn, secure, settled, done);
-        return true;
-    };
-    // clang-format on
-
-    if (onWrite)
-    {
-        conn->eventLoop().watchWrite(*secure, handler);
-        return;
-    }
-
-    conn->eventLoop().watchRead(*secure, handler);
-}
-
-void driveStartTls(std::shared_ptr<PocoStreamConnection> conn, std::shared_ptr<Poco::Net::SecureStreamSocket> secure,
-                   std::shared_ptr<bool> settled, std::shared_ptr<SendCallback> done)
-{
-    int result = 0;
-    try
-    {
-        result = secure->completeHandshake();
-    }
-    catch (const std::exception& ex)
-    {
-        *settled = true;
-        (*done)(false, ex.what());
-        return;
-    }
-
-    // the handshake may need another readable or writable turn before it settles
-    if (result == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ)
-    {
-        watchStartTls(conn, secure, false, settled, done);
-        return;
-    }
-
-    if (result == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE)
-    {
-        watchStartTls(conn, secure, true, settled, done);
-        return;
-    }
-
-    // the handshake settled so the secure socket becomes the connection's transport
-    *settled = true;
-    conn->adoptSecure(*secure);
-    (*done)(true, std::string());
-}
-
 } // namespace
 
-void PocoStreamConnection::startTlsAsync(std::string host, bool verify, SendCallback callback)
+void PocoStreamConnection::startTlsAsync(varn::runtime::Runtime& runtime, std::string host, bool verify, SendCallback callback)
 {
     if (closed)
     {
@@ -240,92 +120,98 @@ void PocoStreamConnection::startTlsAsync(std::string host, bool verify, SendCall
         return;
     }
 
-    std::shared_ptr<Poco::Net::SecureStreamSocket> secure;
-    try
-    {
-        secure = std::make_shared<Poco::Net::SecureStreamSocket>(
-            Poco::Net::SecureStreamSocket::attach(socket, host, tlsClientContext(verify)));
-        secure->setLazyHandshake(true);
-        secure->setBlocking(false);
-    }
-    catch (const std::exception& ex)
-    {
-        callback(false, ex.what());
-        return;
-    }
-
-    auto conn = std::static_pointer_cast<PocoStreamConnection>(shared_from_this());
-    auto settled = std::make_shared<bool>(false);
+    auto self = std::static_pointer_cast<PocoStreamConnection>(shared_from_this());
+    varn::runtime::Runtime* rt = &runtime;
+    varn::runtime::EventLoop* loop = &runtime.mainLoop();
     auto done = std::make_shared<SendCallback>(std::move(callback));
-    driveStartTls(conn, secure, settled, done);
+
+    // run the whole tls handshake blocking on the io pool so the ssl backend drives it synchronously, which avoids the readiness races the loop-driven handshake hits on windows schannel
+    // clang-format off
+    runtime.ioPool().post([self, rt, loop, host, verify, done]
+    {
+        bool ok = false;
+        std::string error;
+        Poco::Net::StreamSocket upgraded;
+        try
+        {
+            self->socket.setBlocking(true);
+            Poco::Net::SecureStreamSocket secure = Poco::Net::SecureStreamSocket::attach(self->socket, host, tlsClientContext(verify));
+            secure.setBlocking(true);
+            secure.completeHandshake();
+            upgraded = secure;
+            ok = true;
+        }
+        catch (const std::exception& ex)
+        {
+            error = ex.what();
+        }
+
+        // hand the settled transport back to the loop thread that owns the connection
+        loop->post([self, rt, upgraded, ok, error, done]() mutable
+        {
+            if (ok)
+            {
+                self->adoptSecure(upgraded, *rt);
+                (*done)(true, std::string());
+                return;
+            }
+
+            (*done)(false, error);
+        });
+    });
+    // clang-format on
 }
 
 void SocketTransport::connectTlsAsync(varn::runtime::Runtime& runtime, const std::string& host, int port,
                                       int timeoutMs, bool verify, ConnectCallback callback)
 {
-    EventLoop& loop = runtime.mainLoop();
-
-    std::shared_ptr<Poco::Net::SecureStreamSocket> secure;
-    try
-    {
-        secure = std::make_shared<Poco::Net::SecureStreamSocket>(tlsClientContext(verify));
-        secure->setPeerHostName(host);
-        secure->setLazyHandshake(true);
-        secure->connectNB(Poco::Net::SocketAddress(host, static_cast<Poco::UInt16>(port)));
-    }
-    catch (const std::exception& ex)
-    {
-        callback(nullptr, ex.what());
-        return;
-    }
-
-    secure->setBlocking(false);
-
-    // the connect watcher and the optional timeout race to settle and the first to fire wins
-    auto settled = std::make_shared<bool>(false);
+    varn::runtime::Runtime* rt = &runtime;
+    EventLoop* loop = &runtime.mainLoop();
     auto shared = std::make_shared<ConnectCallback>(std::move(callback));
 
-    loop.watchWrite(*secure, [&loop, secure, settled, shared]() -> bool
-                    {
-        if (*settled)
-        {
-            return true;
-        }
-
-        int error = 0;
+    // connect and handshake blocking on the io pool so the ssl backend drives the whole exchange synchronously, keeping schannel off the loop readiness poll
+    // clang-format off
+    runtime.ioPool().post([rt, loop, host, port, timeoutMs, verify, shared]
+    {
+        std::shared_ptr<PocoStreamConnection> connection;
+        std::string error;
         try
         {
-            error = secure->impl()->socketError();
-        }
-        catch (...)
-        {
-            error = -1;
-        }
-
-        if (error != 0)
-        {
-            *settled = true;
-            (*shared)(nullptr, "[SocketTransport] The connection could not be established.");
-            return true;
-        }
-
-        // starts the tls handshake on the same fd once the transport is connected
-        driveHandshake(loop, secure, settled, shared);
-        return true; });
-
-    if (timeoutMs > 0)
-    {
-        loop.postDelayed(timeoutMs, [&loop, secure, settled, shared]()
-                         {
-            if (*settled)
+            // connect the plaintext transport first, then upgrade it exactly like the mid-stream startTls path since the schannel backend drives an attached handshake reliably where its own connect path does not
+            Poco::Net::StreamSocket raw;
+            Poco::Net::SocketAddress address(host, static_cast<Poco::UInt16>(port));
+            if (timeoutMs > 0)
             {
+                raw.connect(address, Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(timeoutMs) * 1000));
+            }
+            else
+            {
+                raw.connect(address);
+            }
+
+            Poco::Net::SecureStreamSocket secure = Poco::Net::SecureStreamSocket::attach(raw, host, tlsClientContext(verify));
+            secure.setBlocking(true);
+            secure.completeHandshake();
+            connection = std::make_shared<PocoStreamConnection>(secure, *loop);
+        }
+        catch (const std::exception& ex)
+        {
+            error = ex.what();
+        }
+
+        loop->post([rt, connection, error, shared]() mutable
+        {
+            if (connection)
+            {
+                connection->markSecure(*rt);
+                (*shared)(connection, std::string());
                 return;
             }
 
-            *settled = true;
-            loop.closeSocket(*secure);
-            (*shared)(nullptr, "[SocketTransport] The connection timed out."); });
-    }
+            (*shared)(nullptr, error);
+        });
+    });
+    // clang-format on
 }
 
 } // namespace varn::socket

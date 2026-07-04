@@ -382,7 +382,7 @@ int SocketModule::luaTcpSocketStartTls(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
-    conn->startTlsAsync(host, verify, [promise, runtime](bool ok, const std::string& error)
+    conn->startTlsAsync(*runtime, host, verify, [promise, runtime](bool ok, const std::string& error)
                         {
         if (ok)
         {

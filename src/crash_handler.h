@@ -13,6 +13,17 @@
 
 #include <cstdint>
 
+#else
+
+#include <csignal>
+#include <cstring>
+#include <unistd.h>
+
+#if __has_include(<execinfo.h>)
+#include <execinfo.h>
+#define VARN_HAS_EXECINFO 1
+#endif
+
 #endif
 
 namespace varn::diagnostics
@@ -26,10 +37,13 @@ public:
     static void install();
 
 private:
+    static void printBacktrace();
 #if defined(_WIN32)
     static const char* exceptionName(DWORD code);
-    static void printBacktrace();
     static LONG WINAPI crashFilter(EXCEPTION_POINTERS* info);
+#else
+    static const char* signalName(int sig);
+    static void crashSignalHandler(int sig);
 #endif
 
     static void printActiveException();
@@ -141,6 +155,53 @@ inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info)
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
+#else
+
+inline void CrashHandler::printBacktrace()
+{
+#if defined(VARN_HAS_EXECINFO)
+    // backtrace and backtrace_symbols_fd are async-signal-safe, unlike backtrace_symbols
+    void* frames[64];
+    const int count = backtrace(frames, 64);
+    backtrace_symbols_fd(frames, count, STDERR_FILENO);
+#endif
+}
+
+inline const char* CrashHandler::signalName(int sig)
+{
+    switch (sig)
+    {
+    case SIGSEGV:
+        return "segmentation fault";
+    case SIGBUS:
+        return "bus error";
+    case SIGFPE:
+        return "floating-point exception";
+    case SIGILL:
+        return "illegal instruction";
+    default:
+        return "unknown signal";
+    }
+}
+
+inline void CrashHandler::crashSignalHandler(int sig)
+{
+    // only async-signal-safe calls are allowed here since this runs inside a fatal fault
+    const char* prefix = "\n[CrashHandler] Fatal signal: ";
+    const char* name = signalName(sig);
+
+    [[maybe_unused]] ssize_t written;
+    written = ::write(STDERR_FILENO, prefix, std::strlen(prefix));
+    written = ::write(STDERR_FILENO, name, std::strlen(name));
+    written = ::write(STDERR_FILENO, "\n", 1);
+
+    printBacktrace();
+
+    // restore the default action and re-raise so the process terminates with the faulting signal
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
 #endif // _WIN32
 
 inline void CrashHandler::printActiveException()
@@ -172,10 +233,8 @@ inline void CrashHandler::terminateHandler()
     printActiveException();
     fflush(stderr);
 
-#if defined(_WIN32)
     printBacktrace();
     fflush(stderr);
-#endif
 
     std::abort();
 }
@@ -188,6 +247,23 @@ inline void CrashHandler::install()
     ULONG reserve = 65536;
     SetThreadStackGuarantee(&reserve);
     SetUnhandledExceptionFilter(&CrashHandler::crashFilter);
+#else
+    // run the handler on a dedicated stack so a stack-overflow fault can still be reported
+    static char alternateStack[65536];
+    stack_t altStack{};
+    altStack.ss_sp = alternateStack;
+    altStack.ss_size = sizeof(alternateStack);
+    altStack.ss_flags = 0;
+    sigaltstack(&altStack, nullptr);
+
+    struct sigaction action{};
+    action.sa_handler = &CrashHandler::crashSignalHandler;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_ONSTACK;
+    for (const int fault : {SIGSEGV, SIGBUS, SIGFPE, SIGILL})
+    {
+        sigaction(fault, &action, nullptr);
+    }
 #endif
 }
 
