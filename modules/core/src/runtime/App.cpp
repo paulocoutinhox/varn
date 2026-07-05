@@ -316,6 +316,7 @@ int App::run(int argc, char** argv)
     const std::size_t scriptArgIndex = eval ? 2 : 1;
     const std::string chunk = eval ? argv[2] : argv[1];
 
+    // clang-format off
     auto runChild = [args = std::move(args), scriptArgIndex, eval, chunk]() mutable -> int
     {
         Runtime runtime(std::move(args), scriptArgIndex);
@@ -326,6 +327,7 @@ int App::run(int argc, char** argv)
 
         return runtime.runScript(chunk.c_str());
     };
+    // clang-format on
 
     // a relaunched worker child runs the script directly instead of supervising, which would otherwise recurse
     const int workers = workerCount();

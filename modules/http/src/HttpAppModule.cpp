@@ -1500,11 +1500,13 @@ int HttpApp::buildChain(lua_State* L, int chainIndex, const std::shared_ptr<AppS
 {
     int length = 0;
 
+    // clang-format off
     auto append = [&](int ref)
     {
         lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
         lua_rawseti(L, chainIndex, ++length);
     };
+    // clang-format on
 
     if (match.status == MatchStatus::Found)
     {
@@ -2733,13 +2735,18 @@ void HttpApp::handleWebSocketUpgrade(const std::shared_ptr<AppState>& app, const
     const int messageRef = route->messageRef;
     const int closeRef = route->closeRef;
     const WebSocketConnection* key = conn.get();
+    // clang-format off
     conn->onMessage([app, messageRef, connRef](const std::string& data)
-                    { callWsMessage(app, messageRef, connRef, data); });
+    {
+        callWsMessage(app, messageRef, connRef, data);
+    });
     conn->onClose([app, closeRef, connRef, key]()
-                  {
+    {
         app->wsConnections.erase(key);
         callWsCallback(app, closeRef, connRef);
-        luaL_unref(app->luaMain, LUA_REGISTRYINDEX, connRef); });
+        luaL_unref(app->luaMain, LUA_REGISTRYINDEX, connRef);
+    });
+    // clang-format on
 }
 
 int HttpApp::luaWs(lua_State* L)
@@ -2748,6 +2755,7 @@ int HttpApp::luaWs(lua_State* L)
     const std::string path = LuaHelpers::checkString(L, 2);
     luaL_checktype(L, 3, LUA_TTABLE);
 
+    // clang-format off
     auto refField = [&](const char* name) -> int
     {
         lua_getfield(L, 3, name);
@@ -2759,6 +2767,7 @@ int HttpApp::luaWs(lua_State* L)
         lua_pop(L, 1);
         return LUA_NOREF;
     };
+    // clang-format on
 
     WsRoute route;
     route.pattern = path;
@@ -3257,6 +3266,7 @@ int HttpApp::luaAppListen(lua_State* L)
 
     Runtime& rt = *state->runtime;
 
+    // clang-format off
     auto handler = [state](HttpRequest request, std::shared_ptr<HttpResponse> response)
     {
         // contain a native exception from the dispatcher here and answer 500, since it would otherwise unwind out of the event loop and abort the whole process
@@ -3276,6 +3286,7 @@ int HttpApp::luaAppListen(lua_State* L)
             }
         }
     };
+    // clang-format on
 
     const bool tls = options.tls;
     const std::string host = options.host;
@@ -3284,10 +3295,12 @@ int HttpApp::luaAppListen(lua_State* L)
     // remember the transport scheme so cookies and hsts can be hardened under tls
     state->tls = tls;
 
+    // clang-format off
     auto wsHandler = [state](const HttpRequest& request, std::shared_ptr<WebSocketConnection> conn)
     {
         handleWebSocketUpgrade(state, request, conn);
     };
+    // clang-format on
 
     auto server = std::make_shared<ReactorHttpServer>(rt, std::move(options), std::move(handler), std::move(wsHandler));
     server->start();

@@ -140,21 +140,24 @@ int SocketModule::luaTcpConnect(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
-    SocketTransport::connectAsync(*runtime, hostStr, port, timeoutMs,
-                                  [promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error)
-                                  {
-                                      if (conn)
-                                      {
-                                          promise->resolveCustom([conn](lua_State* lua)
-                                                                 { pushTcpSocket(lua, conn); });
-                                      }
-                                      else
-                                      {
-                                          promise->reject(error);
-                                      }
+    // clang-format off
+    SocketTransport::connectAsync(*runtime, hostStr, port, timeoutMs, [promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error)
+    {
+        if (conn)
+        {
+            promise->resolveCustom([conn](lua_State* lua)
+            {
+                pushTcpSocket(lua, conn);
+            });
+        }
+        else
+        {
+            promise->reject(error);
+        }
 
-                                      runtime->releaseBackgroundDriver();
-                                  });
+        runtime->releaseBackgroundDriver();
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;
@@ -229,21 +232,24 @@ int SocketModule::luaTlsConnect(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
-    SocketTransport::connectTlsAsync(*runtime, hostStr, port, timeoutMs, verify,
-                                     [promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error)
-                                     {
-                                         if (conn)
-                                         {
-                                             promise->resolveCustom([conn](lua_State* lua)
-                                                                    { pushTcpSocket(lua, conn); });
-                                         }
-                                         else
-                                         {
-                                             promise->reject(error);
-                                         }
+    // clang-format off
+    SocketTransport::connectTlsAsync(*runtime, hostStr, port, timeoutMs, verify, [promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error)
+    {
+        if (conn)
+        {
+            promise->resolveCustom([conn](lua_State* lua)
+            {
+                pushTcpSocket(lua, conn);
+            });
+        }
+        else
+        {
+            promise->reject(error);
+        }
 
-                                         runtime->releaseBackgroundDriver();
-                                     });
+        runtime->releaseBackgroundDriver();
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;
@@ -258,21 +264,24 @@ int SocketModule::luaUnixConnect(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
-    SocketTransport::connectUnixAsync(*runtime, pathStr,
-                                      [promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error)
-                                      {
-                                          if (conn)
-                                          {
-                                              promise->resolveCustom([conn](lua_State* lua)
-                                                                     { pushTcpSocket(lua, conn); });
-                                          }
-                                          else
-                                          {
-                                              promise->reject(error);
-                                          }
+    // clang-format off
+    SocketTransport::connectUnixAsync(*runtime, pathStr, [promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error)
+    {
+        if (conn)
+        {
+            promise->resolveCustom([conn](lua_State* lua)
+            {
+                pushTcpSocket(lua, conn);
+            });
+        }
+        else
+        {
+            promise->reject(error);
+        }
 
-                                          runtime->releaseBackgroundDriver();
-                                      });
+        runtime->releaseBackgroundDriver();
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;
@@ -316,8 +325,9 @@ int SocketModule::luaTcpSocketSend(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
+    // clang-format off
     conn->sendAsync(std::string(data, len), [promise, runtime](bool ok, const std::string& error)
-                    {
+    {
         if (ok)
         {
             promise->resolve("ok");
@@ -327,7 +337,9 @@ int SocketModule::luaTcpSocketSend(lua_State* L)
             promise->reject(error);
         }
 
-        runtime->releaseBackgroundDriver(); });
+        runtime->releaseBackgroundDriver();
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;
@@ -347,8 +359,9 @@ int SocketModule::luaTcpSocketReceive(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
+    // clang-format off
     conn->receiveAsync(maxBytes, [promise, runtime](bool ok, const std::string& data)
-                       {
+    {
         if (ok)
         {
             promise->resolve(data);
@@ -358,7 +371,9 @@ int SocketModule::luaTcpSocketReceive(lua_State* L)
             promise->reject(data);
         }
 
-        runtime->releaseBackgroundDriver(); });
+        runtime->releaseBackgroundDriver();
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;
@@ -382,8 +397,9 @@ int SocketModule::luaTcpSocketStartTls(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
+    // clang-format off
     conn->startTlsAsync(*runtime, host, verify, [promise, runtime](bool ok, const std::string& error)
-                        {
+    {
         if (ok)
         {
             promise->resolve("ok");
@@ -393,7 +409,9 @@ int SocketModule::luaTcpSocketStartTls(lua_State* L)
             promise->reject(error);
         }
 
-        runtime->releaseBackgroundDriver(); });
+        runtime->releaseBackgroundDriver();
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;
@@ -420,19 +438,24 @@ int SocketModule::luaTcpListenerAccept(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
+    // clang-format off
     listener->acceptAsync([promise, runtime](std::shared_ptr<TcpConnection> conn, const std::string& error)
-                          {
+    {
         if (conn)
         {
             promise->resolveCustom([conn](lua_State* lua)
-                                   { pushTcpSocket(lua, conn); });
+            {
+                pushTcpSocket(lua, conn);
+            });
         }
         else
         {
             promise->reject(error);
         }
 
-        runtime->releaseBackgroundDriver(); });
+        runtime->releaseBackgroundDriver();
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;
@@ -496,20 +519,21 @@ int SocketModule::luaUdpSocketSendTo(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
-    socket->sendToAsync(host, static_cast<int>(portArg), std::string(data, len),
-                        [promise, runtime](bool ok, const std::string& error)
-                        {
-                            if (ok)
-                            {
-                                promise->resolve("ok");
-                            }
-                            else
-                            {
-                                promise->reject(error);
-                            }
+    // clang-format off
+    socket->sendToAsync(host, static_cast<int>(portArg), std::string(data, len), [promise, runtime](bool ok, const std::string& error)
+    {
+        if (ok)
+        {
+            promise->resolve("ok");
+        }
+        else
+        {
+            promise->reject(error);
+        }
 
-                            runtime->releaseBackgroundDriver();
-                        });
+        runtime->releaseBackgroundDriver();
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;
@@ -529,13 +553,14 @@ int SocketModule::luaUdpSocketRecvFrom(lua_State* L)
     auto promise = std::make_shared<Promise>(*runtime);
 
     runtime->retainBackgroundDriver();
+    // clang-format off
     socket->receiveFromAsync(maxBytes, [promise, runtime](bool ok, const UdpDatagram& datagram, const std::string& error)
-                             {
+    {
         if (ok)
         {
             UdpDatagram received = datagram;
             promise->resolveCustom([received](lua_State* lua)
-                                   {
+            {
                 lua_createtable(lua, 0, 3);
                 lua_pushlstring(lua, received.data.data(), received.data.size());
                 lua_setfield(lua, -2, "data");
@@ -550,7 +575,9 @@ int SocketModule::luaUdpSocketRecvFrom(lua_State* L)
             promise->reject(error);
         }
 
-        runtime->releaseBackgroundDriver(); });
+        runtime->releaseBackgroundDriver();
+    });
+    // clang-format on
 
     Promise::push(L, promise);
     return 1;

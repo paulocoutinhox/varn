@@ -290,6 +290,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L)
     const int persistedHandlerRef = luaL_ref(L, LUA_REGISTRYINDEX);
 
     Runtime* rtPtr = &rt;
+    // clang-format off
     auto handler = [rtPtr, persistedHandlerRef](HttpRequest request, std::shared_ptr<HttpResponse> response)
     {
         lua_State* mainState = rtPtr->luaState();
@@ -330,9 +331,11 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L)
         // once the handler yields the promise machinery holds its own ref to the coroutine, so release ours in every case
         luaL_unref(mainState, LUA_REGISTRYINDEX, threadRef);
     };
+    // clang-format on
 
     auto* engine = new ReactorHttpServer(rt, std::move(options), std::move(handler));
 
+    // clang-format off
     auto server = std::shared_ptr<HttpServer>(
         engine,
         [luaMain = rt.luaState(), persistedHandlerRef](HttpServer* p)
@@ -344,6 +347,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L)
 
             delete p;
         });
+    // clang-format on
     server->start();
     rt.addServer(server);
 

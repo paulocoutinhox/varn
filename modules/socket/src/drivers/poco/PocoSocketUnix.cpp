@@ -39,8 +39,9 @@ void SocketTransport::connectUnixAsync(varn::runtime::Runtime& runtime, const st
     auto settled = std::make_shared<bool>(false);
     auto shared = std::make_shared<ConnectCallback>(std::move(callback));
 
+    // clang-format off
     loop.watchWrite(socket, [&loop, socket, settled, shared]() mutable -> bool
-                    {
+    {
         if (*settled)
         {
             return true;
@@ -65,7 +66,9 @@ void SocketTransport::connectUnixAsync(varn::runtime::Runtime& runtime, const st
         }
 
         (*shared)(std::make_shared<PocoStreamConnection>(socket, loop), "");
-        return true; });
+        return true;
+    });
+    // clang-format on
 }
 
 std::shared_ptr<TcpListener> SocketTransport::listenUnix(varn::runtime::Runtime& runtime, const std::string& path, int backlog)

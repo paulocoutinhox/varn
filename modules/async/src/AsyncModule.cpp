@@ -257,10 +257,13 @@ int AsyncModule::luaSleep(lua_State* L)
     auto promise = std::make_shared<Promise>(rt);
 
 #if defined(__EMSCRIPTEN__)
+    // clang-format off
     rt.taskPool().post([promise, ms]
-                       {
+    {
         emscripten_sleep(static_cast<unsigned int>(ms));
-        promise->resolve("ok"); });
+        promise->resolve("ok");
+    });
+    // clang-format on
 #else
     // schedules the resolve on the loop timer
     rt.mainLoop().postDelayed(ms, [promise]

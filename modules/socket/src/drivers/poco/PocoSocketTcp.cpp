@@ -39,8 +39,9 @@ void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::s
     auto settled = std::make_shared<bool>(false);
     auto shared = std::make_shared<ConnectCallback>(std::move(callback));
 
+    // clang-format off
     loop.watchWrite(socket, [&loop, socket, settled, shared]() mutable -> bool
-                    {
+    {
         if (*settled)
         {
             return true;
@@ -65,12 +66,15 @@ void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::s
         }
 
         (*shared)(std::make_shared<PocoStreamConnection>(socket, loop), "");
-        return true; });
+        return true;
+    });
+    // clang-format on
 
     if (timeoutMs > 0)
     {
+        // clang-format off
         loop.postDelayed(timeoutMs, [&loop, socket, settled, shared]() mutable
-                         {
+        {
             if (*settled)
             {
                 return;
@@ -78,7 +82,9 @@ void SocketTransport::connectAsync(varn::runtime::Runtime& runtime, const std::s
 
             *settled = true;
             loop.closeSocket(socket);
-            (*shared)(nullptr, "[SocketTransport] The connection timed out."); });
+            (*shared)(nullptr, "[SocketTransport] The connection timed out.");
+        });
+        // clang-format on
     }
 }
 

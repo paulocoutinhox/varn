@@ -755,18 +755,23 @@ private:
         {
             // the tls layer needs the socket writable before this read can progress
             auto self = shared_from_this();
+            // clang-format off
             loop.watchWrite(socket, [self]() -> bool
-                            {
+            {
                 const Io retry = self->tryRead();
-                if (retry == Io::Switch) {
+                if (retry == Io::Switch)
+                {
                     return false;
                 }
 
-                if (retry == Io::Again) {
+                if (retry == Io::Again)
+                {
                     self->armRead();
                 }
 
-                return true; });
+                return true;
+            });
+            // clang-format on
         }
 
         return true;
@@ -837,18 +842,23 @@ private:
         {
             // the tls layer needs the socket readable before this write can progress
             auto self = shared_from_this();
+            // clang-format off
             loop.watchRead(socket, [self]() -> bool
-                           {
+            {
                 const Io retry = self->tryWrite();
-                if (retry == Io::Switch) {
+                if (retry == Io::Switch)
+                {
                     return false;
                 }
 
-                if (retry == Io::Again) {
+                if (retry == Io::Again)
+                {
                     self->armWrite();
                 }
 
-                return true; });
+                return true;
+            });
+            // clang-format on
         }
 
         return true;
@@ -1196,6 +1206,7 @@ private:
 
     static const llhttp_settings_t* requestSettings()
     {
+        // clang-format off
         static const llhttp_settings_t settings = []
         {
             llhttp_settings_t table;
@@ -1206,6 +1217,7 @@ private:
             table.on_header_value_complete = &HttpConnection::onHeaderValueComplete;
             return table;
         }();
+        // clang-format on
         return &settings;
     }
 
@@ -1656,10 +1668,13 @@ private:
         const std::uint64_t offset = fileOffset;
         const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(fileRemaining, kFileChunkBytes));
         auto self = shared_from_this();
+        // clang-format off
         runtime.ioPool().post([self, path = filePath, offset, want]()
-                              {
+        {
             std::string chunk = readFileRange(path, offset, want);
-            self->loop.post([self, chunk = std::move(chunk), want]() mutable { self->onFileChunk(std::move(chunk), want); }); });
+            self->loop.post([self, chunk = std::move(chunk), want]() mutable { self->onFileChunk(std::move(chunk), want); });
+        });
+        // clang-format on
     }
 
     void onFileChunk(std::string chunk, std::size_t want)
@@ -2077,12 +2092,16 @@ void ReactorResponse::sendFile(const std::string& path, std::uint64_t start, std
 
 void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<HttpConnection>>> registry, std::shared_ptr<std::atomic<bool>> stopping, long long timeoutMs)
 {
+    // clang-format off
     loop.postDelayed(kSweepIntervalMs, [&loop, registry, stopping, timeoutMs]()
-                     {
-        if (stopping->load(std::memory_order_acquire)) {
+    {
+        if (stopping->load(std::memory_order_acquire))
+        {
             // force-close every live connection so its close handler runs and releases its lua reference, instead of leaking on shutdown
-            for (auto& weak : *registry) {
-                if (auto connection = weak.lock()) {
+            for (auto& weak : *registry)
+            {
+                if (auto connection = weak.lock())
+                {
                     connection->forceClose();
                 }
             }
@@ -2095,13 +2114,16 @@ void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<Ht
         const long long now = nowMs();
         auto& connections = *registry;
         std::size_t kept = 0;
-        for (std::size_t i = 0; i < connections.size(); ++i) {
+        for (std::size_t i = 0; i < connections.size(); ++i)
+        {
             auto connection = connections[i].lock();
-            if (!connection || connection->isClosed()) {
+            if (!connection || connection->isClosed())
+            {
                 continue;
             }
 
-            if (connection->isStale(now, timeoutMs)) {
+            if (connection->isStale(now, timeoutMs))
+            {
                 connection->forceClose();
                 continue;
             }
@@ -2111,7 +2133,9 @@ void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<Ht
 
         connections.resize(kept);
 
-        scheduleSweep(loop, registry, stopping, timeoutMs); });
+        scheduleSweep(loop, registry, stopping, timeoutMs);
+    });
+    // clang-format on
 }
 
 } // namespace
@@ -2195,18 +2219,24 @@ void ReactorHttpServer::start()
     auto stop = stopping;
     Poco::Net::ServerSocket server = listener;
 
+    // clang-format off
     loop.watchRead(listener, [&loop, &rt, opts, onRequest, onWebSocket, staticFiles, stop, server, registry]() mutable -> bool
-                   {
-        if (stop->load(std::memory_order_acquire)) {
+    {
+        if (stop->load(std::memory_order_acquire))
+        {
             return true;
         }
 
         // drain every pending connection so a single readiness event accepts the full backlog
-        for (;;) {
+        for (;;)
+        {
             Poco::Net::StreamSocket accepted;
-            try {
+            try
+            {
                 accepted = server.acceptConnection();
-            } catch (...) {
+            }
+            catch (...)
+            {
                 break;
             }
 
@@ -2215,7 +2245,9 @@ void ReactorHttpServer::start()
             connection->start();
         }
 
-        return false; });
+        return false;
+    });
+    // clang-format on
 
     // a non-positive keep-alive timeout disables the idle and slowloris sweep entirely
     if (timeoutMs > 0)

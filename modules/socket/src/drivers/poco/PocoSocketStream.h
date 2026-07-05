@@ -97,8 +97,9 @@ public:
 
         auto payload = std::make_shared<std::string>(std::move(data));
         auto sent = std::make_shared<std::size_t>(0);
+        // clang-format off
         loop.watchWrite(socket, [self, payload, sent, callback = std::move(callback)]() -> bool
-                        {
+        {
             try
             {
                 while (*sent < payload->size())
@@ -127,7 +128,9 @@ public:
             {
                 callback(false, ex.what());
                 return true;
-            } });
+            }
+        });
+        // clang-format on
     }
 
     void close() override
@@ -257,8 +260,12 @@ private:
     void watchReadOnce(int maxBytes, ReceiveCallback callback)
     {
         auto self = shared_from_this();
+        // clang-format off
         loop.watchRead(socket, [self, maxBytes, callback = std::move(callback)]() -> bool
-                       { return self->readOnce(maxBytes, callback); });
+        {
+            return self->readOnce(maxBytes, callback);
+        });
+        // clang-format on
     }
 
     Poco::Net::StreamSocket socket;
@@ -288,8 +295,9 @@ public:
         }
 
         auto self = shared_from_this();
+        // clang-format off
         loop.watchRead(server, [self, callback = std::move(callback)]() -> bool
-                       {
+        {
             try
             {
                 Poco::Net::StreamSocket accepted = self->server.acceptConnection();
@@ -300,7 +308,9 @@ public:
             {
                 callback(nullptr, ex.what());
                 return true;
-            } });
+            }
+        });
+        // clang-format on
     }
 
     void close() override

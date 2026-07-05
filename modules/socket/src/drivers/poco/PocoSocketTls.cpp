@@ -69,10 +69,13 @@ Poco::Net::Context::Ptr tlsClientContext(bool verify)
 
     // sets the ssl manager default handler once so a strict session fails closed on an invalid certificate
     static std::once_flag onceFlag;
+    // clang-format off
     std::call_once(onceFlag, []
-                   {
+    {
         Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> handler(new Poco::Net::RejectCertificateHandler(false));
-        Poco::Net::SSLManager::instance().initializeClient(nullptr, handler, nullptr); });
+        Poco::Net::SSLManager::instance().initializeClient(nullptr, handler, nullptr);
+    });
+    // clang-format on
 
 #if defined(_WIN32)
     if (verify)

@@ -127,17 +127,15 @@ void TlsServerContext::initializeSslManager(Poco::Net::Context::Ptr context)
 {
     // the ssl manager is a process-global singleton whose default handlers are initialized once so a second server start does not clobber the first server's configuration, while each server still binds its own context to its socket so the global default only supplies the passphrase and invalid-cert handlers
     static std::once_flag onceFlag;
+    // clang-format off
     std::call_once(onceFlag, [&context]
-                   {
-        auto privateKeyHandler = Poco::SharedPtr<Poco::Net::PrivateKeyPassphraseHandler>(
-            new Poco::Net::KeyFileHandler(false)
-        );
+    {
+        auto privateKeyHandler = Poco::SharedPtr<Poco::Net::PrivateKeyPassphraseHandler>(new Poco::Net::KeyFileHandler(false));
+        auto invalidCertHandler = Poco::SharedPtr<Poco::Net::InvalidCertificateHandler>(new Poco::Net::AcceptCertificateHandler(false));
 
-        auto invalidCertHandler = Poco::SharedPtr<Poco::Net::InvalidCertificateHandler>(
-            new Poco::Net::AcceptCertificateHandler(false)
-        );
-
-        Poco::Net::SSLManager::instance().initializeServer(privateKeyHandler, invalidCertHandler, context); });
+        Poco::Net::SSLManager::instance().initializeServer(privateKeyHandler, invalidCertHandler, context);
+    });
+    // clang-format on
 }
 
 void TlsServerContext::requireKeyMaterial(const HttpServerOptions& opts)

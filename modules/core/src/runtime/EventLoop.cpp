@@ -386,10 +386,13 @@ void EventLoop::post(Job job)
     ledger->enter();
     {
         std::lock_guard<std::mutex> lock(mutex);
+        // clang-format off
         jobs.push([ledger = ledger, j = std::move(job)]() mutable
-                  {
+        {
             j();
-            ledger->leave(); });
+            ledger->leave();
+        });
+        // clang-format on
     }
 
     wakeFromAnotherThread();
@@ -402,10 +405,13 @@ void EventLoop::postDelayed(long long delayMs, Job job)
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMs);
     {
         std::lock_guard<std::mutex> lock(mutex);
+        // clang-format off
         timers.emplace(deadline, [ledger = ledger, j = std::move(job)]() mutable
-                       {
+        {
             j();
-            ledger->leave(); });
+            ledger->leave();
+        });
+        // clang-format on
     }
 
     wakeFromAnotherThread();

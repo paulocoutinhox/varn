@@ -142,8 +142,12 @@ ProcessResult ProcessRunner::exec(const std::string& command)
 
     // drain stderr on a helper thread so a child that fills one pipe buffer while writing the other never deadlocks the parent
     std::string errData;
+    // clang-format off
     std::thread errReader([&errData, errRead]
-                          { errData = drainPipe(errRead); });
+    {
+        errData = drainPipe(errRead);
+    });
+    // clang-format on
     result.stdoutData = drainPipe(outRead);
     errReader.join();
     result.stderrData = std::move(errData);

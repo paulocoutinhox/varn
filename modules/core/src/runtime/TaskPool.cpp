@@ -46,10 +46,13 @@ void TaskPool::post(Job job)
         }
 
         ledger->enter();
+        // clang-format off
         jobs.push([ledger = ledger, j = std::move(job)]() mutable
-                  {
+        {
             j();
-            ledger->leave(); });
+            ledger->leave();
+        });
+        // clang-format on
     }
 #if !defined(__EMSCRIPTEN__)
     cv.notify_one();

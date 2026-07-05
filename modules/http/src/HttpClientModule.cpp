@@ -181,7 +181,7 @@ function client.post(url, opts)
     return client.request(opts)
 end
 
--- stream the response body in chunks; onChunk(chunk) runs per piece and must not yield, opts.onResponse(status, headers) fires once before the chunks
+-- streams the response body in chunks and invokes onChunk for each piece as it arrives
 function client.stream(opts, onChunk)
     local options = buildOptions(opts)
     return async.promise(function()

@@ -54,8 +54,9 @@ public:
 
         auto self = shared_from_this();
         auto payload = std::make_shared<std::string>(std::move(data));
+        // clang-format off
         loop.watchWrite(socket, [self, payload, destination, callback = std::move(callback)]() -> bool
-                        {
+        {
             try
             {
                 const int wrote = self->socket.sendTo(payload->data(), static_cast<int>(payload->size()), *destination);
@@ -77,7 +78,9 @@ public:
             {
                 callback(false, ex.what());
                 return true;
-            } });
+            }
+        });
+        // clang-format on
     }
 
     void receiveFromAsync(int maxBytes, ReceiveFromCallback callback) override
@@ -90,8 +93,9 @@ public:
 
         const int capacity = maxBytes > kMaxDatagramBytes ? kMaxDatagramBytes : maxBytes;
         auto self = shared_from_this();
+        // clang-format off
         loop.watchRead(socket, [self, capacity, callback = std::move(callback)]() -> bool
-                       {
+        {
             try
             {
                 std::vector<char> buffer(static_cast<std::size_t>(capacity));
@@ -117,7 +121,9 @@ public:
             {
                 callback(false, UdpDatagram{}, ex.what());
                 return true;
-            } });
+            }
+        });
+        // clang-format on
     }
 
     void close() override
