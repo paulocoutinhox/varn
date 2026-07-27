@@ -105,7 +105,8 @@ local function literal(handle, value)
         if value ~= value or value == math.huge or value == -math.huge then
             error("[VdoMysql] Cannot bind a non-finite number.")
         end
-        return string.format("%.17g", value)
+        -- force a dot decimal separator so a comma locale cannot emit malformed sql like 1,5
+        return (string.format("%.17g", value):gsub(",", "."))
     end
     if kind == "string" then
         local buffer = ffi.new("char[?]", #value * 2 + 1)
@@ -273,8 +274,9 @@ function Connection:beginTransaction()
 end
 
 function Connection:commit()
-    self:exec("COMMIT")
+    -- clear the flag first so a failed COMMIT never leaves inTransaction() reporting a transaction that is already over
     self.inTx = false
+    self:exec("COMMIT")
 end
 
 function Connection:rollBack()

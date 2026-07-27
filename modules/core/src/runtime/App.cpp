@@ -11,7 +11,9 @@
 
 #if !defined(_WIN32) && !defined(VARN_NO_FORK)
 #include <cerrno>
+#include <chrono>
 #include <csignal>
+#include <ctime>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -29,6 +31,8 @@ namespace varn::runtime
 #if !defined(_WIN32) && !defined(VARN_NO_FORK)
 namespace
 {
+constexpr long long kWorkerMinLifetimeMs = 1000;
+
 volatile sig_atomic_t gWorkerShutdown = 0;
 void onWorkerSignal(int)
 {
@@ -116,7 +120,17 @@ int App::workerCount()
 int App::superviseWorkers(int count, const std::function<int()>& runChild)
 {
     std::vector<pid_t> workers;
+    std::vector<std::chrono::steady_clock::time_point> startedAt;
     workers.reserve(static_cast<std::size_t>(count));
+    startedAt.reserve(static_cast<std::size_t>(count));
+
+    // install handlers without SA_RESTART before the first fork so a signal during startup cannot orphan workers, and waitpid returns EINTR on shutdown
+    struct sigaction action = {};
+    action.sa_handler = onWorkerSignal;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    sigaction(SIGINT, &action, nullptr);
+    sigaction(SIGTERM, &action, nullptr);
 
     for (int i = 0; i < count; ++i)
     {
@@ -134,6 +148,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
         }
 
         workers.push_back(pid);
+        startedAt.push_back(std::chrono::steady_clock::now());
     }
 
     // if not a single worker could be forked, run in this process rather than exiting having done nothing
@@ -142,15 +157,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
         return runChild();
     }
 
-    // install handlers without SA_RESTART so the blocking waitpid returns EINTR on a shutdown signal
-    struct sigaction action = {};
-    action.sa_handler = onWorkerSignal;
-    sigemptyset(&action.sa_mask);
-    action.sa_flags = 0;
-    sigaction(SIGINT, &action, nullptr);
-    sigaction(SIGTERM, &action, nullptr);
-
-    // restart any worker that exits unexpectedly and stop on the first shutdown signal
+    // restart a worker that dies abnormally and stop on the first shutdown signal, leaving a clean exit alone
     while (!gWorkerShutdown)
     {
         int status = 0;
@@ -176,6 +183,34 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
             continue;
         }
 
+        const std::size_t index = static_cast<std::size_t>(slot - workers.begin());
+
+        // a worker that finished cleanly is not resurrected, and the supervisor exits once none remain
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        {
+            workers.erase(slot);
+            startedAt.erase(startedAt.begin() + static_cast<std::ptrdiff_t>(index));
+            if (workers.empty())
+            {
+                break;
+            }
+
+            continue;
+        }
+
+        // a worker that died almost immediately backs off before respawning so a crash loop cannot become a fork storm
+        const long long livedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startedAt[index]).count();
+        if (livedMs < kWorkerMinLifetimeMs)
+        {
+            const long long backoffMs = kWorkerMinLifetimeMs - livedMs;
+            struct timespec pause = {backoffMs / 1000, (backoffMs % 1000) * 1000000};
+            ::nanosleep(&pause, nullptr);
+            if (gWorkerShutdown)
+            {
+                break;
+            }
+        }
+
         const pid_t replacement = fork();
         if (replacement == 0)
         {
@@ -186,11 +221,13 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
         if (replacement > 0)
         {
             *slot = replacement;
+            startedAt[index] = std::chrono::steady_clock::now();
         }
         else
         {
             log::Log::error("App", "Failed to restart a worker process.");
             workers.erase(slot);
+            startedAt.erase(startedAt.begin() + static_cast<std::ptrdiff_t>(index));
         }
     }
 

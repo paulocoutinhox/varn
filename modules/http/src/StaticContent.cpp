@@ -190,14 +190,18 @@ bool StaticContent::serveFile(const HttpRequest& request, HttpResponse& response
 
 void StaticContent::serveListing(HttpResponse& response, const std::filesystem::path& root, const std::filesystem::path& dir)
 {
-    const std::string relative = std::filesystem::relative(dir, root).generic_string();
-    const std::string title = relative.empty() || relative == "." ? "/" : "/" + relative;
+    std::error_code ec;
+    const std::string relative = std::filesystem::relative(dir, root, ec).generic_string();
+    const std::string title = ec || relative.empty() || relative == "." ? "/" : "/" + relative;
 
     std::ostringstream html;
     html << "<!doctype html><html><head><meta charset=\"utf-8\"><title>Index of " << htmlEscape(title)
          << "</title></head><body><h1>Index of " << htmlEscape(title) << "</h1><ul>";
 
-    std::error_code ec;
+    // bound the listing so an enormous directory cannot stall the loop or balloon the response
+    constexpr std::size_t kMaxListingEntries = 10000;
+    std::size_t listed = 0;
+    bool truncated = false;
     for (const auto& entry : std::filesystem::directory_iterator(dir, ec))
     {
         const std::string name = entry.path().filename().string();
@@ -207,6 +211,13 @@ void StaticContent::serveListing(HttpResponse& response, const std::filesystem::
             continue;
         }
 
+        if (listed >= kMaxListingEntries)
+        {
+            truncated = true;
+            break;
+        }
+        ++listed;
+
         const std::string suffix = entry.is_directory(ec) ? "/" : "";
         // the visible label is html-escaped while the href is url-encoded to survive special chars
         const std::string label = htmlEscape(name + suffix);
@@ -214,7 +225,12 @@ void StaticContent::serveListing(HttpResponse& response, const std::filesystem::
         html << "<li><a href=\"" << href << "\">" << label << "</a></li>";
     }
 
-    html << "</ul></body></html>";
+    html << "</ul>";
+    if (truncated)
+    {
+        html << "<p>Listing truncated at " << kMaxListingEntries << " entries.</p>";
+    }
+    html << "</body></html>";
 
     response.setStatus(200);
     response.setHeader("Content-Type", "text/html; charset=utf-8");

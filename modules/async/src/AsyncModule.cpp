@@ -188,6 +188,9 @@ function async.timeout(promise, ms)
 end
 
 function async.mapLimit(list, limit, fn)
+    if type(limit) ~= "number" or limit < 1 then
+        error("async.mapLimit: limit must be a number that is at least 1", 0)
+    end
     return async.promise(function()
         local count = #list
         local results = {}

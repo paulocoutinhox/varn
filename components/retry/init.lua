@@ -3,6 +3,7 @@
 -- retry.after and retry.every schedule one-shot and repeating work on background coroutines, each returning a cancellable handle.
 -- everything yields on the event loop so it must run inside an async coroutine.
 local async = require("async")
+local log = require("log")
 
 local retry = {}
 
@@ -15,8 +16,9 @@ local function callOnce(fn)
         return false, value
     end
 
-    -- a promise (anything with :await) is awaited so async failures count as retryable too
-    if type(value) == "table" and type(value.await) == "function" then
+    -- a promise (a userdata or table carrying :await) is awaited so async failures count as retryable too
+    local kind = type(value)
+    if (kind == "userdata" or kind == "table") and type(value.await) == "function" then
         local awaited, err = value:await()
         if err ~= nil then
             return false, err
@@ -33,6 +35,9 @@ end
 function retry.run(fn, opts)
     opts = opts or {}
     local attempts = opts.attempts or 3
+    if type(attempts) ~= "number" or attempts < 1 then
+        error("[Retry] attempts must be a number that is at least 1", 0)
+    end
     local backoff = opts.backoffMs or 100
     local factor = opts.factor or 2
 
@@ -77,7 +82,10 @@ function retry.after(ms, fn)
     async.spawn(function()
         async.sleep(ms):await()
         if not handle.cancelled then
-            fn()
+            local ok, err = pcall(fn)
+            if not ok then
+                log.error("[Retry] a scheduled task raised: " .. tostring(err))
+            end
         end
     end)
     return handle
@@ -94,7 +102,10 @@ function retry.every(ms, fn)
             if handle.cancelled then
                 break
             end
-            fn()
+            local ok, err = pcall(fn)
+            if not ok then
+                log.error("[Retry] a repeating task raised, the schedule continues: " .. tostring(err))
+            end
         end
     end)
     return handle

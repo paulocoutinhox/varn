@@ -1,11 +1,46 @@
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
+import time
 from argparse import Namespace
 from pathlib import Path
 
 from . import helper
+
+# the standalone backend integration tests and the environment each one needs.
+# the vdo mysql/pgsql drivers load their native client library through ffi, so the loader path is added below.
+_DB_COMPOSE = ["docker", "compose", "-f", "tests/docker-compose.yml"]
+_DB_CONTAINERS = (
+    "varn-test-backends-redis-1",
+    "varn-test-backends-mysql-1",
+    "varn-test-backends-postgres-1",
+)
+_DB_ENV = {
+    "VARN_REDIS_HOST": "127.0.0.1",
+    "VARN_REDIS_PORT": "6379",
+    "VARN_MYSQL_HOST": "127.0.0.1",
+    "VARN_MYSQL_PORT": "3306",
+    "VARN_MYSQL_USER": "root",
+    "VARN_MYSQL_PASS": "varnpass",
+    "VARN_MYSQL_DB": "varntest",
+    "VDO_MYSQL_DSN": "mysql:host=127.0.0.1;port=3306;dbname=varntest",
+    "VDO_MYSQL_USER": "root",
+    "VDO_MYSQL_PASS": "varnpass",
+    "VDO_PGSQL_DSN": "pgsql:host=127.0.0.1;port=5432;dbname=varntest",
+    "VDO_PGSQL_USER": "varn",
+    "VDO_PGSQL_PASS": "varnpass",
+}
+_DB_TESTS = (
+    "components/redis/tests/integration.lua",
+    "components/mysql/tests/integration.lua",
+    "components/vdo/tests/integration.lua",
+    "components/scheduler/tests/scheduler_test.lua",
+)
+# the ai adapters are fully covered by the deterministic mock tests in the cross-platform suite, so this real-api
+# smoke test is opt-in via --ai-live and each provider is skipped unless its *_API_KEY is in the environment.
+_DB_AI_LIVE_TEST = "components/ai/tests/live_test.lua"
 
 # common windows exception codes a crashing process reports as its exit status, so a failure caused by
 # a crash is told apart from a normal non-zero exit or an assertion.
@@ -67,10 +102,14 @@ def run(args: Namespace) -> None:
     # or server (scheduler and vdo over sqlite/ffi, redis, mysql) are run separately where that backend exists
     for relative in (
         "components/ai/tests/mock_test.lua",
+        "components/ai/tests/adapters_test.lua",
         "components/validate/tests/integration.lua",
         "components/retry/tests/integration.lua",
         "components/pool/tests/integration.lua",
         "components/test/tests/integration.lua",
+        "components/vdo/tests/sql_test.lua",
+        "components/vdo/tests/dsn_test.lua",
+        "components/env/tests/integration.lua",
     ):
         candidate = helper.PROJECT_DIR / relative
         if candidate.exists():
@@ -115,5 +154,97 @@ def run(args: Namespace) -> None:
         shutil.rmtree(scratch)
 
     print(f"\n{passed} passed, {len(failed)} failed")
+    if failed:
+        raise SystemExit(1)
+
+
+def _client_library_path() -> dict[str, str]:
+    # the vdo mysql/pgsql drivers dlopen libmysqlclient/libpq, so point the loader at the client libraries and their openssl dependency.
+    if platform.system() == "Darwin":
+        dirs = [d for d in (
+            "/opt/homebrew/opt/mysql-client/lib",
+            "/opt/homebrew/opt/libpq/lib",
+            "/opt/homebrew/opt/openssl@3/lib",
+        ) if Path(d).exists()]
+        if dirs:
+            return {"DYLD_LIBRARY_PATH": ":".join(dirs)}
+    return {}
+
+
+def _wait_for_healthy(containers: tuple[str, ...], attempts: int = 60) -> bool:
+    for _ in range(attempts):
+        states = []
+        for name in containers:
+            probe = subprocess.run(
+                ["docker", "inspect", "--format", "{{.State.Health.Status}}", name],
+                capture_output=True,
+                text=True,
+            )
+            states.append(probe.stdout.strip())
+        if all(state == "healthy" for state in states):
+            return True
+        time.sleep(2)
+    return False
+
+
+def run_db(args: Namespace) -> None:
+    build_dir = args.build_dir or "build"
+    binary = _binary(build_dir, "varn")
+    if not binary.exists():
+        print(f"varn binary not found under {build_dir}/bin; build first with: python3 varn.py build")
+        raise SystemExit(1)
+
+    if getattr(args, "down", False):
+        helper.run(_DB_COMPOSE + ["down", "-v"])
+        return
+
+    helper.run(_DB_COMPOSE + ["up", "-d"])
+    print("waiting for redis, mysql and postgres to become healthy...")
+    if not _wait_for_healthy(_DB_CONTAINERS):
+        print("the backend services did not become healthy in time")
+        raise SystemExit(1)
+
+    scratch = helper.PROJECT_DIR / build_dir / "test-scratch-db"
+    backend_env = {**_DB_ENV, **_client_library_path()}
+
+    suite = list(_DB_TESTS)
+    if getattr(args, "ai_live", False):
+        suite.append(_DB_AI_LIVE_TEST)
+
+    passed = 0
+    failed: list[str] = []
+    for relative in suite:
+        test = helper.PROJECT_DIR / relative
+        if not test.exists():
+            continue
+
+        if scratch.exists():
+            shutil.rmtree(scratch)
+        scratch.mkdir(parents=True)
+
+        env = helper.environ_with(VARN_TEST_DIR=str(scratch), **backend_env)
+        result = subprocess.run(
+            [str(binary), str(test)],
+            cwd=str(helper.PROJECT_DIR),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        if result.returncode == 0:
+            print(f"PASS  {relative}")
+            passed += 1
+            continue
+
+        print(f"FAIL  {relative}  [{_describe_exit(result.returncode)}]")
+        for line in (result.stdout + result.stderr).strip().splitlines()[-40:]:
+            print(f"      {line}")
+        failed.append(relative)
+
+    if scratch.exists():
+        shutil.rmtree(scratch)
+
+    print(f"\n{passed} passed, {len(failed)} failed")
+    print("stop the backends with: python3 varn.py test-db --down")
     if failed:
         raise SystemExit(1)

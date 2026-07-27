@@ -92,4 +92,14 @@ local tableMinMax = { cfg = validate.table({ a = validate.string() }, { min = 1,
 ok, errors = validate.check(tableMinMax, { cfg = { a = "x" } })
 assert(ok == true, "min and max on a table rule should not raise and should pass")
 
+-- a default declared inside a nested table schema is written into the nested table
+local nestedSchema = {
+    profile = validate.table({
+        theme = validate.string{ default = "dark" },
+    }, { required = false }),
+}
+local nestedData = { profile = {} }
+local nestedOk = validate.check(nestedSchema, nestedData)
+assert(nestedOk == true and nestedData.profile.theme == "dark", "a nested default is written into the nested table")
+
 print("validate integration ok")

@@ -270,6 +270,7 @@ constexpr int kWsClose = 0x8;
 constexpr int kWsPing = 0x9;
 constexpr int kWsPong = 0xA;
 constexpr std::size_t kWsMaxMessageBytes = 16 * 1024 * 1024;
+constexpr std::size_t kWsMaxOutBytes = 16 * 1024 * 1024;
 
 struct WsFrame
 {
@@ -297,6 +298,13 @@ WsParse parseWsFrame(const std::string& buffer, WsFrame& frame)
     const auto byteAt = [&](std::size_t i)
     { return static_cast<unsigned char>(buffer[i]); };
     frame.fin = (byteAt(0) & 0x80) != 0;
+
+    // no extension is negotiated, so any reserved bit set is a protocol error
+    if ((byteAt(0) & 0x70) != 0)
+    {
+        return WsParse::Error;
+    }
+
     frame.opcode = byteAt(0) & 0x0F;
     const bool masked = (byteAt(1) & 0x80) != 0;
 
@@ -1056,6 +1064,13 @@ private:
         }
         else
         {
+            // reject a content-length that would overflow the offset math regardless of whether the body cap is enabled
+            if (contentLength > readBuffer.max_size() - bodyStart)
+            {
+                sendSimpleAndClose(400);
+                return Progress::Detached;
+            }
+
             if (readBuffer.size() < bodyStart + contentLength)
             {
                 return Progress::NeedMore;
@@ -1128,6 +1143,7 @@ private:
 
     ChunkResult consumeTrailers(std::size_t position)
     {
+        const std::size_t trailerStart = position;
         for (;;)
         {
             const std::size_t crlf = readBuffer.find("\r\n", position);
@@ -1143,6 +1159,12 @@ private:
             }
 
             position = crlf + 2;
+
+            // bound the whole trailer section so a flood of tiny trailer lines cannot grow the buffer unbounded or force a quadratic rescan
+            if (position - trailerStart > kMaxChunkLineBytes)
+            {
+                return ChunkResult::Error;
+            }
         }
     }
 
@@ -1563,15 +1585,23 @@ private:
 
         if (frame.opcode == kWsClose)
         {
+            // a close payload is either empty or a 2-byte code plus optional reason, so a single byte is malformed
+            if (frame.payload.size() == 1)
+            {
+                closeNow();
+                return false;
+            }
+
+            // echo the close and let the writer close the socket once it flushes so the close handshake completes
             wsSend(kWsClose, frame.payload);
-            closeNow();
+            wsCloseAfterFlush = true;
             return false;
         }
 
         if (frame.opcode == kWsPing)
         {
             wsSend(kWsPong, frame.payload);
-            return true;
+            return !closed;
         }
 
         if (frame.opcode == kWsPong)
@@ -1579,8 +1609,16 @@ private:
             return true;
         }
 
-        // data frames assemble across fragments into one message delivered to the route handler
-        if (frame.opcode != kWsContinuation)
+        // data frames assemble across fragments into one message, enforcing the continuation state machine
+        const bool isContinuation = frame.opcode == kWsContinuation;
+        if (isContinuation != wsFragmentOpen)
+        {
+            // a continuation without an open message, or a fresh data frame while one is still open, violates the framing
+            closeNow();
+            return false;
+        }
+
+        if (!isContinuation)
         {
             wsMessage.clear();
         }
@@ -1592,6 +1630,7 @@ private:
         }
 
         wsMessage += frame.payload;
+        wsFragmentOpen = !frame.fin;
         if (frame.fin)
         {
             if (wsMessageHandler)
@@ -1607,6 +1646,13 @@ private:
 
     void wsSend(int opcode, const std::string& payload)
     {
+        // close instead of buffering without bound when the peer stops draining its socket
+        if (wsOut.size() > kWsMaxOutBytes)
+        {
+            closeNow();
+            return;
+        }
+
         wsOut += buildWsFrame(opcode, payload);
         if (wsWriting)
         {
@@ -1846,6 +1892,7 @@ private:
 
     bool wsMode = false;
     std::string wsMessage;
+    bool wsFragmentOpen = false;
     std::string wsOut;
     std::size_t wsOutOffset = 0;
     bool wsWriting = false;

@@ -101,5 +101,47 @@ async.run(function()
     assert(rejValue == nil, "mapLimit should not resolve when a mapped promise rejects")
     assert(type(rejErr) == "string" and rejErr:find("rejection"), "mapLimit should surface a mapped rejection")
 
+    -- mapLimit rejects an invalid concurrency limit instead of spinning forever on a gate that can never open
+    local zeroOk, zeroErr = pcall(function()
+        return async.mapLimit({ 1, 2, 3 }, 0, function(item)
+            return async.promise(function() return item end)
+        end)
+    end)
+    assert(zeroOk == false, "mapLimit with limit 0 should error")
+    assert(type(zeroErr) == "string" and zeroErr:find("at least 1"), "mapLimit should reject a non-positive limit")
+    assert(pcall(function() return async.mapLimit({ 1 }, -1, function(x) return async.promise(function() return x end) end) end) == false, "mapLimit with a negative limit should error")
+
+    -- empty-list mapLimit resolves to an empty table and empty-list any rejects
+    local emptyMapped = async.mapLimit({}, 3, function(x) return async.promise(function() return x end) end):await()
+    assert(type(emptyMapped) == "table" and #emptyMapped == 0, "mapLimit of an empty list should resolve to an empty table")
+    local emptyAnyValue, emptyAnyErr = async.any({}):await()
+    assert(emptyAnyValue == nil, "any of an empty list should not resolve")
+    assert(type(emptyAnyErr) == "string", "any of an empty list should reject")
+
+    -- stress: a large list through mapLimit preserves order and never exceeds the limit under load
+    local big = {}
+    for i = 1, 200 do
+        big[i] = i
+    end
+    local stressInFlight = 0
+    local stressPeak = 0
+    local stressOut = async.mapLimit(big, 8, function(item)
+        return async.promise(function()
+            stressInFlight = stressInFlight + 1
+            if stressInFlight > stressPeak then
+                stressPeak = stressInFlight
+            end
+            async.sleep(1):await()
+            stressInFlight = stressInFlight - 1
+            return item
+        end)
+    end):await()
+    assert(#stressOut == 200, "mapLimit stress should map every item")
+    for i = 1, 200 do
+        assert(stressOut[i] == i, "mapLimit stress should preserve order at index " .. i)
+    end
+    assert(stressPeak <= 8, "mapLimit stress should never exceed the limit")
+    assert(stressPeak == 8, "mapLimit stress should reach the limit under load")
+
     print("async combinators ok")
 end)

@@ -251,8 +251,9 @@ function Connection:beginTransaction()
 end
 
 function Connection:commit()
-    self:exec("COMMIT")
+    -- clear the flag first so a failed COMMIT never leaves inTransaction() reporting a transaction that is already over
     self.inTx = false
+    self:exec("COMMIT")
 end
 
 function Connection:rollBack()

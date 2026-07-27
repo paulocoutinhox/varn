@@ -19,8 +19,8 @@ function sql.parse(statement)
     while i <= length do
         local c = statement:sub(i, i)
 
-        if c == "'" or c == '"' then
-            -- copy a quoted literal verbatim, treating a doubled quote as an escaped quote
+        if c == "'" or c == '"' or c == "`" then
+            -- copy a quoted literal or backtick identifier verbatim, treating a doubled quote as an escaped quote
             local quote = c
             current[#current + 1] = c
             i = i + 1

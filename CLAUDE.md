@@ -18,8 +18,9 @@ This file is binding. Follow it exactly instead of re-deriving conventions each 
 Everything goes through `python3 varn.py <task>`:
 
 - `build` — build the native `varn` executable (then `./build/bin/varn script.lua` runs a script).
-- `test` — run the Lua suite (`modules/*/lua/tests/*.lua`), each test gets a fresh `VARN_TEST_DIR`.
+- `test` — run the cross-platform Lua suite (`modules/*/lua/tests/*.lua` plus the backend-free component tests), each test gets a fresh `VARN_TEST_DIR`.
 - `test-cpp` — build and run the googletest C++ target.
+- `test-db` — start the docker backend services (`tests/docker-compose.yml`: redis, mysql, postgres) and run the integration tests that need a live backend (redis, mysql, vdo over all three drivers, scheduler); `test-db --ai-live` additionally runs the real-api ai smoke test (each provider gated on its `*_API_KEY`), and `test-db --down` tears the services down.
 - `format` — run clang-format over `modules/` and `src/`.
 - `wasm` / `app-wasm` / `serve` / `site-deploy` — build the wasm engine, bundle the browser app, dev server, publish the site.
 - Run a single Lua test directly: `./build/bin/varn modules/<mod>/lua/tests/<name>_test.lua` (set `VARN_TEST_DIR` to a scratch dir).
@@ -34,6 +35,9 @@ Everything goes through `python3 varn.py <task>`:
   - A secure (TLS) connection drives blocking I/O on the `ioPool`, so its socket fd is released by RAII once the last in-flight pool task drops the connection — never eager-close a secure fd from the loop while a pool op may be in flight (see `PocoStreamConnection::close`).
   - Loop-owned state reachable from the cross-thread public C API (e.g. the `Runtime` server list, since `Runtime::stop()` can be called from another thread) is mutex-guarded.
   - Reading an untrusted path into memory rejects non-regular files (`FsStorage::readAll`) so an endless stream like a device or fifo cannot loop forever.
+  - Lua chunks are always loaded text-only (`luaL_loadfilex`/`luaL_loadbufferx` with mode `"t"`) — never enable bytecode loading, since the wasm host runs source supplied by the page.
+  - Network output buffers (the WebSocket send queue, streamed responses) are bounded and the connection is dropped when a peer stops draining — never buffer outbound data without a limit.
+  - The worker supervisor restarts a worker only on an abnormal exit and backs off a crash loop, so a fast-failing child can never become a fork storm.
 - **Lua is compiled as C++**, so a Lua `error()` unwinds as a C++ exception caught by `pcall`; the wasm build needs `-fexceptions`.
 - **Components** (`components/<name>/`) are Lua libraries on top of the modules, loaded with `require`. Layout: `init.lua` (returns the module table), `examples/`, `tests/`, `README.md`. They run server-side on the native runtime (they use `socket`/`http`/`vdo`/etc., unavailable in the browser). Examples: `ai`, `scheduler`, `vdo`, `redis`, `mysql`, `pool`.
 - **Targets**: native desktop, Apple (`xcframework`), Android (`aar`), and wasm (browser). The same Lua script runs on all of them.
@@ -69,5 +73,8 @@ Match the existing visual, structural, and architectural pattern. Compact, profe
 
 ## Testing and docs
 
-- Each capability has runnable examples and individual Lua tests. CI runs `modules/*/lua/tests` on Windows/Linux/macOS plus self-contained component tests (no external server). Tests needing a database or server (vdo/sqlite, redis, mysql) run standalone where that backend exists, not in the cross-platform runner.
+- Each capability has runnable examples and individual Lua tests. CI runs `modules/*/lua/tests` on Windows/Linux/macOS plus self-contained component tests (no external server). Tests needing a database or server (redis, mysql, vdo mysql/pgsql, scheduler) run against real backends through `python3 varn.py test-db`, which brings up `tests/docker-compose.yml` and points each test at it — never in the cross-platform runner.
+- The vdo mysql/pgsql drivers `dlopen` `libmysqlclient`/`libpq` through ffi, so `test-db` adds the client-library and openssl directories to the loader path (a macOS SIP-restricted intermediary like `/usr/bin/perl` strips `DYLD_*`, so launch the runner directly).
+- Module Lua tests under `modules/*/lua/tests/*.lua` are auto-discovered, but a **component** test only runs in CI once it is added to the list in `tools/core/tests.py` — a component test that needs no external backend (e.g. a pure-logic parser) belongs there.
+- Native unit tests are plain googletest in `tests/cpp/*.cpp` (auto-globbed into `varn_tests`); the target's include dirs let a test reach a module's internal headers. Concurrency and internal-state invariants (`WorkLedger`, `TaskPool`, `EventLoop`) are exercised with multi-threaded stress tests there.
 - Per-library docs live in each module/component `README.md` with a capabilities section; the main `README.md` is presentation only. Keep docs objective and present-tense.

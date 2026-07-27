@@ -92,5 +92,85 @@ async.run(function()
         assert(not pcall(function() return p:acquire() end), "acquire on a closed pool should error")
     end
 
+    -- a connect failure while waiters are blocked must wake the next waiter instead of stranding it
+    do
+        local attempts = 0
+        local p = pool.new({
+            connect = function()
+                attempts = attempts + 1
+                if attempts == 1 then
+                    return { id = 1 }
+                end
+                error("connect failed")
+            end,
+            size = 1,
+        })
+
+        local holder = p:acquire()
+        local finished = 0
+        local errored = 0
+        for _ = 1, 2 do
+            async.spawn(function()
+                local ok = pcall(function() return p:acquire() end)
+                finished = finished + 1
+                if not ok then
+                    errored = errored + 1
+                end
+            end)
+        end
+
+        async.sleep(5):await()
+        assert(finished == 0, "both waiters should block while the only connection is held")
+
+        p:drop(holder)
+
+        local waited = 0
+        while finished < 2 and waited < 2000 do
+            async.sleep(5):await()
+            waited = waited + 5
+        end
+        assert(finished == 2, "a connect failure must wake every blocked waiter rather than stranding one")
+        assert(errored == 2, "both waiters should observe the connect failure")
+    end
+
+    -- stress: many concurrent workers share a small pool and every one completes without deadlock
+    do
+        local p, state = makePool(4)
+        local completed = 0
+        local workers = 50
+        for i = 1, workers do
+            async.spawn(function()
+                p:with(function(conn)
+                    async.sleep(i % 3):await()
+                    return conn.id
+                end)
+                completed = completed + 1
+            end)
+        end
+
+        local waited = 0
+        while completed < workers and waited < 5000 do
+            async.sleep(5):await()
+            waited = waited + 5
+        end
+        assert(completed == workers, "every worker should finish sharing the pool without deadlock")
+        assert(state.opened <= 4, "the pool should never open more than its cap")
+        p:closeAll()
+    end
+
+    -- with no close option, the default closeConn calls conn:close() when a connection is dropped
+    do
+        local closed = false
+        local dp = pool.new({
+            connect = function()
+                return { close = function() closed = true end }
+            end,
+            size = 1,
+        })
+        local c = dp:acquire()
+        dp:drop(c)
+        assert(closed, "the default closeConn should call conn:close()")
+    end
+
     print("pool integration ok")
 end)

@@ -42,7 +42,7 @@ int LuaEngine::runFile(const std::string& path)
     lua_pushcfunction(L, &varn::lua::LuaHelpers::traceback);
     int tracebackIndex = lua_gettop(L);
 
-    if (luaL_loadfile(L, path.c_str()) != LUA_OK)
+    if (luaL_loadfilex(L, path.c_str(), "t") != LUA_OK)
     {
         const char* message = lua_tostring(L, -1);
         log::Log::error("LuaEngine", message ? message : "The script could not be loaded.");
@@ -67,7 +67,7 @@ bool LuaEngine::runStringWithoutEventLoop(const std::string& source, const std::
     lua_pushcfunction(L, &varn::lua::LuaHelpers::traceback);
     const int tracebackIndex = lua_gettop(L);
 
-    if (luaL_loadbuffer(L, source.data(), source.size(), chunkName.c_str()) != LUA_OK)
+    if (luaL_loadbufferx(L, source.data(), source.size(), chunkName.c_str(), "t") != LUA_OK)
     {
         if (errorMessage != nullptr)
         {
@@ -107,7 +107,7 @@ int LuaEngine::runString(const std::string& source, const std::string& chunkName
     lua_pushcfunction(L, &varn::lua::LuaHelpers::traceback);
     int tracebackIndex = lua_gettop(L);
 
-    if (luaL_loadbuffer(L, source.data(), source.size(), chunkName.c_str()) != LUA_OK)
+    if (luaL_loadbufferx(L, source.data(), source.size(), chunkName.c_str(), "t") != LUA_OK)
     {
         const char* message = lua_tostring(L, -1);
         log::Log::error("LuaEngine", message ? message : "The source could not be loaded.");

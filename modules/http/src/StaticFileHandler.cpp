@@ -35,8 +35,19 @@ bool StaticFileHandler::tryServe(const HttpRequest& request, HttpResponse& respo
         }
     }
 
-    std::filesystem::path root = std::filesystem::weakly_canonical(publicDir);
-    std::filesystem::path candidate = std::filesystem::weakly_canonical(root / requestPath.substr(1));
+    // resolve without throwing so a path that triggers a filesystem error such as a symlink loop is treated as absent instead of abandoning the connection
+    std::error_code ec;
+    std::filesystem::path root = std::filesystem::weakly_canonical(publicDir, ec);
+    if (ec)
+    {
+        return false;
+    }
+
+    std::filesystem::path candidate = std::filesystem::weakly_canonical(root / requestPath.substr(1), ec);
+    if (ec)
+    {
+        return false;
+    }
 
     // keep the resolved path inside the public directory tree, rejecting siblings and traversal
     const std::filesystem::path relative = candidate.lexically_relative(root);
@@ -56,7 +67,6 @@ bool StaticFileHandler::tryServe(const HttpRequest& request, HttpResponse& respo
         }
     }
 
-    std::error_code ec;
     if (std::filesystem::is_directory(candidate, ec))
     {
         std::filesystem::path index = candidate / "index.html";

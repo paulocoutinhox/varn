@@ -65,6 +65,18 @@ def _opt_test_cpp(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _opt_test_db(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--build-dir", default="build", help="build directory holding bin/varn (default: build)"
+    )
+    parser.add_argument(
+        "--down", action="store_true", help="stop and remove the backend containers instead of running the tests"
+    )
+    parser.add_argument(
+        "--ai-live", action="store_true", help="also run the real-api ai smoke test (each provider gated on its *_API_KEY)"
+    )
+
+
 def _opt_clean(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--build-dir", default="build", help="build directory (default: build)"
@@ -108,6 +120,11 @@ _TASKS = {
         tests.run_cpp,
         _opt_test_cpp,
         "Build and run the native C++ test target (googletest).",
+    ),
+    "test-db": (
+        tests.run_db,
+        _opt_test_db,
+        "Start the docker backend services and run the redis, mysql, vdo and scheduler integration tests (add --ai-live for the real-api ai smoke).",
     ),
     "bench": (
         bench.run,
