@@ -454,11 +454,6 @@ public:
         return finished;
     }
 
-    bool streaming() const override
-    {
-        return chunkedMode;
-    }
-
 private:
     std::string buildHead(std::size_t contentLength, bool emitContentLength);
     std::string chunkedHead();
@@ -969,6 +964,13 @@ private:
         if (wsMode)
         {
             armRead();
+
+            // drain any frames the client pipelined with the handshake instead of waiting for the next readable event
+            if (!readBuffer.empty())
+            {
+                wsProcess();
+            }
+
             return Io::Detached;
         }
 
@@ -978,7 +980,14 @@ private:
             writeBuffer.clear();
             writeOffset = 0;
             streamWriteArmed = false;
-            armRead();
+
+            // arm the disconnect watcher once since the reader re-pushes itself for the whole stream
+            if (!streamReadArmed)
+            {
+                streamReadArmed = true;
+                armRead();
+            }
+
             return Io::Detached;
         }
 
@@ -1790,6 +1799,7 @@ private:
         dispatched = false;
         streamingActive = false;
         streamWriteArmed = false;
+        streamReadArmed = false;
         requestStartMs = nowMs();
     }
 
@@ -1819,6 +1829,7 @@ private:
     bool dispatched = false;
     bool streamingActive = false;
     bool streamWriteArmed = false;
+    bool streamReadArmed = false;
     long long requestStartMs = 0;
     long long lastWriteMs = 0;
 
@@ -2122,7 +2133,8 @@ void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<Ht
                 continue;
             }
 
-            if (connection->isStale(now, timeoutMs))
+            // a non-positive timeout keeps connections open, so the sweep only compacts the registry then
+            if (timeoutMs > 0 && connection->isStale(now, timeoutMs))
             {
                 connection->forceClose();
                 continue;
@@ -2249,11 +2261,8 @@ void ReactorHttpServer::start()
     });
     // clang-format on
 
-    // a non-positive keep-alive timeout disables the idle and slowloris sweep entirely
-    if (timeoutMs > 0)
-    {
-        scheduleSweep(loop, registry, stopping, timeoutMs);
-    }
+    // the sweep also compacts the connection registry, so it runs even when the idle and slowloris timeout is disabled
+    scheduleSweep(loop, registry, stopping, timeoutMs);
 }
 
 void ReactorHttpServer::stop()

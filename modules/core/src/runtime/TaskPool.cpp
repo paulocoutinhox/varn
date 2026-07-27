@@ -49,7 +49,15 @@ void TaskPool::post(Job job)
         // clang-format off
         jobs.push([ledger = ledger, j = std::move(job)]() mutable
         {
-            j();
+            // release the ledger entry even if the job throws so the pool keeps draining
+            try
+            {
+                j();
+            }
+            catch (...)
+            {
+            }
+
             ledger->leave();
         });
         // clang-format on

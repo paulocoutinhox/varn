@@ -128,6 +128,9 @@ void PocoStreamConnection::startTlsAsync(varn::runtime::Runtime& runtime, std::s
     varn::runtime::EventLoop* loop = &runtime.mainLoop();
     auto done = std::make_shared<SendCallback>(std::move(callback));
 
+    // enter the secure state before the pool handshake so a concurrent close defers the fd release to raii instead of racing the syscall
+    markSecure(runtime);
+
     // run the whole tls handshake blocking on the io pool so the ssl backend drives it synchronously, which avoids the readiness races the loop-driven handshake hits on windows schannel
     // clang-format off
     runtime.ioPool().post([self, rt, loop, host, verify, done]

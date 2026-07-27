@@ -79,7 +79,10 @@ void Log::addFileSink(std::string_view path, bool rotating)
         sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(file);
     }
 
-    // build a fresh logger with the added sink and swap it in atomically so concurrent emit calls never see a mutating sink vector
+    // serialize the read-modify-write so two concurrent toFile calls compose their sinks instead of one overwriting the other
+    static std::mutex sinkMutex;
+    std::lock_guard<std::mutex> lock(sinkMutex);
+
     const auto current = spdlog::default_logger();
     std::vector<spdlog::sink_ptr> sinks = current->sinks();
     sinks.push_back(std::move(sink));

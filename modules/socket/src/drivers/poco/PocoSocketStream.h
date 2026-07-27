@@ -66,8 +66,6 @@ public:
             return;
         }
 
-        auto self = shared_from_this();
-
         // a tls socket cannot be driven by the loop readiness poll, since on windows the schannel i/o races the uv_poll re-arm and drops events, so read blocking on the io pool and settle back on the loop
         if (secure)
         {
@@ -136,6 +134,23 @@ public:
     void close() override
     {
         closed = true;
+
+        // a secure connection drives blocking i/o on the pool, so shut the transport down to unblock any in-flight syscall without freeing the fd, which raii then closes once the last pool task drops this connection
+        if (secure)
+        {
+            const auto fd = socket.impl()->sockfd();
+            if (fd != POCO_INVALID_SOCKET)
+            {
+#if defined(_WIN32)
+                ::shutdown(fd, SD_BOTH);
+#else
+                ::shutdown(fd, SHUT_RDWR);
+#endif
+            }
+
+            return;
+        }
+
         ManagedSocket::close(loop, socket);
     }
 

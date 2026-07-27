@@ -130,7 +130,10 @@ function ai.saveImage(image, path)
     if image.base64 then
         bytes = crypto.base64Decode(image.base64)
     elseif image.url then
-        local response = require("http").client.get(image.url):await()
+        local response, err = require("http").client.get(image.url):await()
+        if err then
+            error("ai.saveImage: download failed: " .. tostring(err), 0)
+        end
         if not response.ok then
             error("ai.saveImage: download failed with http " .. response.status, 0)
         end

@@ -39,7 +39,6 @@ public:
     virtual void beginChunked();
     virtual void writeChunk(const std::string& chunk);
     virtual void endChunked();
-    virtual bool streaming() const;
 };
 
 class HttpServer

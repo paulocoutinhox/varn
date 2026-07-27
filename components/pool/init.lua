@@ -39,6 +39,13 @@ function Pool:acquire()
             local ok, result = pcall(self.connect)
             if not ok then
                 self.open = self.open - 1
+
+                -- the failed attempt freed the slot, so wake a waiter to retry it instead of stranding the others
+                local wake = table.remove(self.waiters, 1)
+                if wake then
+                    wake()
+                end
+
                 error(result)
             end
             return result

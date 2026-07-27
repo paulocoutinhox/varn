@@ -389,7 +389,15 @@ void EventLoop::post(Job job)
         // clang-format off
         jobs.push([ledger = ledger, j = std::move(job)]() mutable
         {
-            j();
+            // release the ledger entry even if the job throws so the loop still drains
+            try
+            {
+                j();
+            }
+            catch (...)
+            {
+            }
+
             ledger->leave();
         });
         // clang-format on
@@ -408,7 +416,15 @@ void EventLoop::postDelayed(long long delayMs, Job job)
         // clang-format off
         timers.emplace(deadline, [ledger = ledger, j = std::move(job)]() mutable
         {
-            j();
+            // release the ledger entry even if the job throws so the loop still drains
+            try
+            {
+                j();
+            }
+            catch (...)
+            {
+            }
+
             ledger->leave();
         });
         // clang-format on

@@ -135,17 +135,17 @@ local function checkValue(descriptor, value, path, errors)
         fail(errors, path, "has an invalid format")
     end
 
-    -- recurse into a nested object schema
+    -- recurse into a nested object schema, storing back so nested defaults land in the data
     if kind == "table" and descriptor.schema then
         for field, fieldRule in pairs(descriptor.schema) do
-            checkValue(fieldRule, value[field], path .. "." .. field, errors)
+            value[field] = checkValue(fieldRule, value[field], path .. "." .. field, errors)
         end
     end
 
     -- validate every array element against the element rule
     if kind == "array" and descriptor.element then
         for index, item in ipairs(value) do
-            checkValue(descriptor.element, item, path .. "[" .. index .. "]", errors)
+            value[index] = checkValue(descriptor.element, item, path .. "[" .. index .. "]", errors)
         end
     end
 
@@ -159,9 +159,10 @@ function validate.check(schema, data)
         return false, { ["_"] = "value must be a table" }
     end
 
+    -- store each result back so a default substitutes the missing field in data, as documented
     local errors = {}
     for field, fieldRule in pairs(schema) do
-        checkValue(fieldRule, data[field], field, errors)
+        data[field] = checkValue(fieldRule, data[field], field, errors)
     end
 
     if next(errors) == nil then

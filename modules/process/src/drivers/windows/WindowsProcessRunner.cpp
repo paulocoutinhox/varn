@@ -171,17 +171,27 @@ std::optional<std::string> ProcessRunner::getenv(const std::string& name)
 {
     const std::wstring wideName = toWide(name);
 
-    // resolves the environment name case-insensitively
-    const DWORD needed = GetEnvironmentVariableW(wideName.c_str(), nullptr, 0);
-    if (needed == 0)
+    // retry until the buffer fits since another thread can enlarge the variable between the size probe and the read
+    for (;;)
     {
-        return std::nullopt;
+        const DWORD needed = GetEnvironmentVariableW(wideName.c_str(), nullptr, 0);
+        if (needed == 0)
+        {
+            return std::nullopt;
+        }
+
+        std::wstring buffer(needed, L'\0');
+        const DWORD written = GetEnvironmentVariableW(wideName.c_str(), buffer.data(), needed);
+        if (written == 0)
+        {
+            return std::nullopt;
+        }
+
+        if (written < needed)
+        {
+            return toUtf8(buffer.data(), static_cast<int>(written));
+        }
     }
-
-    std::wstring buffer(needed, L'\0');
-    const DWORD written = GetEnvironmentVariableW(wideName.c_str(), buffer.data(), needed);
-
-    return toUtf8(buffer.data(), static_cast<int>(written));
 }
 
 std::vector<std::pair<std::string, std::string>> ProcessRunner::environment()

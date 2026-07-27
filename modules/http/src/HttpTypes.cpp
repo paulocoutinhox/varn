@@ -43,9 +43,4 @@ void HttpResponse::endChunked()
     end("");
 }
 
-bool HttpResponse::streaming() const
-{
-    return false;
-}
-
 } // namespace varn::http

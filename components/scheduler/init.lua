@@ -76,11 +76,6 @@ function scheduler.new(config)
         instance.db:exec(statement)
     end
 
-    -- best-effort column add so a store created before leases gains the column, ignoring the duplicate-column error on a fresh table
-    pcall(function()
-        instance.db:exec("ALTER TABLE scheduler_tasks ADD COLUMN lease_expires_at INTEGER")
-    end)
-
     return instance
 end
 
@@ -139,7 +134,7 @@ function Scheduler:schedule(name, payload, runAt, opts)
     return self:_insert(name, payload, opts, "scheduled", runAt, nil)
 end
 
--- runs now and then re-arms every intervalSeconds after each success
+-- runs now and then re-arms every intervalSeconds after each run, retrying a failed occurrence up to maxAttempts first
 function Scheduler:every(name, payload, intervalSeconds, opts)
     return self:_insert(name, payload, opts, "scheduled", os.time(), intervalSeconds)
 end
@@ -233,6 +228,12 @@ function Scheduler:_settle(row, ok, value, startedAt)
         self:_exec(
             "UPDATE scheduler_tasks SET state = 'scheduled', attempts = :attempt, run_at = :run_at, last_error = :error, updated_at = :now WHERE id = :id",
             { attempt = attempt, run_at = now + self:_backoff(attempt), error = tostring(value), now = now, id = row.id }
+        )
+    elseif row.interval_seconds then
+        -- a recurring task keeps its schedule after exhausting an occurrence's retries instead of dying on a transient failure
+        self:_exec(
+            "UPDATE scheduler_tasks SET state = 'scheduled', run_at = :run_at, attempts = 0, last_error = :error, updated_at = :now WHERE id = :id",
+            { run_at = now + row.interval_seconds, error = tostring(value), now = now, id = row.id }
         )
     else
         self:_exec(

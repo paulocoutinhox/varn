@@ -360,6 +360,10 @@ function muxMethods:close()
         self.writerWake = false
         wake()
     end
+
+    -- reject every queued and in-flight command so their awaiting coroutines stop waiting instead of hanging forever
+    failPending(self, "[Redis] Connection closed.")
+
     if self.sock then
         pcall(function()
             self.sock:close():await()

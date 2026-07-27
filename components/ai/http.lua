@@ -1,6 +1,5 @@
--- transport helpers over the native http client giving every ai adapter json requests, sse and ndjson streaming, and raw binary bodies, all of which yield on the event loop so they must run inside an async coroutine
+-- transport helpers over the native http client giving every ai adapter json requests, sse streaming, and raw binary bodies, all of which yield on the event loop so they must run inside an async coroutine
 local http = require("http")
-local json = require("json")
 
 local transport = {}
 
@@ -83,51 +82,6 @@ function transport.sse(options, handler, tag)
     end
 
     flush()
-
-    if status and status ~= 200 then
-        error(string.format("%s: http %d %s", tag, status, table.concat(errorBody)), 0)
-    end
-end
-
--- streams a newline-delimited json response (ollama native), invoking handler(decodedObject) per line
-function transport.ndjson(options, handler, tag)
-    local status
-    local errorBody = {}
-    local buffer = ""
-
-    local function onChunk(chunk)
-        if status and status ~= 200 then
-            errorBody[#errorBody + 1] = chunk
-            return
-        end
-
-        buffer = buffer .. chunk
-        while true do
-            local newline = buffer:find("\n", 1, true)
-            if not newline then
-                break
-            end
-
-            local line = buffer:sub(1, newline - 1):gsub("\r$", "")
-            buffer = buffer:sub(newline + 1)
-            if line ~= "" then
-                handler(json.decode(line))
-            end
-        end
-    end
-
-    local streamOptions = {}
-    for key, value in pairs(options) do
-        streamOptions[key] = value
-    end
-    streamOptions.onResponse = function(responseStatus)
-        status = responseStatus
-    end
-
-    local _, err = http.client.stream(streamOptions, onChunk):await()
-    if err then
-        error(err, 0)
-    end
 
     if status and status ~= 200 then
         error(string.format("%s: http %d %s", tag, status, table.concat(errorBody)), 0)

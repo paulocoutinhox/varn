@@ -215,8 +215,16 @@ function adapter.stream(client, request, onEvent)
         end
     end, client.provider)
 
+    -- collect content blocks in their emitted index order since pairs() over the sparse index map is unordered
+    local indices = {}
+    for index in pairs(blocks) do
+        indices[#indices + 1] = index
+    end
+    table.sort(indices)
+
     local toolCalls = {}
-    for _, block in pairs(blocks) do
+    for _, index in ipairs(indices) do
+        local block = blocks[index]
         if block.type == "tool_use" then
             toolCalls[#toolCalls + 1] = { id = block.id, name = block.name, arguments = block.arguments }
         end

@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -60,6 +61,7 @@ private:
     std::unique_ptr<TaskPool> ioWorkers;
     std::atomic<int> backgroundDrivers{0};
     std::unique_ptr<varn::lua::LuaEngine> engine;
+    mutable std::mutex serversMutex;
     std::vector<std::shared_ptr<varn::http::HttpServer>> servers;
     std::atomic<bool> stopFlag{false};
     bool unhandledError = false;

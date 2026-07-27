@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -398,7 +399,26 @@ int64_t shiftByDeltaTable(lua_State* L, int64_t millis, int table, int sign)
     const long long seconds = fieldOr(L, table, "seconds", 0);
     const long long millisDelta = fieldOr(L, table, "millis", 0);
 
-    return shiftInstant(millis, static_cast<int>(sign * years), static_cast<int>(sign * months), sign * (weeks * 7 + days), sign * hours, sign * minutes, sign * seconds, sign * millisDelta);
+    const long long shiftYears = sign * years;
+    const long long shiftMonths = sign * months;
+    const long long shiftDays = sign * (weeks * 7 + days);
+
+    // the year, month and day deltas flow through int-based calendar types, so reject values that would overflow the cast
+    constexpr long long kMinInt = std::numeric_limits<int>::min();
+    constexpr long long kMaxInt = std::numeric_limits<int>::max();
+    if (shiftYears < kMinInt || shiftYears > kMaxInt || shiftMonths < kMinInt || shiftMonths > kMaxInt || shiftDays < kMinInt || shiftDays > kMaxInt)
+    {
+        return luaL_error(L, "[Datetime] A year, month, week or day delta is out of range.");
+    }
+
+    // the sub-day deltas are summed into the millisecond instant, so bound each so its span cannot overflow the int64 rep
+    constexpr long long kMaxSpanMs = 1000000000000000000LL;
+    if (hours > kMaxSpanMs / 3600000 || hours < -(kMaxSpanMs / 3600000) || minutes > kMaxSpanMs / 60000 || minutes < -(kMaxSpanMs / 60000) || seconds > kMaxSpanMs / 1000 || seconds < -(kMaxSpanMs / 1000) || millisDelta > kMaxSpanMs || millisDelta < -kMaxSpanMs)
+    {
+        return luaL_error(L, "[Datetime] An hour, minute, second or millisecond delta is out of range.");
+    }
+
+    return shiftInstant(millis, static_cast<int>(shiftYears), static_cast<int>(shiftMonths), shiftDays, sign * hours, sign * minutes, sign * seconds, sign * millisDelta);
 }
 
 long long requiredField(lua_State* L, int table, const char* key)

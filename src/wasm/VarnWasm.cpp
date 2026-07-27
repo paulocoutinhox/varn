@@ -29,7 +29,6 @@ public:
     WasmHost() = delete;
 
     static RunResult runChunk(const std::string& source);
-    static void resetRuntime();
 
 private:
     struct PrintSinkScope
@@ -148,17 +147,6 @@ std::unique_ptr<varn::runtime::Runtime>& WasmHost::runtime()
     return instance;
 }
 
-void WasmHost::resetRuntime()
-{
-    // drop the cached runtime so the next chunk starts on a fresh lua_State instead of inheriting globals, listeners and pending coroutines from earlier chunks
-    auto& rtPtr = runtime();
-    if (rtPtr)
-    {
-        rtPtr->stop();
-        rtPtr.reset();
-    }
-}
-
 RunResult WasmHost::runChunk(const std::string& source)
 {
     RunResult result;
@@ -212,6 +200,5 @@ EMSCRIPTEN_BINDINGS(varn_wasm)
         .field("error", &varn::wasm::RunResult::error);
 
     emscripten::function("varnRunChunk", &varn::wasm::WasmHost::runChunk);
-    emscripten::function("varnResetRuntime", &varn::wasm::WasmHost::resetRuntime);
 }
 #endif

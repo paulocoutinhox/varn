@@ -108,6 +108,7 @@ struct AppState
     std::string sessionCookie = "varn_session";
     long long sessionTtlMs = 86400000;
     std::size_t maxSessions = 100000;
+    long long sessionsSweptMs = 0;
     std::string csrfSecret;
     std::string csrfCookie = "csrf_token";
     bool tls = false;
@@ -421,6 +422,15 @@ std::string HttpApp::randomSessionId()
 
 void HttpApp::sweepSessions(AppState& app, lua_State* L, long long now)
 {
+    // each lookup already rejects an expired entry, so the full scan only needs to run periodically to reclaim abandoned sessions
+    constexpr long long kSweepIntervalMs = 60000;
+    if (now - app.sessionsSweptMs < kSweepIntervalMs)
+    {
+        return;
+    }
+
+    app.sessionsSweptMs = now;
+
     for (auto it = app.sessions.begin(); it != app.sessions.end();)
     {
         if (now - it->second.lastAccessMs > app.sessionTtlMs)
@@ -784,6 +794,14 @@ int HttpApp::luaContextSession(lua_State* L)
     lua_pop(L, 3);
 
     auto entry = app->sessions.find(id);
+    if (!id.empty() && entry != app->sessions.end() && now - entry->second.lastAccessMs > app->sessionTtlMs)
+    {
+        // drop a session that outlived its ttl between periodic sweeps
+        luaL_unref(L, LUA_REGISTRYINDEX, entry->second.dataRef);
+        app->sessions.erase(entry);
+        entry = app->sessions.end();
+    }
+
     if (id.empty() || entry == app->sessions.end())
     {
         // start a new session and hand its id to the client
@@ -1110,22 +1128,54 @@ int HttpApp::luaContextAccepts(lua_State* L)
     const int argc = lua_gettop(L);
     const std::string accept = HttpText::toLower(requestHeaderCI(L, "Accept"));
 
-    // an explicit listing of an offered type always wins over a wildcard fallback
+    // split the header into media ranges with their parameters and surrounding spaces stripped
+    std::vector<std::string> ranges;
+    std::size_t pos = 0;
+    while (pos <= accept.size())
+    {
+        const std::size_t comma = accept.find(',', pos);
+        std::string token = accept.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+
+        const std::size_t semi = token.find(';');
+        if (semi != std::string::npos)
+        {
+            token.erase(semi);
+        }
+
+        const std::size_t start = token.find_first_not_of(" \t");
+        if (start != std::string::npos)
+        {
+            ranges.push_back(token.substr(start, token.find_last_not_of(" \t") - start + 1));
+        }
+
+        if (comma == std::string::npos)
+        {
+            break;
+        }
+
+        pos = comma + 1;
+    }
+
+    // an exact range for an offered type wins over the wildcard fallback, matching the full type or a bare subtype
     for (int i = 2; i <= argc; ++i)
     {
-        std::string offered = HttpText::toLower(LuaHelpers::checkString(L, i));
-
-        // a bare token like "json" or "html" matches the media subtype while a full type matches exactly
+        const std::string offered = HttpText::toLower(LuaHelpers::checkString(L, i));
         const bool full = offered.find('/') != std::string::npos;
-        if (full ? accept.find(offered) != std::string::npos : accept.find("/" + offered) != std::string::npos)
+        for (const std::string& range : ranges)
         {
-            lua_pushvalue(L, i);
-            return 1;
+            const std::size_t slash = range.find('/');
+            const std::string subtype = slash == std::string::npos ? range : range.substr(slash + 1);
+            if (full ? range == offered : (subtype == offered && subtype != "*"))
+            {
+                lua_pushvalue(L, i);
+                return 1;
+            }
         }
     }
 
     // a missing or wildcard Accept header takes anything, so the first offered type is returned
-    if ((accept.empty() || accept.find("*/*") != std::string::npos) && argc >= 2)
+    const bool wildcard = accept.empty() || std::find(ranges.begin(), ranges.end(), "*/*") != ranges.end();
+    if (wildcard && argc >= 2)
     {
         lua_pushvalue(L, 2);
         return 1;

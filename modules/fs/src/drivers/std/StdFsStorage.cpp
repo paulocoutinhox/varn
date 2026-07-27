@@ -33,7 +33,16 @@ std::string fromPath(const std::filesystem::path& path)
 
 std::string FsStorage::readAll(const std::string& path)
 {
-    std::ifstream file(toPath(path), std::ios::binary);
+    const std::filesystem::path p = toPath(path);
+
+    // refuse endless streams like devices or fifos so a read into memory always terminates
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(std::filesystem::status(p, ec)) || ec)
+    {
+        throw std::runtime_error("[FsStorage] The path is not a readable regular file.");
+    }
+
+    std::ifstream file(p, std::ios::binary);
     if (!file)
     {
         throw std::runtime_error("[FsStorage] The file could not be opened for reading.");

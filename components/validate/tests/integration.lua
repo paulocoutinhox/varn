@@ -30,9 +30,11 @@ local ok, errors = validate.check(schema, {
 assert(ok == true, "valid payload passes")
 assert(errors == nil, "no errors on success")
 
--- a default fills in a missing optional field so role being absent is fine
-ok = validate.check(schema, { name = "bob", age = 20, active = false, score = 1 })
+-- a default fills in a missing optional field so role being absent is fine and the value is substituted into the data
+local withDefault = { name = "bob", age = 20, active = false, score = 1 }
+ok = validate.check(schema, withDefault)
 assert(ok == true, "default supplies missing field")
+assert(withDefault.role == "user", "default value is written into the data")
 
 -- missing required fields are reported by path
 ok, errors = validate.check(schema, {})

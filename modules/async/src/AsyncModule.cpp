@@ -320,9 +320,10 @@ int AsyncModule::startEntry(lua_State* L, bool stopLoopOnSuccess)
     const int status = lua_resume(thread, L, 0, &nres);
     if (status != LUA_OK && status != LUA_YIELD)
     {
-        const char* message = lua_tostring(thread, -1);
+        const char* raw = lua_tostring(thread, -1);
+        const std::string message = raw ? raw : "[AsyncModule] The task could not be started.";
         luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
-        return luaL_error(L, "%s", message ? message : "[AsyncModule] The task could not be started.");
+        return luaL_error(L, "%s", message.c_str());
     }
 
     // releases the thread ref held during startup
@@ -400,9 +401,10 @@ int AsyncModule::luaPromise(lua_State* L)
     const int status = lua_resume(thread, L, 0, &nres);
     if (status != LUA_OK && status != LUA_YIELD)
     {
-        const char* message = lua_tostring(thread, -1);
+        const char* raw = lua_tostring(thread, -1);
+        const std::string message = raw ? raw : "async.promise: the task could not be started.";
         luaL_unref(L, LUA_REGISTRYINDEX, threadRef);
-        return luaL_error(L, "%s", message ? message : "async.promise: the task could not be started.");
+        return luaL_error(L, "%s", message.c_str());
     }
 
     // releases the thread ref held during startup

@@ -20,6 +20,12 @@ void HttpUrlForm::pushFormUrlEncoded(lua_State* L, const std::string& body)
     std::size_t pos = 0;
     while (pos <= body.size())
     {
+        // count every scanned pair so a body full of empty separators still stops at the cap
+        if (++fields > maxFields)
+        {
+            break;
+        }
+
         const std::size_t amp = body.find('&', pos);
         const std::string pair = body.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
 
@@ -32,10 +38,6 @@ void HttpUrlForm::pushFormUrlEncoded(lua_State* L, const std::string& body)
             lua_pushlstring(L, key.data(), key.size());
             lua_pushlstring(L, value.data(), value.size());
             lua_settable(L, -3);
-            if (++fields >= maxFields)
-            {
-                break;
-            }
         }
 
         if (amp == std::string::npos)

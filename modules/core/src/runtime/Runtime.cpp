@@ -66,8 +66,18 @@ int Runtime::finishAfterUserChunk(int loadRunExitCode)
         return 0;
     }
 
+    // clang-format off
     loop.setIdleExitPredicate([this]
-                              { return servers.empty() && backgroundDrivers.load(std::memory_order_acquire) == 0 && workLedger->depth() == 0; });
+    {
+        bool noServers;
+        {
+            std::lock_guard<std::mutex> lock(serversMutex);
+            noServers = servers.empty();
+        }
+
+        return noServers && backgroundDrivers.load(std::memory_order_acquire) == 0 && workLedger->depth() == 0;
+    });
+    // clang-format on
     loop.run();
     loop.setIdleExitPredicate({});
     return unhandledError ? 1 : 0;
@@ -118,7 +128,11 @@ lua_State* Runtime::luaState()
 
 void Runtime::addServer(std::shared_ptr<varn::http::HttpServer> server)
 {
-    servers.push_back(std::move(server));
+    {
+        std::lock_guard<std::mutex> lock(serversMutex);
+        servers.push_back(std::move(server));
+    }
+
     loop.wake();
 }
 
@@ -141,7 +155,14 @@ void Runtime::stop()
         return;
     }
 
-    for (auto& server : servers)
+    // snapshot and clear under the lock so a concurrent addServer on the loop thread never races the teardown
+    std::vector<std::shared_ptr<varn::http::HttpServer>> pending;
+    {
+        std::lock_guard<std::mutex> lock(serversMutex);
+        pending.swap(servers);
+    }
+
+    for (auto& server : pending)
     {
         if (server)
         {
