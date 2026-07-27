@@ -1,6 +1,6 @@
-# backend services for the standalone database and server integration tests.
-# start with: docker compose -f tests/docker-compose.yml up -d
-# run the tests via: python3 varn.py test-db
+# backend services for the standalone database and server integration tests
+# bring the services up with docker compose -f tests/docker-compose.yml up -d
+# run the tests with python3 varn.py test-db
 name: varn-test-backends
 
 services:

@@ -1,6 +1,6 @@
-// node server for the comparison benchmark: raw http, no framework. /plaintext and /json are
-// baselines; /db reads a random row through a mysql2 pool and /cache hits redis through ioredis,
-// both async. scale across cores with WORKERS=N (the built-in cluster module).
+// node server for the comparison benchmark using raw http with no framework
+// /plaintext and /json are baselines while /db reads a random row through a mysql2 pool and /cache hits redis through ioredis
+// scale across cores with WORKERS=N through the built-in cluster module
 const http = require("http");
 const cluster = require("cluster");
 const mysql = require("mysql2/promise");

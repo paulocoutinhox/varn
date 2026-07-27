@@ -1,4 +1,4 @@
--- websocket control frames and framing rules: ping auto-pongs, a fragmented message reassembles, close is echoed, and an unmasked or reserved-bit frame drops the connection
+-- websocket control frames where ping auto-pongs, a fragmented message reassembles, close is echoed, and an unmasked or reserved-bit frame drops the connection
 local async = require("async")
 local http = require("http")
 local socket = require("socket")

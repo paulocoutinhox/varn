@@ -118,7 +118,7 @@ async.run(function()
     assert(emptyAnyValue == nil, "any of an empty list should not resolve")
     assert(type(emptyAnyErr) == "string", "any of an empty list should reject")
 
-    -- stress: a large list through mapLimit preserves order and never exceeds the limit under load
+    -- a large list through mapLimit preserves order and never exceeds the limit under load
     local big = {}
     for i = 1, 200 do
         big[i] = i

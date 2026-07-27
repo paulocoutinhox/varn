@@ -6,9 +6,8 @@ from . import helper
 
 
 def run(args: Namespace) -> None:
-    # mysql + redis behind varn, node and python, all on one docker network. the bench service builds
-    # varn for linux and drives /plaintext, /json, /db (mysql) and /cache (redis) with wrk, printing
-    # the comparison table at the end so the result is reproducible with one command.
+    # mysql + redis behind varn, node and python, all on one docker network.
+    # the bench service builds varn for linux and drives /plaintext, /json, /db (mysql) and /cache (redis) with wrk, printing the comparison table at the end so the result is reproducible with one command.
     bench_dir = helper.PROJECT_DIR / "bench"
     env = helper.environ_with(
         CONNECTIONS=str(args.connections),

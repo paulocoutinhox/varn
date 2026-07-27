@@ -1,5 +1,7 @@
 #include "varn/process/ProcessRunner.h"
 
+#include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <mutex>
 #include <optional>
@@ -45,12 +47,15 @@ std::string toUtf8(const wchar_t* wide, int wideLen)
     return utf8;
 }
 
-std::string drainPipe(HANDLE pipe)
+// bound the captured output so a child that streams without end cannot exhaust host memory
+constexpr std::size_t kMaxCaptureBytes = 64 * 1024 * 1024;
+
+// reads until the write ends are closed, stopping once the combined capture reaches the cap
+std::string drainPipe(HANDLE pipe, std::atomic<std::size_t>& captured)
 {
     std::string out;
     std::vector<char> chunk(65536);
 
-    // reads until the write ends are closed and the buffer is empty
     while (true)
     {
         DWORD got = 0;
@@ -60,7 +65,14 @@ std::string drainPipe(HANDLE pipe)
             break;
         }
 
-        out.append(chunk.data(), static_cast<std::size_t>(got));
+        const std::size_t before = captured.fetch_add(static_cast<std::size_t>(got));
+        const std::size_t room = before < kMaxCaptureBytes ? kMaxCaptureBytes - before : 0;
+        out.append(chunk.data(), std::min(room, static_cast<std::size_t>(got)));
+
+        if (static_cast<std::size_t>(got) >= room)
+        {
+            break;
+        }
     }
 
     return out;
@@ -142,18 +154,36 @@ ProcessResult ProcessRunner::exec(const std::string& command)
 
     // drain stderr on a helper thread so a child that fills one pipe buffer while writing the other never deadlocks the parent
     std::string errData;
+    std::atomic<std::size_t> captured{0};
     // clang-format off
-    std::thread errReader([&errData, errRead]
+    std::thread errReader([&errData, errRead, &captured]
     {
-        errData = drainPipe(errRead);
+        // an escaping exception in a thread body would terminate the process, so a failed capture yields no stderr instead
+        try { errData = drainPipe(errRead, captured); }
+        catch (...) {}
     });
     // clang-format on
-    result.stdoutData = drainPipe(outRead);
+
+    // guard the main drain too so the reader thread is always joined even if the capture throws
+    try
+    {
+        result.stdoutData = drainPipe(outRead, captured);
+    }
+    catch (...)
+    {
+    }
+
     errReader.join();
     result.stderrData = std::move(errData);
 
     closeHandle(outRead);
     closeHandle(errRead);
+
+    // a child that overran the output cap is terminated so it cannot linger blocked on a full pipe
+    if (captured.load() >= kMaxCaptureBytes)
+    {
+        TerminateProcess(process.hProcess, 1);
+    }
 
     WaitForSingleObject(process.hProcess, INFINITE);
 

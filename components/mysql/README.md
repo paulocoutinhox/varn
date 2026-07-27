@@ -34,7 +34,7 @@ Every packet read and write runs on the event loop, so the whole lifecycle must 
 | `client:query(sql)` | Run a `COM_QUERY` and return an array of row tables keyed by column name; all values come back as strings with no type decoding, and there is no parameter binding or prepared statements, so build and escape the SQL and convert numerics at the call site. |
 | `client:close()` | Send `COM_QUIT` and close the socket. |
 
-Exercising this component needs a live MySQL server, so it ships no `examples/` or `tests/` directory.
+Exercising this component needs a live MySQL server, so it ships no `examples/` directory; its `tests/integration.lua` runs against the docker backend through `python3 varn.py test-db`.
 
 ## Note
 

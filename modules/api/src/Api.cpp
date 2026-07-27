@@ -22,6 +22,30 @@ extern "C"
         }
     }
 
+    int varn_runtime_register(varn_runtime* runtime, const char* name, varn_host_function fn, void* userdata)
+    {
+        if (!runtime || !name || !fn)
+        {
+            return 2;
+        }
+
+        try
+        {
+            // clang-format off
+            reinterpret_cast<varn::runtime::Runtime*>(runtime)->registerHostFunction(name, [fn, userdata](const std::string& argument) -> std::string
+            {
+                const char* result = fn(argument.c_str(), userdata);
+                return result != nullptr ? std::string(result) : std::string("null");
+            });
+            // clang-format on
+            return 0;
+        }
+        catch (...)
+        {
+            return 1;
+        }
+    }
+
     int varn_runtime_run_file(varn_runtime* runtime, const char* path)
     {
         if (!runtime || !path)

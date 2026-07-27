@@ -1,4 +1,4 @@
-# builds upstream libffi as a static CMake target (no autoconf, no externalproject).
+# builds upstream libffi as a static CMake target (no autoconf, no externalproject)
 
 if(NOT DEFINED VARN_LIBFFI_ROOT OR VARN_LIBFFI_ROOT STREQUAL "")
     message(FATAL_ERROR "varn libffi: VARN_LIBFFI_ROOT is not set")
@@ -34,7 +34,7 @@ macro(varn_libffi_add_assembly _varn_asm_file)
 
         get_filename_component(_varn_asm_base "${_varn_asm_abs}" NAME_WE)
 
-        # preprocessor include layout: cwd holds fficonfig.h, ./include holds ffi.h, upstream include resolves the .S
+        # the preprocessor include layout has cwd holding fficonfig.h, ./include holding ffi.h, and upstream include resolving the .S
         execute_process(
             COMMAND "${CMAKE_C_COMPILER}" /nologo /EP
                 /I.
@@ -83,7 +83,7 @@ if(ANDROID)
         message(FATAL_ERROR "varn libffi: unsupported CMAKE_ANDROID_ARCH_ABI='${CMAKE_ANDROID_ARCH_ABI}'")
     endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    # host CMAKE_SYSTEM_PROCESSOR can be arm64 while CMAKE_OSX_ARCHITECTURES is x86_64 (cross slice / rosetta build).
+    # host CMAKE_SYSTEM_PROCESSOR can be arm64 while CMAKE_OSX_ARCHITECTURES is x86_64 (cross slice / rosetta build)
     if(CMAKE_OSX_ARCHITECTURES)
         list(LENGTH CMAKE_OSX_ARCHITECTURES _varn_ffi_darwin_arch_len)
         if(_varn_ffi_darwin_arch_len GREATER 1)
@@ -127,7 +127,7 @@ if(WIN32)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     set(_varn_ffi_target "X86_DARWIN")
 elseif(_varn_ffi_cpu_lc MATCHES "^(arm64|aarch64|arm64_32)$")
-    # arm64_32 (apple watchos) uses the aarch64 port in ilp32 mode.
+    # arm64_32 (apple watchos) uses the aarch64 port in ilp32 mode
     set(_varn_ffi_target "ARM64")
 elseif(_varn_ffi_cpu_lc MATCHES "^arm")
     set(_varn_ffi_target "ARM")
@@ -199,7 +199,7 @@ if(NOT WIN32)
     endif()
 endif()
 
-# unix64.S / sysv.S: without this, PCREL() expands to GNU "sym@rel" which Apple Clang rejects ("invalid variant 'rel'").
+# without this, unix64.S and sysv.S expand PCREL() to GNU "sym@rel" which Apple Clang rejects ("invalid variant 'rel'")
 set(VARN_FFI_HAVE_AS_X86_PCREL_CPP "")
 if(NOT WIN32)
     if(_varn_ffi_target MATCHES "^(X86|X86_64|X86_DARWIN)$")

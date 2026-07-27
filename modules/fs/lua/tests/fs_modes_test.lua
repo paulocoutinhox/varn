@@ -41,7 +41,7 @@ async.run(function()
     fs.removeRecursive(dir .. "/tree"):await()
     assert(not fs.exists(dir .. "/tree"), "removeRecursive should delete the whole tree")
 
-    -- reject paths: readdir on a missing directory, copy and rename of a missing source
+    -- readdir on a missing directory and copy or rename of a missing source are all rejected
     local _, rdErr = fs.readdir(dir .. "/nope"):await()
     assert(rdErr, "readdir on a missing directory should reject")
     local _, cpErr = fs.copy(dir .. "/nope.txt", dir .. "/dst.txt"):await()

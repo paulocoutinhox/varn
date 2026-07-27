@@ -74,13 +74,17 @@ Pure-Lua components built on top of the modules. Drop one in and `require` it.
 | Component | What you get |
 |----------------|--------------|
 | 🗄️ `vdo` | PDO-style database access with drivers for SQLite, MySQL, and PostgreSQL |
+| 🐬 `mysql` | Async MySQL client speaking the native protocol |
 | 🔴 `redis` | Redis client with full command coverage and pipelining |
+| 🏊 `pool` | Generic async connection pool with acquire, release, and `with` |
+| ⏰ `scheduler` | Durable job queue with cron-like scheduling backed by a database |
+| 🤖 `ai` | One client for OpenAI, Anthropic, Gemini, and ElevenLabs (chat, embeddings, audio, images) |
 | 🔧 `env` | Load `.env` files and read typed environment variables |
 | ✅ `validate` | Validate tables against a schema with clear error messages |
 | 🧪 `test` | A tiny test runner with `describe`/`it` and expectations |
 | 🔁 `retry` | Retry with backoff and simple interval scheduling |
 
-Every component ships with runnable examples under `components/<component>/examples/`. Full component reference: [docs/components.md](docs/components.md).
+Most components ship with runnable examples under `components/<component>/examples/`; the ones that need a live backend (such as `mysql`) ship tests instead. Full component reference: [docs/components.md](docs/components.md).
 
 ## 🌍 Runs everywhere
 

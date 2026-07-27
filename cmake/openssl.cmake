@@ -1,8 +1,8 @@
-# openssl built from source via jimmy-park/openssl-cmake.
-# resolves the configure target and toolchain options per platform and per slice.
-# tvos and watchos have no upstream openssl configure targets, so they are emitted inline here.
+# openssl built from source via jimmy-park/openssl-cmake
+# resolves the configure target and toolchain options per platform and per slice
+# tvos and watchos have no upstream openssl configure targets, so they are emitted inline here
 
-# pick the active architecture from the apple slice request, otherwise fall back to the host.
+# pick the active architecture from the apple slice request, otherwise the host processor
 if(CMAKE_OSX_ARCHITECTURES)
     list(GET CMAKE_OSX_ARCHITECTURES 0 _ossl_arch)
 else()
@@ -100,7 +100,7 @@ elseif(WIN32)
     endif()
 endif()
 
-# tvos and watchos lack upstream openssl configure targets, so emit them inline.
+# tvos and watchos lack upstream openssl configure targets, so emit them inline
 if(_ossl_embedded)
     set(_ossl_conf "${CMAKE_CURRENT_BINARY_DIR}/openssl-apple-embedded.conf")
 
@@ -163,8 +163,8 @@ my %targets = (
 );
 ]=])
 
-    # write only when the content actually changes so the file mtime stays stable across reconfigures.
-    # openssl tracks the --config file as a dependency and would otherwise rebuild mid-make.
+    # write only when the content changes so the file mtime stays stable across reconfigures
+    # openssl tracks the --config file as a dependency and would otherwise rebuild mid-make
     set(_ossl_conf_current "")
     if(EXISTS "${_ossl_conf}")
         file(READ "${_ossl_conf}" _ossl_conf_current)
@@ -177,9 +177,9 @@ my %targets = (
     list(APPEND _ossl_options "--config=${_ossl_conf}")
 endif()
 
-# openssl-cmake compiles with a plain cc and drops the sdk sysroot from the target triple.
-# without an explicit -isysroot the compiler falls back to the macos sdk while targeting another apple platform.
-# on the x86_64 simulator that produces wrong-arch object files and later trips an ld arch-mismatch warning.
+# openssl-cmake compiles with a plain cc and drops the sdk sysroot from the target triple
+# without an explicit -isysroot the compiler picks the macos sdk while targeting another apple platform
+# on the x86_64 simulator that produces wrong-arch objects and later trips an ld arch-mismatch warning
 if(CMAKE_OSX_SYSROOT)
     if(IS_DIRECTORY "${CMAKE_OSX_SYSROOT}")
         set(_ossl_sysroot "${CMAKE_OSX_SYSROOT}")
@@ -197,7 +197,7 @@ if(CMAKE_OSX_SYSROOT)
     endif()
 endif()
 
-# varn never ships the openssl cli, and tvos/watchos/visionos sdks block fork/exec which the openssl apps need.
+# varn never ships the openssl cli, and tvos/watchos/visionos sdks block the fork/exec its apps need
 list(PREPEND _ossl_options no-apps)
 
 set(OPENSSL_CONFIGURE_OPTIONS ${_ossl_options} CACHE INTERNAL "" FORCE)

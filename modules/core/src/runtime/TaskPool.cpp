@@ -47,19 +47,28 @@ void TaskPool::post(Job job)
 
         ledger->enter();
         // clang-format off
-        jobs.push([ledger = ledger, j = std::move(job)]() mutable
+        try
         {
-            // release the ledger entry even if the job throws so the pool keeps draining
-            try
+            jobs.push([ledger = ledger, j = std::move(job)]() mutable
             {
-                j();
-            }
-            catch (...)
-            {
-            }
+                // release the ledger entry even if the job throws so the pool keeps draining
+                try
+                {
+                    j();
+                }
+                catch (...)
+                {
+                }
 
+                ledger->leave();
+            });
+        }
+        catch (...)
+        {
+            // the job never entered the queue, so release the entry it will never run to balance
             ledger->leave();
-        });
+            throw;
+        }
         // clang-format on
     }
 #if !defined(__EMSCRIPTEN__)

@@ -1,4 +1,4 @@
-# crypto: digests, hmac, and random bytes from a primitives driver.
+# crypto provides digests, hmac, and random bytes from a primitives driver
 
 if(NOT DEFINED CACHE{VARN_CRYPTO_DRIVER})
     if(VARN_ENABLE_TLS)

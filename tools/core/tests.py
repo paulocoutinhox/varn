@@ -38,12 +38,12 @@ _DB_TESTS = (
     "components/vdo/tests/integration.lua",
     "components/scheduler/tests/scheduler_test.lua",
 )
-# the ai adapters are fully covered by the deterministic mock tests in the cross-platform suite, so this real-api
-# smoke test is opt-in via --ai-live and each provider is skipped unless its *_API_KEY is in the environment.
+# the ai adapters are fully covered by the deterministic mock tests in the cross-platform suite.
+# this real-api smoke test is opt-in via --ai-live and each provider is skipped unless its *_API_KEY is in the environment.
 _DB_AI_LIVE_TEST = "components/ai/tests/live_test.lua"
 
-# common windows exception codes a crashing process reports as its exit status, so a failure caused by
-# a crash is told apart from a normal non-zero exit or an assertion.
+# common windows exception codes a crashing process reports as its exit status.
+# a failure caused by a crash is told apart from a normal non-zero exit or an assertion.
 _WINDOWS_EXIT_CODES = {
     0xC0000005: "access violation",
     0xC00000FD: "stack overflow",
@@ -54,7 +54,7 @@ _WINDOWS_EXIT_CODES = {
 
 
 def _describe_exit(code: int) -> str:
-    # subprocess reports a posix signal as a negative code and a windows exception as a large unsigned one.
+    # subprocess reports a posix signal as a negative code and a windows exception as a large unsigned one
     if code < 0:
         return f"exit {code} (killed by signal {-code})"
 
@@ -98,8 +98,8 @@ def run(args: Namespace) -> None:
         print("no lua tests found under modules/*/lua/tests")
         raise SystemExit(1)
 
-    # component tests with no external dependency run alongside the module tests; ones needing a database
-    # or server (scheduler and vdo over sqlite/ffi, redis, mysql) are run separately where that backend exists
+    # component tests with no external dependency run alongside the module tests.
+    # ones needing a database or server (scheduler and vdo over sqlite/ffi, redis, mysql) are run separately where that backend exists.
     for relative in (
         "components/ai/tests/mock_test.lua",
         "components/ai/tests/adapters_test.lua",
@@ -115,7 +115,7 @@ def run(args: Namespace) -> None:
         if candidate.exists():
             tests.append(candidate)
 
-    # each test receives a fresh scratch directory through VARN_TEST_DIR, created and cleaned here.
+    # each test receives a fresh scratch directory through VARN_TEST_DIR, created and cleaned here
     scratch = helper.PROJECT_DIR / build_dir / "test-scratch"
 
     passed = 0
@@ -145,7 +145,7 @@ def run(args: Namespace) -> None:
         output = (result.stdout + result.stderr).strip().splitlines()
         if not output:
             print("      (no output — the process produced nothing before exiting, typical of a crash)")
-        # keep enough tail to hold a crash summary plus its backtrace.
+        # keep enough tail to hold a crash summary plus its backtrace
         for line in output[-40:]:
             print(f"      {line}")
         failed.append(relative)
@@ -159,7 +159,7 @@ def run(args: Namespace) -> None:
 
 
 def _client_library_path() -> dict[str, str]:
-    # the vdo mysql/pgsql drivers dlopen libmysqlclient/libpq, so point the loader at the client libraries and their openssl dependency.
+    # the vdo mysql/pgsql drivers dlopen libmysqlclient/libpq, so point the loader at the client libraries and their openssl dependency
     if platform.system() == "Darwin":
         dirs = [d for d in (
             "/opt/homebrew/opt/mysql-client/lib",

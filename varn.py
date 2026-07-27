@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from tools.core import android, apple, bench, cxx, general, site, tests, wasm
+from tools.core import android, apple, bench, cxx, general, lib, site, tests, wasm
 
 
 def _common(
@@ -27,6 +27,16 @@ def _opt_build(parser: argparse.ArgumentParser) -> None:
         default=[],
         metavar="VAR=VALUE",
         help="extra -D cache entry forwarded to cmake (repeatable)",
+    )
+
+
+def _opt_lib(parser: argparse.ArgumentParser) -> None:
+    _common(parser, "build/lib")
+    parser.add_argument("--prefix", help="CMAKE_INSTALL_PREFIX for a later --install")
+    parser.add_argument(
+        "--install",
+        action="store_true",
+        help="install the varn component into the prefix after building",
     )
 
 
@@ -104,7 +114,7 @@ def _opt_site(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dry-run", action="store_true", help="build and commit locally without pushing")
 
 
-# task -> (handler, options configurator, one-line help shown in --help).
+# task -> (handler, options configurator, one-line help shown in --help)
 _TASKS = {
     "build": (
         cxx.build,
@@ -132,6 +142,11 @@ _TASKS = {
         "Run the Varn vs Node vs Python benchmark (plaintext, json, MySQL, Redis) in Docker.",
     ),
     "apple": (apple.build, _common, "Build Varn.xcframework for all Apple slices."),
+    "lib": (
+        lib.build,
+        _opt_lib,
+        "Build the embeddable varn shared library (find_package(varn) package); add --install to place the varn component into --prefix.",
+    ),
     "android": (
         android.build,
         _opt_android,

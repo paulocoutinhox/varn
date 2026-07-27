@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <csignal>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/wait.h>
@@ -23,8 +24,12 @@ namespace varn::process
 
 namespace
 {
+// bound the captured output so a child that streams without end cannot exhaust host memory
+constexpr std::size_t kMaxCaptureBytes = 64 * 1024 * 1024;
+
 // drain stdout and stderr together so a child that fills one pipe buffer while writing the other never deadlocks the parent
-void drainPipes(int outFd, int errFd, std::string& outData, std::string& errData)
+// returns true when the combined capture reached the cap so the caller can terminate a runaway child
+bool drainPipes(int outFd, int errFd, std::string& outData, std::string& errData)
 {
     std::array<char, 65536> chunk{};
 
@@ -60,7 +65,16 @@ void drainPipes(int outFd, int errFd, std::string& outData, std::string& errData
             const ssize_t got = ::read(fds[i].fd, chunk.data(), chunk.size());
             if (got > 0)
             {
-                (i == 0 ? outData : errData).append(chunk.data(), static_cast<std::size_t>(got));
+                std::string& sink = (i == 0 ? outData : errData);
+                const std::size_t captured = outData.size() + errData.size();
+                const std::size_t room = captured < kMaxCaptureBytes ? kMaxCaptureBytes - captured : 0;
+                sink.append(chunk.data(), std::min(room, static_cast<std::size_t>(got)));
+
+                if (static_cast<std::size_t>(got) >= room)
+                {
+                    return true;
+                }
+
                 continue;
             }
 
@@ -74,6 +88,8 @@ void drainPipes(int outFd, int errFd, std::string& outData, std::string& errData
         }
     }
     // clang-format on
+
+    return false;
 }
 
 void closeFd(int& fd)
@@ -160,9 +176,15 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     }
 
     ProcessResult result;
-    drainPipes(outPipe[0], errPipe[0], result.stdoutData, result.stderrData);
+    const bool truncated = drainPipes(outPipe[0], errPipe[0], result.stdoutData, result.stderrData);
     closeFd(outPipe[0]);
     closeFd(errPipe[0]);
+
+    // a child that overran the output cap is terminated so it cannot linger blocked on a full pipe
+    if (truncated)
+    {
+        ::kill(pid, SIGKILL);
+    }
 
     int status = 0;
     while (::waitpid(pid, &status, 0) < 0 && errno == EINTR)

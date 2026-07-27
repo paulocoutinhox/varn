@@ -271,6 +271,7 @@ constexpr int kWsPing = 0x9;
 constexpr int kWsPong = 0xA;
 constexpr std::size_t kWsMaxMessageBytes = 16 * 1024 * 1024;
 constexpr std::size_t kWsMaxOutBytes = 16 * 1024 * 1024;
+constexpr std::size_t kStreamMaxOutBytes = 16 * 1024 * 1024;
 
 struct WsFrame
 {
@@ -572,10 +573,16 @@ public:
             return;
         }
 
+        // drop a peer that has stopped draining so a stalled client cannot grow the backlog without bound
+        if ((writeBuffer.size() - writeOffset) + data.size() > kStreamMaxOutBytes)
+        {
+            closeNow();
+            return;
+        }
+
         writeBuffer.append(data);
         streamingActive = !last;
         keepAlive = keepAliveAfter;
-        lastWriteMs = nowMs();
 
         // a writer is already draining the buffer, so the appended bytes ride along without a second queued handler
         if (streamWriteArmed)
@@ -583,6 +590,8 @@ public:
             return;
         }
 
+        // the writer starts draining now, so the staleness clock begins here and only a real flush advances it afterwards
+        lastWriteMs = nowMs();
         streamWriteArmed = true;
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool

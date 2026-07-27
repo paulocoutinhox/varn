@@ -69,8 +69,20 @@ bool StaticFileHandler::tryServe(const HttpRequest& request, HttpResponse& respo
 
     if (std::filesystem::is_directory(candidate, ec))
     {
-        std::filesystem::path index = candidate / "index.html";
-        if (std::filesystem::is_regular_file(index, ec))
+        // resolve the index through the same canonicalization so a symlinked index.html cannot escape the tree
+        std::filesystem::path index = std::filesystem::weakly_canonical(candidate / "index.html", ec);
+        const std::filesystem::path indexRelative = ec ? std::filesystem::path() : index.lexically_relative(root);
+        bool indexInside = !indexRelative.empty() && *indexRelative.begin() != "..";
+        for (const auto& component : indexRelative)
+        {
+            if (StaticContent::isHiddenComponent(component.string()))
+            {
+                indexInside = false;
+                break;
+            }
+        }
+
+        if (!ec && indexInside && std::filesystem::is_regular_file(index, ec))
         {
             candidate = index;
         }

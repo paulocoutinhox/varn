@@ -1,4 +1,4 @@
--- jwt verification security: a valid token passes while a wrong secret, a forged alg=none token, a tampered payload, an expired token, and a not-yet-valid token are all rejected
+-- jwt verification passes a valid token while a wrong secret, a forged alg=none token, a tampered payload, an expired token and a not-yet-valid token are all rejected
 local http = require("http")
 local crypto = require("crypto")
 local json = require("json")

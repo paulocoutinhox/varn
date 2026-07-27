@@ -1,6 +1,6 @@
 package com.varn
 
-// thin kotlin wrapper over the native varn runtime. close() releases the native handle.
+// thin kotlin wrapper over the native varn runtime whose close() releases the native handle
 class VarnRuntime : AutoCloseable {
     private var handle: Long = nativeNew()
 

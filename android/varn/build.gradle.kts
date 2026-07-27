@@ -12,7 +12,7 @@ android {
         minSdk = (project.findProperty("varnMinSdk") as String?)?.toInt() ?: 24
 
         // build the native library for every supported abi (override with -PvarnAbis=arm64-v8a,...).
-        // x86 (32-bit) is dropped: it is obsolete on android and libffi's i686 asm breaks under ndk clang.
+        // x86 (32-bit) is dropped since it is obsolete on android and libffi's i686 asm breaks under ndk clang
         val abis = (project.findProperty("varnAbis") as String?)
             ?.split(",")
             ?.map { it.trim() }

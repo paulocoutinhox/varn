@@ -5,12 +5,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-# repository root: tools/core/helper.py -> tools/core -> tools -> root.
+# repository root three levels up from tools/core/helper.py
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 
 
 def jobs() -> int:
-    # leave a couple of cores free so heavy native builds do not freeze the machine.
+    # leave a couple of cores free so heavy native builds do not freeze the machine
     return max(1, (os.cpu_count() or 4) - 2)
 
 

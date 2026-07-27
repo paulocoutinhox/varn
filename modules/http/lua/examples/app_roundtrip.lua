@@ -5,13 +5,6 @@ local http = require("http")
 local port = 8091
 local base = "http://127.0.0.1:" .. port
 
--- the client wire is "VARN/1 <status> <length>\n" followed by the raw body
-local function parseWire(wire)
-    local nl = assert(wire:find("\n", 1, true), "missing header terminator")
-    local status, len = wire:sub(1, nl - 1):match("^VARN/1 (%d+) (%d+)$")
-    return tonumber(status), wire:sub(nl + 1, nl + tonumber(len))
-end
-
 local app = http.createApp()
 
 -- a path parameter constrained to digits feeds a json response
@@ -27,23 +20,21 @@ end)
 app:listen({ host = "127.0.0.1", port = port })
 
 async.run(function()
-    local userStatus, userBody = parseWire(http.client.requestRaw({
+    local user = http.client.requestRaw({
         url = base .. "/users/7",
         method = "GET",
         headers = {},
         timeoutSeconds = 10,
-    }):await())
-    print("GET /users/7 -> " .. userStatus .. " " .. userBody)
+    }):await()
+    print("GET /users/7 -> " .. user.status .. " " .. user.body)
 
-    -- the client needs an explicit Content-Length so the server reads the posted body
     local payload = '{"name":"varn"}'
-    local echoStatus, echoBody = parseWire(http.client.requestRaw({
+    local echo = http.client.requestRaw({
         url = base .. "/echo",
         method = "POST",
-        headers = { ["Content-Type"] = "application/json", ["Content-Length"] = tostring(#payload) },
+        headers = { ["Content-Type"] = "application/json" },
         body = payload,
         timeoutSeconds = 10,
-    }):await())
-    print("POST /echo -> " .. echoStatus .. " " .. echoBody)
-
+    }):await()
+    print("POST /echo -> " .. echo.status .. " " .. echo.body)
 end)

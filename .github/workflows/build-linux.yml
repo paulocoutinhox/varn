@@ -79,7 +79,7 @@ jobs:
           key: cpm-cpptest-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}
           restore-keys: cpm-cpptest-
 
-      # a plain build with no sanitizer: this is the primary, sanitizer-independent C++ gate.
+      # a plain build with no sanitizer and the primary sanitizer-independent C++ gate
       - name: Build and run C++ tests
         run: python3 varn.py test-cpp --build-dir build/test
 
@@ -105,8 +105,7 @@ jobs:
       - name: Build
         run: cmake --build build/asan -j$(nproc)
 
-      # detect_leaks stays off until a leak suppression list is tuned on Linux; this pass catches
-      # use-after-free, out-of-bounds, buffer overflow, and undefined behavior.
+      # detect_leaks stays off until a leak suppression list is tuned on linux, so this pass catches use-after-free, out-of-bounds, buffer overflow and undefined behavior
       - name: Run Lua test suite under sanitizers
         env:
           ASAN_OPTIONS: abort_on_error=1:halt_on_error=1:detect_leaks=0

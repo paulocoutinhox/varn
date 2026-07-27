@@ -147,8 +147,7 @@ end)
 
 - `status` — the numeric HTTP status.
 - `ok` — `true` when `status < 400`.
-- `headers` — a table with lowercased keys. The current wire transport does not surface
-  response headers, so this is presently an empty table kept for forward compatibility.
+- `headers` — a table of the response headers with lowercased keys.
 - `body` — the raw response body string.
 - `json()` — parses `body` as JSON on demand (requires the `json` module).
 
@@ -163,9 +162,14 @@ ergonomic shortcuts:
 
 On failure the promise rejects with a message.
 
-For low-level access, `http.client.requestRaw(options)` resolves to the raw wire string
-`VARN/1 <status> <length>\n` followed by the body; the ergonomic surface is a thin wrapper
-over it.
+For low-level access, `http.client.requestRaw(options)` resolves to a plain
+`{ status, headers, body }` table without the `ok` flag or the `json()` helper; the ergonomic
+surface above is a thin wrapper over it.
+
+To consume a response incrementally, `http.client.stream(options, onChunk)` invokes `onChunk`
+with each body chunk as it arrives (with `options.onResponse` called first with the status) and
+resolves once the response completes, which suits server-sent events and large downloads;
+`http.client.streamRaw` is its lower-level form.
 
 ## URL encoding
 
@@ -512,29 +516,10 @@ app:listen({ port = tonumber(os.getenv("VARN_PORT") or "3000") })
 ```lua
 local async = require("async")
 
-local function parseVarnWire(wire)
-    local nl = wire:find("\n", 1, true)
-    if not nl then
-        error("http.client: missing header line terminator")
-    end
-    local head = wire:sub(1, nl - 1)
-    local statusStr, lenStr = head:match("^VARN/1 (%d+) (%d+)$")
-    if not statusStr then
-        error("http.client: bad header line: " .. head)
-    end
-    local status = tonumber(statusStr)
-    local bodyLen = tonumber(lenStr)
-    local body = wire:sub(nl + 1, nl + bodyLen)
-    if #body ~= bodyLen then
-        error("http.client: body length mismatch")
-    end
-    return status, body
-end
-
 async.spawn(function()
     local http = require("http")
     local url = os.getenv("VARN_HTTP_URL") or "https://httpbin.org/get"
-    local wire, err = http.client.requestRaw({
+    local response, err = http.client.requestRaw({
         url = url,
         method = "GET",
         headers = {},
@@ -543,9 +528,8 @@ async.spawn(function()
     if err then
         error(err)
     end
-    local status, body = parseVarnWire(wire)
-    print("status", status)
-    print("body", body)
+    print("status", response.status)
+    print("body", response.body)
 end)
 ```
 

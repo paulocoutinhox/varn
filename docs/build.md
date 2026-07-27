@@ -21,6 +21,7 @@ Then open <http://localhost:3000>.
 | `python3 varn.py wasm` | the browser build |
 | `python3 varn.py app-wasm` | the browser build bundled into `apps/wasm/dist` |
 | `python3 varn.py serve` | the browser demo dev server |
+| `python3 varn.py lib` | the embeddable `varn` shared library (`find_package(varn)` package) |
 | `python3 varn.py format` | run clang-format over the sources |
 | `python3 varn.py clean` | remove the build directory |
 | `python3 varn.py zip` | create a source archive |

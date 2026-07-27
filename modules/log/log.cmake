@@ -1,4 +1,4 @@
-# log: lua-facing logging bound to the shared core pipeline through a backend driver.
+# log is lua-facing logging bound to the shared core pipeline through a backend driver
 
 if(NOT DEFINED CACHE{VARN_LOG_DRIVER})
     set(VARN_LOG_DRIVER "SPDLOG" CACHE STRING "log backend: SPDLOG STDOUT DUMMY")

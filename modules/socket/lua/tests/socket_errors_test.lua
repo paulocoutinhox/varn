@@ -1,4 +1,4 @@
--- socket error paths that the happy-path suites do not exercise: udp port range and a missing unix socket
+-- socket error paths the happy-path suites skip, namely udp port range and a missing unix socket
 local async = require("async")
 local socket = require("socket")
 

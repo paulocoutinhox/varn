@@ -1,4 +1,4 @@
-# http: server and outbound client, each selecting an independent transport driver.
+# http exposes a server and outbound client, each selecting an independent transport driver
 
 if(NOT DEFINED CACHE{VARN_HTTP_SERVER_DRIVER})
     set(VARN_HTTP_SERVER_DRIVER "POCO" CACHE STRING "http server transport: POCO DUMMY")
@@ -23,7 +23,6 @@ list(APPEND VARN_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/src/HttpClientModule.cpp"
 )
 
-# server transport
 if(VARN_HTTP_SERVER_DRIVER STREQUAL "POCO")
     list(APPEND VARN_SOURCES
         "${CMAKE_CURRENT_LIST_DIR}/src/HttpServerModule.cpp"
@@ -47,7 +46,6 @@ else()
     list(APPEND VARN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/drivers/dummy/HttpServerModuleStub.cpp")
 endif()
 
-# outbound client transport
 if(VARN_HTTP_CLIENT_DRIVER STREQUAL "POCO")
     list(APPEND VARN_SOURCES
         "${CMAKE_CURRENT_LIST_DIR}/src/drivers/poco/PocoHttpClient.cpp"

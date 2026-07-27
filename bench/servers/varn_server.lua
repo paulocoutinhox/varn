@@ -1,7 +1,8 @@
--- varn server for the comparison benchmark. /plaintext and /json are framework-free baselines;
--- /db reads a random row through the async mysql client over a connection pool (each blocking-free
--- query needs its own connection), and /cache hits redis over a single multiplexed connection that
--- auto-pipelines concurrent commands, the ioredis model. scale with VARN_WORKERS=N.
+-- varn server for the comparison benchmark.
+-- /plaintext and /json are framework-free baselines.
+-- /db reads a random row through the async mysql client over a connection pool (each blocking-free query needs its own connection).
+-- /cache hits redis over a single multiplexed connection that auto-pipelines concurrent commands, the ioredis model.
+-- scale with VARN_WORKERS=N.
 package.path = "components/?.lua;components/?/init.lua;" .. package.path
 
 local http = require("http")

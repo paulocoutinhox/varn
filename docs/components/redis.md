@@ -23,6 +23,9 @@ local redis = require("redis")
 | `username` | — | ACL user, sent as `AUTH user password` |
 | `password` | — | password, sent as `AUTH password` when no username is set |
 | `db` | — | database index, sent as `SELECT db` |
+| `tls` | `false` | negotiate TLS before the handshake |
+| `insecure` | `false` | with `tls`, skip certificate verification |
+| `pipeline` | `false` | use a multiplexed connection that shares one socket across concurrent commands and auto-pipelines them |
 
 ```lua
 local async = require("async")

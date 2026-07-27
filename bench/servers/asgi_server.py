@@ -1,6 +1,7 @@
-# python server for the comparison benchmark: a raw ASGI app, no framework. /plaintext and /json are
-# baselines; /db reads a random row through an aiomysql pool and /cache hits redis through
-# redis.asyncio, both async. run with uvicorn (uvloop), scaling with --workers N.
+# python server for the comparison benchmark as a raw ASGI app with no framework.
+# /plaintext and /json are framework-free baselines.
+# /db reads a random row through an aiomysql pool and /cache hits redis through redis.asyncio, both async.
+# run with uvicorn on uvloop, scaling with --workers N.
 import json
 import os
 import random

@@ -9,7 +9,7 @@ from . import helper
 def build(args: Namespace) -> None:
     android_dir = helper.PROJECT_DIR / "android"
 
-    # gradle drives the per-abi native build (externalNativeBuild + abiFilters) and packs the aar.
+    # gradle drives the per-abi native build (externalNativeBuild + abiFilters) and packs the aar
     gradlew = android_dir / ("gradlew.bat" if os.name == "nt" else "gradlew")
     launcher = [str(gradlew)] if gradlew.exists() else ["gradle"]
 

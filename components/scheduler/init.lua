@@ -81,18 +81,28 @@ end
 
 function Scheduler:_query(sql, params)
     local statement = self.db:prepare(sql)
-    statement:execute(params or {})
-    local rows = statement:fetchAll()
+    local ok, result = pcall(function()
+        statement:execute(params or {})
+        return statement:fetchAll()
+    end)
     statement:close()
-    return rows
+    if not ok then
+        error(result, 0)
+    end
+    return result
 end
 
 function Scheduler:_exec(sql, params)
     local statement = self.db:prepare(sql)
-    statement:execute(params or {})
-    local affected = statement:rowCount()
+    local ok, result = pcall(function()
+        statement:execute(params or {})
+        return statement:rowCount()
+    end)
     statement:close()
-    return affected
+    if not ok then
+        error(result, 0)
+    end
+    return result
 end
 
 function Scheduler:handler(name, fn)

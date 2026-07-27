@@ -1,9 +1,8 @@
-# process: run commands and read the environment through a platform driver.
+# process runs commands and reads the environment through a platform driver
 
 if(NOT DEFINED CACHE{VARN_PROCESS_DRIVER})
-    # windows runs through win32 createprocess; posix forks and execs a shell. among apple targets
-    # only macos allows that, so ios and the tv/watch/vision platforms fall back to the dummy along
-    # with emscripten.
+    # windows runs through win32 createprocess, while posix forks and execs a shell.
+    # among apple targets only macos allows that, so ios and the tv/watch/vision platforms fall back to the dummy along with emscripten.
     if(VARN_BUILDING_FOR_EMSCRIPTEN OR CMAKE_SYSTEM_NAME MATCHES "^(iOS|tvOS|watchOS|visionOS)$")
         set(VARN_PROCESS_DRIVER "DUMMY" CACHE STRING "process backend: POSIX WINDOWS DUMMY")
     elseif(WIN32)

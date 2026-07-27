@@ -22,7 +22,7 @@ extern "C"
 
     JNIEXPORT jint JNICALL Java_com_varn_VarnRuntime_nativeRunFile(JNIEnv* env, jclass, jlong handle, jstring path)
     {
-        // GetStringUTFChars requires a non-null jstring, so a null argument is forwarded as null for the C api to reject.
+        // GetStringUTFChars requires a non-null jstring, so a null argument is forwarded as null for the C api to reject
         const char* nativePath = path != nullptr ? env->GetStringUTFChars(path, nullptr) : nullptr;
         const jint code = varn_runtime_run_file(asRuntime(handle), nativePath);
         if (nativePath != nullptr)

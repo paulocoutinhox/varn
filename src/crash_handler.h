@@ -160,7 +160,7 @@ inline LONG WINAPI CrashHandler::crashFilter(EXCEPTION_POINTERS* info)
 inline void CrashHandler::printBacktrace()
 {
 #if defined(VARN_HAS_EXECINFO)
-    // backtrace and backtrace_symbols_fd are async-signal-safe, unlike backtrace_symbols
+    // backtrace_symbols_fd is async-signal-safe and backtrace is pre-warmed in install so its first-use allocation is already done, unlike backtrace_symbols which is never called here
     void* frames[64];
     const int count = backtrace(frames, 64);
     backtrace_symbols_fd(frames, count, STDERR_FILENO);
@@ -255,6 +255,12 @@ inline void CrashHandler::install()
     altStack.ss_size = sizeof(alternateStack);
     altStack.ss_flags = 0;
     sigaltstack(&altStack, nullptr);
+
+#if defined(VARN_HAS_EXECINFO)
+    // warm the unwinder now so the in-handler backtrace does not have to dlopen or allocate during a fatal fault
+    void* warmup[1];
+    (void)backtrace(warmup, 1);
+#endif
 
     struct sigaction action{};
     action.sa_handler = &CrashHandler::crashSignalHandler;

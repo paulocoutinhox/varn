@@ -15,7 +15,7 @@ def _slice_dir(out_root: Path, sl: dict) -> Path:
 
 
 def _framework_binary(framework_dir: Path) -> Path:
-    # macOS frameworks are versioned (Versions/A/Varn), unlike the flat layout elsewhere.
+    # macOS frameworks are versioned (Versions/A/Varn), unlike the flat layout elsewhere
     versioned = framework_dir / "Versions" / "A" / "Varn"
     return versioned if versioned.exists() else framework_dir / "Varn"
 
@@ -32,7 +32,7 @@ def _build_slice(args: Namespace, sl: dict, out_root: Path) -> Path:
         "-DVARN_TARGET=apple",
     ]
 
-    # pin the arch when the platform default is a fat or legacy set (watchos device).
+    # pin the arch when the platform default is a fat or legacy set (watchos device)
     if "archs" in sl:
         command.append(f"-DARCHS={sl['archs']}")
 
@@ -48,7 +48,7 @@ def _fuse_group(group: str, frameworks: list[Path], groups_root: Path) -> Path:
         shutil.rmtree(group_framework.parent)
     group_framework.parent.mkdir(parents=True, exist_ok=True)
 
-    # take the first arch as the base, then lipo every arch binary into it.
+    # take the first arch as the base, then lipo every arch binary into it
     shutil.copytree(frameworks[0], group_framework, symlinks=True)
     if len(frameworks) > 1:
         binaries = [str(_framework_binary(fw)) for fw in frameworks]
@@ -60,13 +60,13 @@ def _fuse_group(group: str, frameworks: list[Path], groups_root: Path) -> Path:
 def build(args: Namespace) -> None:
     out_root = helper.PROJECT_DIR / (args.build_dir or "build/apple")
 
-    # build every slice, grouped by xcframework library.
+    # build every slice, grouped by xcframework library
     grouped: dict[str, list[Path]] = {}
     for sl in targets.slices:
         framework = _build_slice(args, sl, out_root)
         grouped.setdefault(sl["group"], []).append(framework)
 
-    # fuse same-group archs, then bundle one framework per group into the xcframework.
+    # fuse same-group archs, then bundle one framework per group into the xcframework
     groups_root = out_root / "groups"
     framework_args: list[str] = []
     for group, frameworks in grouped.items():

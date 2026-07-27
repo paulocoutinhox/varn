@@ -11,7 +11,7 @@ from . import helper, wasm
 
 
 def deploy(args: Namespace) -> None:
-    # build a fresh production bundle (the wasm engine plus the vite app) into apps/wasm/dist.
+    # build a fresh production bundle (the wasm engine plus the vite app) into apps/wasm/dist
     wasm.app(args)
 
     dist = helper.PROJECT_DIR / "apps" / "wasm" / "dist"
@@ -21,7 +21,7 @@ def deploy(args: Namespace) -> None:
     work = Path(tempfile.mkdtemp(prefix="varn-website-"))
     print(f"staging the production site in {work}")
 
-    # start from the published repo so history is kept; fall back to a fresh repo when it is empty.
+    # start from the published repo so history is kept, falling back to a fresh repo when it is empty
     cloned = (
         subprocess.run(["git", "clone", "--depth", "1", "--branch", args.branch, args.remote, str(work)]).returncode == 0
     )
@@ -29,7 +29,7 @@ def deploy(args: Namespace) -> None:
         helper.run(["git", "init", "-b", args.branch], cwd=work)
         helper.run(["git", "remote", "add", "origin", args.remote], cwd=work)
 
-    # replace the tracked content with the fresh build, keeping the .git directory.
+    # replace the tracked content with the fresh build, keeping the .git directory
     for entry in work.iterdir():
         if entry.name == ".git":
             continue

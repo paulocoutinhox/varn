@@ -64,6 +64,9 @@ function Reader:bytes(count)
     return data
 end
 
+-- mirrors the redis proto-max-bulk-len ceiling so a corrupt or hostile length prefix cannot drive the client to exhaust memory
+local kMaxBulkBytes = 512 * 1024 * 1024
+
 function Reader:reply()
     local line = self:line()
     local kind = line:sub(1, 1)
@@ -83,6 +86,9 @@ function Reader:reply()
         local length = tonumber(rest)
         if length == -1 then
             return nil
+        end
+        if not length or length < 0 or length > kMaxBulkBytes then
+            error("[Redis] Invalid bulk length: " .. tostring(rest))
         end
         local data = self:bytes(length)
         self:line()
@@ -334,7 +340,9 @@ local function startMux(self)
             local ok, reply = pcall(self.reader.reply, self.reader)
             local entry = table.remove(self.pending, 1)
             if not entry then
-                self.dead = self.dead or (not ok)
+                -- a reply with nothing pending is an unsolicited frame this request-response client cannot place, so poison the connection instead of leaving later commands unanswered
+                self.dead = true
+                failPending(self, ok and "[Redis] Received an unsolicited reply." or tostring(reply))
                 return
             end
 

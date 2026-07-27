@@ -96,7 +96,7 @@
 | CLI-058 | No/!enforced timeout | CWE-400 | blackhole server never returns |
 | CLI-059 | Huge/abundant response headers | CWE-400 | header flood exhausts the parser |
 | CLI-060 | Status-line/version fuzz | CWE-20 | malformed status line mis-parsed |
-| CLI-061 | Wire-format injection | CWE-74 | response body length spoofs the `VARN/1` wire framing |
+| CLI-061 | Response framing injection | CWE-74 | response headers or body spoof the HTTP/1.1 framing |
 | CLI-062 | Content-Length mismatch | CWE-444 | declared vs actual body length |
 | CLI-063 | Trailer-header abuse | CWE-444 | chunked trailers smuggle headers |
 
@@ -144,7 +144,7 @@
 | CLI-096 | Body streaming backpressure | CWE-400 | large request body buffered fully |
 | CLI-097 | Concurrent TLS init race | CWE-362 | first-use SSL manager init races |
 | CLI-098 | Error message info leak | CWE-209 | internal error text returned to Lua |
-| CLI-099 | Wire length integer parse | CWE-190 | crafted length in the `VARN/1` header overflows |
+| CLI-099 | Content-Length integer parse | CWE-190 | crafted response Content-Length overflows |
 | CLI-100 | Non-UTF8 header values | CWE-176 | raw bytes in response headers |
 
 ---
@@ -279,7 +279,7 @@
 | CLI-187 | Timing reveals internal reachability | CWE-204 | blind-SSRF confirmation |
 | CLI-188 | Response-size oracle | CWE-204 | length differences leak state |
 | CLI-189 | Differential dummy/native client | CWE-697 | wasm-fetch vs native checks diverge |
-| CLI-190 | Wire `VARN/1` length spoof | CWE-444 | body forges the framing line |
+| CLI-190 | Content-Length vs chunked spoof | CWE-444 | response forges Content-Length against chunked framing |
 | CLI-191 | NUL in URL | CWE-626 | URL truncation at NUL |
 | CLI-192 | Extremely long URL | CWE-400 | multi-MB URL |
 | CLI-193 | Unicode normalization of URL | CWE-178 | host normalized after a check |
@@ -423,7 +423,7 @@
 | CLI-287 | Body NUL safety | CWE-626 | request body with NUL |
 | CLI-288 | Response NUL safety | CWE-626 | NUL in the returned body |
 | CLI-289 | Header map non-string keys | CWE-20 | non-string Lua header keys |
-| CLI-290 | Wire-length parse overflow | CWE-190 | crafted `VARN/1` length |
+| CLI-290 | Content-Length parse overflow | CWE-190 | crafted response Content-Length integer |
 | CLI-291 | Error reveals resolved IP | CWE-209 | internal IP in an error |
 | CLI-292 | Timing confirms reachability | CWE-204 | blind-SSRF oracle |
 | CLI-293 | Response-size oracle | CWE-204 | length leaks state |

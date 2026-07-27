@@ -1,7 +1,6 @@
-# single dependency resolver. each module sets a VARN_NEEDS_<dep> flag in its own .cmake and the
-# matching package is fetched here, so only the libraries the selected drivers need are downloaded.
+# each module sets a VARN_NEEDS_<dep> flag in its own .cmake and the matching package is fetched here so only the needed libraries download
 
-# lua is the engine and is always vendored.
+# lua is the engine and is always vendored
 CPMAddPackage(
     NAME lua
     VERSION 5.5.0
@@ -19,10 +18,9 @@ if(NOT TARGET varn_vendor_lua)
     )
     list(TRANSFORM _varn_lua_sources PREPEND "${lua_SOURCE_DIR}/")
 
-    # build lua as c++ so a raised lua error propagates as an exception that unwinds the embedding
-    # c++ frames, instead of a longjmp. on msvc a longjmp across the /ehsc frames at the c++/lua
-    # boundary corrupts the unwind state and crashes the process; an exception unwinds them and
-    # stops at lua's own protected-call handler.
+    # lua is built as c++ so a raised lua error unwinds the embedding frames as an exception instead of a longjmp.
+    # on msvc a longjmp across the /ehsc frames at the c++/lua boundary corrupts the unwind state and crashes.
+    # an exception instead unwinds cleanly and stops at lua's own protected-call handler.
     set_source_files_properties(${_varn_lua_sources} PROPERTIES LANGUAGE CXX)
 
     add_library(varn_vendor_lua STATIC ${_varn_lua_sources})
@@ -45,14 +43,13 @@ if(NOT TARGET varn_vendor_lua)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         target_compile_definitions(varn_vendor_lua PRIVATE LUA_USE_LINUX)
     elseif(WIN32)
-        # luaconf.h enables lua_use_windows when _win32 is defined.
+        # luaconf.h enables lua_use_windows automatically when _win32 is defined
     else()
         message(FATAL_ERROR "varn bundled lua: unsupported platform (${CMAKE_SYSTEM_NAME})")
     endif()
 endif()
 
-# zlib (ZLIB::ZLIB) resolves before poco so poco's bundled-zlib reuses this target instead of
-# defining its own, and libzip picks it up later through zlib-cmake's FindZLIB override.
+# zlib resolves before poco so poco reuses this ZLIB::ZLIB target and libzip later picks it up through zlib-cmake's FindZLIB override
 if(VARN_NEEDS_ZIP OR VARN_NEEDS_ZLIB)
     CPMAddPackage(
         NAME zlib-cmake
@@ -60,15 +57,14 @@ if(VARN_NEEDS_ZIP OR VARN_NEEDS_ZLIB)
     )
 endif()
 
-# openssl backs the crypto driver and tls. on poco builds, tls links openssl through poco.
+# openssl backs the crypto driver and tls, and on poco builds tls reaches openssl through poco
 if(VARN_NEEDS_OPENSSL)
     include("${CMAKE_CURRENT_LIST_DIR}/openssl.cmake")
 endif()
 
-# poco backs the http server, http client, and tcp socket drivers.
+# poco backs the http server, http client and tcp socket drivers
 if(VARN_NEEDS_POCO)
-    # tvos/watchos/visionos mark fork/exec unavailable. this disables only poco's process launch
-    # path so foundation and net still build; everything else (http, socket) stays enabled.
+    # these apple platforms mark fork/exec unavailable, so this disables only poco's process launch path while foundation, net, http and socket still build
     if(CMAKE_SYSTEM_NAME MATCHES "^(tvOS|watchOS|visionOS)$")
         add_compile_definitions(POCO_NO_FORK_EXEC)
     endif()
@@ -122,7 +118,7 @@ if(VARN_NEEDS_POCO)
     )
 endif()
 
-# libuv is the cross-platform event loop poller (epoll/kqueue/iocp) the runtime waits on natively.
+# libuv is the cross-platform event loop poller (epoll/kqueue/iocp) the runtime waits on natively
 if(VARN_NEEDS_LIBUV)
     CPMAddPackage(
         NAME libuv
@@ -136,7 +132,7 @@ if(VARN_NEEDS_LIBUV)
     )
 endif()
 
-# the http request parser.
+# llhttp is the http request parser
 if(VARN_NEEDS_LLHTTP)
     CPMAddPackage(
         NAME llhttp
@@ -149,7 +145,7 @@ if(VARN_NEEDS_LLHTTP)
     )
 endif()
 
-# spdlog backs the log SPDLOG driver.
+# spdlog backs the log SPDLOG driver
 if(VARN_NEEDS_SPDLOG)
     CPMAddPackage(
         NAME spdlog
@@ -162,7 +158,7 @@ if(VARN_NEEDS_SPDLOG)
     )
 endif()
 
-# nlohmann_json backs the json NLOHMANN driver.
+# nlohmann_json backs the json NLOHMANN driver
 if(VARN_NEEDS_NLOHMANN)
     CPMAddPackage(
         NAME nlohmann_json
@@ -172,7 +168,7 @@ if(VARN_NEEDS_NLOHMANN)
     )
 endif()
 
-# date.h backs the datetime module with calendar arithmetic and iso-8601 parsing and formatting.
+# date.h backs the datetime module with calendar arithmetic and iso-8601 parsing and formatting
 if(VARN_NEEDS_DATE)
     CPMAddPackage(
         NAME date
@@ -185,7 +181,7 @@ if(VARN_NEEDS_DATE)
     )
 endif()
 
-# pugixml backs the xml PUGIXML driver.
+# pugixml backs the xml PUGIXML driver
 if(VARN_NEEDS_PUGIXML)
     CPMAddPackage(
         NAME pugixml
@@ -196,10 +192,9 @@ if(VARN_NEEDS_PUGIXML)
     )
 endif()
 
-# libzip backs the zip module. zlib (ZLIB::ZLIB) was already resolved above via zlib-cmake.
+# libzip backs the zip module and reuses the ZLIB::ZLIB resolved above via zlib-cmake
 if(VARN_NEEDS_ZIP)
-    # only windows ships the annex k (_s) functions, and apple/linux/android lack them.
-    # libzip can misdetect them when cross-compiling, so pin them off to use the fallbacks.
+    # only windows ships the annex k (_s) functions, so pin them off elsewhere where libzip can misdetect them when cross-compiling
     if(NOT WIN32)
         foreach(_varn_no_annexk
             HAVE_MEMCPY_S HAVE_STRERROR_S HAVE_STRERRORLEN_S HAVE_STRNCPY_S
@@ -229,8 +224,7 @@ if(VARN_NEEDS_ZIP)
             "ENABLE_LZMA OFF"
             "ENABLE_ZSTD OFF"
     )
-    # on glibc strict C99 hides strcasecmp behind a feature macro, so define _DEFAULT_SOURCE to
-    # keep zip_name_locate.c compiling.
+    # glibc strict C99 hides strcasecmp behind a feature macro, so define _DEFAULT_SOURCE to keep zip_name_locate.c compiling
     if(TARGET zip)
         set_target_properties(zip PROPERTIES
             C_STANDARD 99

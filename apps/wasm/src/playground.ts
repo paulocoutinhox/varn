@@ -17,8 +17,8 @@ end
 
 type Example = { module: string; label: string; code: string };
 
-// examples grouped by module so the demo mirrors what is available in the browser build.
-// crypto exposes its essential subset here; ffi and the http server are native-only.
+// examples grouped by module so the demo mirrors what is available in the browser build
+// crypto exposes its essential subset here while ffi and the http server stay native-only
 const EXAMPLES: ReadonlyArray<Example> = [
   { module: "Lua", label: "Lua — fibonacci", code: DEFAULT_LUA },
   {
@@ -546,8 +546,7 @@ export function mountPlayground(root: HTMLElement): () => void {
   });
 
   stopBtn.addEventListener("click", () => {
-    // a hard stop terminates the worker so a sleeping or runaway chunk ends immediately, then a fresh
-    // worker is spawned so the run button becomes available again.
+    // a hard stop terminates the worker so a sleeping or runaway chunk ends immediately, then a fresh worker re-enables the run button
     worker.terminate();
     appendLine("stopped.");
     status.textContent = "Stopped.";
@@ -559,7 +558,7 @@ export function mountPlayground(root: HTMLElement): () => void {
     status.textContent = "Console cleared.";
   });
 
-  // navigating away terminates the worker so it does not linger after the view is gone.
+  // navigating away terminates the worker so it does not linger after the view is gone
   return () => {
     try {
       worker.terminate();

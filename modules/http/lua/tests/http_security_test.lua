@@ -72,6 +72,19 @@ assert(seed, "could not create the static fixture")
 seed:write("<h1>public</h1>")
 seed:close()
 
+-- a symlinked index.html inside the public tree points to a file outside it for the CWE-59 index escape check
+local r1Secret = dir .. "/../varn_r1_secret.txt"
+local r1Marker = "R1-OUT-OF-TREE-SECRET"
+local r1Ready = false
+if package.config:sub(1, 1) == "/" then
+    local secretFile = io.open(r1Secret, "w")
+    if secretFile then
+        secretFile:write(r1Marker)
+        secretFile:close()
+        r1Ready = os.execute("mkdir '" .. dir .. "/evil' && ln -s '" .. r1Secret .. "' '" .. dir .. "/evil/index.html'") and true or false
+    end
+end
+
 local app = http.createApp()
 
 -- attempts a header name with embedded crlf and reports whether the framework rejected it
@@ -183,6 +196,13 @@ async.run(function()
     for _, path in ipairs({ "/../README.md", "/%2e%2e/README.md", "/..%2fREADME.md", "/etc/passwd" }) do
         local status = statusBody(get(path))
         assert(status == 403 or status == 404, "traversal path " .. path .. " returned " .. status)
+    end
+
+    -- HTTP-118 (CWE-59) a symlinked index.html must not let the directory index serve a file outside the public root
+    if r1Ready then
+        local escapeStatus, escapeBody = statusBody(get("/evil/"))
+        assert(not (escapeBody or ""):find(r1Marker, 1, true), "symlinked index leaked an out-of-tree file with status " .. tostring(escapeStatus))
+        os.remove(r1Secret)
     end
 
     -- HTTP-102 returns 405 with an Allow header for a wrong method on a known path

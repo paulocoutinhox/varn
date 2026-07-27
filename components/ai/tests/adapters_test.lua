@@ -1,4 +1,5 @@
--- deterministic mock-server coverage for the ai adapter surfaces the basic mock_test does not reach: openai embed/image, anthropic streaming (text, reasoning, tool), the whole gemini adapter (generate, stream, image), every elevenlabs audio method, and saveImage over a url. no network or api keys.
+-- deterministic mock-server coverage for the ai adapter reaching what the basic mock_test does not, covering openai embed/image, anthropic streaming (text, reasoning, tool), the whole gemini adapter (generate, stream, image), every elevenlabs audio method, and saveImage over a url.
+-- it needs no network and no api keys.
 local dir = arg[0]:match("^(.*)[/\\]") or "."
 package.path = ("%s/../../?.lua;%s/../../?/init.lua;"):format(dir, dir) .. package.path
 

@@ -31,6 +31,7 @@ AES-256-GCM via OpenSSL. The key must be exactly 32 bytes (derive one with `cryp
 
 - `crypto.encrypt(key, plaintext)` → a binary blob laid out as `iv(12) || tag(16) || ciphertext`. A fresh random IV is generated per call.
 - `crypto.decrypt(key, blob)` → the plaintext, or an **error** if the authentication tag does not verify (wrong key or tampered blob).
+- `crypto.rsaEncryptPublic(pemPublicKey, data)` → `data` encrypted with a PEM-encoded RSA public key using OAEP padding, returned as a binary blob.
 
 ## Key derivation
 
@@ -39,7 +40,7 @@ Both return raw key bytes. `algo` is optional and defaults to `"SHA256"`.
 - `crypto.pbkdf2(password, salt, iterations, keyLen, algo?)` → a `keyLen`-byte key derived with PBKDF2-HMAC.
 - `crypto.hkdf(key, salt, info, keyLen, algo?)` → a `keyLen`-byte key derived with HKDF (extract + expand).
 
-There is no artificial input-size limit — Varn runs your own code on your own machine, so hashing or generating large data is allowed (bounded only by memory and the platform's integer limits). Not available in the browser build.
+There is no artificial input-size limit — Varn runs your own code on your own machine, so hashing or generating large data is allowed (bounded only by memory and the platform's integer limits). The digest, hmac, randomBytes, codecs, and UUID helpers work in the browser build; the authenticated-encryption, password-hashing, key-derivation, and RSA functions are native-only and reject with "not available in this build" under wasm.
 
 ## Examples
 

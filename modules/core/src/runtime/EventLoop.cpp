@@ -384,6 +384,7 @@ void EventLoop::wakeFromAnotherThread()
 void EventLoop::post(Job job)
 {
     ledger->enter();
+    try
     {
         std::lock_guard<std::mutex> lock(mutex);
         // clang-format off
@@ -402,6 +403,12 @@ void EventLoop::post(Job job)
         });
         // clang-format on
     }
+    catch (...)
+    {
+        // the job never entered the queue, so release the entry it will never run to balance
+        ledger->leave();
+        throw;
+    }
 
     wakeFromAnotherThread();
 }
@@ -411,6 +418,7 @@ void EventLoop::postDelayed(long long delayMs, Job job)
     // schedule a timer that fires on the loop thread after the delay so it never occupies a worker thread while it waits
     ledger->enter();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMs);
+    try
     {
         std::lock_guard<std::mutex> lock(mutex);
         // clang-format off
@@ -428,6 +436,12 @@ void EventLoop::postDelayed(long long delayMs, Job job)
             ledger->leave();
         });
         // clang-format on
+    }
+    catch (...)
+    {
+        // the timer never entered the queue, so release the entry it will never run to balance
+        ledger->leave();
+        throw;
     }
 
     wakeFromAnotherThread();

@@ -1,4 +1,4 @@
-# platform: operating system, architecture, and shared-library naming exposed to lua. no external deps.
+# platform exposes operating system, architecture, and shared-library naming to lua with no external deps
 
 list(APPEND VARN_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 

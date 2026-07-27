@@ -1,4 +1,4 @@
--- static file serving over the wire: a full request carries an ETag and Accept-Ranges, a Range request returns 206 with a Content-Range and the partial body, and a matching If-None-Match returns 304
+-- static file serving where a full request carries an ETag and Accept-Ranges, a Range request returns 206 with a Content-Range and the partial body, and a matching If-None-Match returns 304
 local async = require("async")
 local http = require("http")
 local socket = require("socket")

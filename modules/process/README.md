@@ -16,7 +16,7 @@ end)
 
 | Function | What it does |
 |---|---|
-| `process.exec(command)` | Run `command` through `/bin/sh -c`; resolves a promise with `{stdout, stderr, code}` (`code` is `128 + signal` when killed). |
+| `process.exec(command)` | Run `command` through the platform shell (`/bin/sh -c`, or `cmd.exe /c` on Windows); resolves a promise with `{stdout, stderr, code}`. Output is bounded at 64 MiB combined and a child that overruns the cap is killed; `code` is the exit status (`128 + signal` for a POSIX signal, so a cap overrun is `137` there). |
 | `process.env` | Table of environment variable names to values, captured when the module is required. |
 | `process.getenv(name, default?)` | The value of `name`, or `default` (or `nil`) when it is unset. |
 | `process.cwd()` | The current working directory as a string. |

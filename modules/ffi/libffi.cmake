@@ -1,7 +1,7 @@
 include_guard(GLOBAL)
 
-# builds the vendored libffi plus the lua-ffi parser as the varn_ffi_vendor static library.
-# included from the top-level build only when VARN_FFI_DRIVER=LIBFFI, after lua is available.
+# builds the vendored libffi plus the lua-ffi parser as the varn_ffi_vendor static library
+# included from the top-level build only when VARN_FFI_DRIVER=LIBFFI after lua is available
 
 if(EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     message(FATAL_ERROR "VARN_FFI_DRIVER=LIBFFI is not supported on Emscripten. Use VARN_FFI_DRIVER=DUMMY.")
@@ -39,10 +39,8 @@ if(NOT TARGET varn_ffi_vendor)
         "${CMAKE_CURRENT_LIST_DIR}/platform/varn_ffi_dl.c"
     )
 
-    # compile the ffi vendor as c++ so its references to the lua api mangle the same way
-    # varn_vendor_lua exports them (lua itself is built as c++ to fix the msvc longjmp/seh
-    # corruption). this also bypasses the C23 = {} initializer that the msvc c compiler rejects,
-    # because c++20 accepts the empty-aggregate initializer.
+    # compile the ffi vendor as c++ so its references to the lua api mangle the same way varn_vendor_lua exports them, since lua itself is built as c++ to fix the msvc longjmp/seh corruption.
+    # this also bypasses the C23 = {} initializer that the msvc c compiler rejects, because c++20 accepts the empty-aggregate initializer.
     set_source_files_properties(${_varn_ffi_vendor_sources} PROPERTIES LANGUAGE CXX)
 
     add_library(varn_ffi_vendor STATIC ${_varn_ffi_vendor_sources})

@@ -1,4 +1,4 @@
-# ffi: native function interface. LIBFFI vendors libffi plus the lua-ffi parser, DUMMY stubs it.
+# ffi is the native function interface where LIBFFI vendors libffi plus the lua-ffi parser and DUMMY stubs it
 
 if(NOT DEFINED CACHE{VARN_FFI_DRIVER})
     if(VARN_BUILDING_FOR_EMSCRIPTEN)

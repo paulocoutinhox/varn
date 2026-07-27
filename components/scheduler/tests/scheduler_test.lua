@@ -72,7 +72,7 @@ async.run(function()
     restarted:close()
     os.remove(path)
 
-    -- multi-instance: a task with a live lease from a peer is left alone, while an expired lease is reclaimed
+    -- a task with a live lease from a peer is left alone while an expired lease is reclaimed
     local multiPath = (os.getenv("VARN_TEST_DIR") or ".") .. "/varn_scheduler_multi.db"
     os.remove(multiPath)
     local seedMulti = scheduler.new({ dsn = "sqlite:" .. multiPath })

@@ -1,6 +1,6 @@
 include_guard(GLOBAL)
 
-# normalizes a driver cache value to upper case and fails when it is outside the allowed set.
+# normalizes a driver cache value to upper case and fails when it is outside the allowed set
 function(varn_validate_driver var_name)
     set(allowed ${ARGN})
     string(TOUPPER "${${var_name}}" value)
@@ -11,7 +11,7 @@ function(varn_validate_driver var_name)
     endif()
 endfunction()
 
-# publishes the selected backend so sources can branch on it with VARN_<MODULE>_DRIVER_<NAME>.
+# publishes the selected backend so sources can branch on it with VARN_<MODULE>_DRIVER_<NAME>
 function(varn_register_driver module_token driver_value)
     string(TOUPPER "${driver_value}" driver_upper)
     list(APPEND VARN_COMPILE_DEFS
@@ -20,8 +20,7 @@ function(varn_register_driver module_token driver_value)
     set(VARN_COMPILE_DEFS "${VARN_COMPILE_DEFS}" PARENT_SCOPE)
 endfunction()
 
-# applies the module include dirs, driver defines, feature flags, and dependency links that
-# every varn artifact shares. used for the static core (cli/wasm) and the apple/android libs.
+# applies the include dirs, driver defines, feature flags and dependency links every varn artifact shares
 function(varn_apply_usage target scope)
     target_include_directories(${target} ${scope}
         ${VARN_INCLUDE_DIRS}
@@ -79,13 +78,13 @@ function(varn_apply_usage target scope)
         endif()
     endif()
 
-    # zlib backs http response compression independently of the zip module.
+    # zlib backs http response compression independently of the zip module
     if(VARN_NEEDS_ZLIB)
         target_compile_definitions(${target} ${scope} VARN_HAVE_ZLIB=1)
         target_link_libraries(${target} ${scope} ZLIB::ZLIB)
     endif()
 
-    # openssl is linked directly only when poco does not already bring it in for tls.
+    # openssl is linked directly only when poco does not already bring it in for tls
     if(VARN_ENABLE_TLS)
         if(NOT VARN_NEEDS_POCO)
             target_link_libraries(${target} ${scope} OpenSSL::SSL OpenSSL::Crypto)
@@ -112,7 +111,7 @@ function(varn_apply_usage target scope)
     endif()
 endfunction()
 
-# builds a target with the requested sanitizers so the test suite can detect memory and ub bugs.
+# builds a target with the requested sanitizers so the test suite can detect memory and ub bugs
 function(varn_apply_sanitize target scope)
     if(VARN_SANITIZE STREQUAL "" OR MSVC)
         return()
@@ -121,7 +120,7 @@ function(varn_apply_sanitize target scope)
     target_link_options(${target} ${scope} -fsanitize=${VARN_SANITIZE})
 endfunction()
 
-# applies the project warning flags to a target that compiles varn's own sources.
+# applies the project warning flags to a target that compiles varn's own sources
 function(varn_apply_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4)

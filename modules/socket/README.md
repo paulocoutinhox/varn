@@ -26,6 +26,8 @@ local conn = socket.tcp.connect("127.0.0.1", 9000):await()
 | `listener:accept()` | Accept the next incoming connection, resolving to a socket. |
 | `sock:close()` / `listener:close()` | Close the socket or listener; safe to call while an operation is pending. |
 
+On a TLS socket the reads, writes and the handshake are serialized per connection, so overlapping operations on one secure socket run in order rather than in parallel; a plaintext socket has no such restriction.
+
 ## Availability
 
 Native on every desktop and mobile platform. Sockets need raw TCP/TLS/UDP and the ability to host a

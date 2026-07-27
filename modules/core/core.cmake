@@ -1,6 +1,6 @@
-# core: runtime, lua engine, native module registry, and the shared log pipeline.
+# core provides the runtime, lua engine, native module registry, and shared log pipeline
 
-# the event loop waits on libuv (epoll/kqueue/iocp) so it can host socket readiness inline; wasm pumps the loop manually instead.
+# the event loop waits on libuv (epoll/kqueue/iocp) to host socket readiness inline, while wasm pumps the loop manually
 if(NOT VARN_BUILDING_FOR_EMSCRIPTEN)
     set(VARN_NEEDS_POCO ON)
     set(VARN_NEEDS_LIBUV ON)

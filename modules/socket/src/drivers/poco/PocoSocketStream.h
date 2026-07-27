@@ -13,7 +13,9 @@
 #include <algorithm>
 #include <climits>
 #include <cstddef>
+#include <deque>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -166,7 +168,35 @@ public:
     // marks a connection that was already established over tls so its i/o runs blocking on the pool
     void markSecure(varn::runtime::Runtime& rt) { enterSecure(rt); }
 
+public:
+    // runs the next queued secure operation once the current one settles, called on the loop thread
+    void completeSecure()
+    {
+        secureBusy = false;
+        pumpSecure();
+    }
+
+    // enqueues a secure operation so tls reads, writes and the handshake never touch the same ssl object concurrently on the io pool
+    void enqueueSecure(std::function<void()> op)
+    {
+        secureQueue.push_back(std::move(op));
+        pumpSecure();
+    }
+
 private:
+    void pumpSecure()
+    {
+        if (secureBusy || secureQueue.empty())
+        {
+            return;
+        }
+
+        secureBusy = true;
+        auto op = std::move(secureQueue.front());
+        secureQueue.pop_front();
+        op();
+    }
+
     void enterSecure(varn::runtime::Runtime& rt)
     {
         secure = true;
@@ -179,30 +209,34 @@ private:
     {
         auto self = shared_from_this();
         // clang-format off
-        runtime->ioPool().post([self, maxBytes, callback = std::move(callback)]() mutable
+        enqueueSecure([self, maxBytes, callback = std::move(callback)]() mutable
         {
-            bool ok = false;
-            std::string data;
-            std::string error;
-            try
+            self->runtime->ioPool().post([self, maxBytes, callback = std::move(callback)]() mutable
             {
-                const int capped = maxBytes < kMaxReceiveBytes ? maxBytes : kMaxReceiveBytes;
-                std::vector<char> buffer(static_cast<std::size_t>(capped));
-                const int received = self->socket.receiveBytes(buffer.data(), capped);
-                ok = true;
-                if (received > 0)
+                bool ok = false;
+                std::string data;
+                std::string error;
+                try
                 {
-                    data.assign(buffer.data(), static_cast<std::size_t>(received));
+                    const int capped = maxBytes < kMaxReceiveBytes ? maxBytes : kMaxReceiveBytes;
+                    std::vector<char> buffer(static_cast<std::size_t>(capped));
+                    const int received = self->socket.receiveBytes(buffer.data(), capped);
+                    ok = true;
+                    if (received > 0)
+                    {
+                        data.assign(buffer.data(), static_cast<std::size_t>(received));
+                    }
                 }
-            }
-            catch (const std::exception& ex)
-            {
-                error = ex.what();
-            }
+                catch (const std::exception& ex)
+                {
+                    error = ex.what();
+                }
 
-            self->loop.post([self, ok, data, error, callback = std::move(callback)]() mutable
-            {
-                callback(ok, ok ? data : error);
+                self->loop.post([self, ok, data, error, callback = std::move(callback)]() mutable
+                {
+                    callback(ok, ok ? data : error);
+                    self->completeSecure();
+                });
             });
         });
         // clang-format on
@@ -214,36 +248,40 @@ private:
         auto self = shared_from_this();
         auto payload = std::make_shared<std::string>(std::move(data));
         // clang-format off
-        runtime->ioPool().post([self, payload, callback = std::move(callback)]() mutable
+        enqueueSecure([self, payload, callback = std::move(callback)]() mutable
         {
-            bool ok = false;
-            std::string error;
-            try
+            self->runtime->ioPool().post([self, payload, callback = std::move(callback)]() mutable
             {
-                std::size_t sent = 0;
-                while (sent < payload->size())
+                bool ok = false;
+                std::string error;
+                try
                 {
-                    const std::size_t remaining = payload->size() - sent;
-                    const int chunk = static_cast<int>(std::min(remaining, static_cast<std::size_t>(INT_MAX)));
-                    const int wrote = self->socket.sendBytes(payload->data() + sent, chunk);
-                    if (wrote <= 0)
+                    std::size_t sent = 0;
+                    while (sent < payload->size())
                     {
-                        throw std::runtime_error("[PocoStreamConnection] The connection was closed before all data was sent.");
+                        const std::size_t remaining = payload->size() - sent;
+                        const int chunk = static_cast<int>(std::min(remaining, static_cast<std::size_t>(INT_MAX)));
+                        const int wrote = self->socket.sendBytes(payload->data() + sent, chunk);
+                        if (wrote <= 0)
+                        {
+                            throw std::runtime_error("[PocoStreamConnection] The connection was closed before all data was sent.");
+                        }
+
+                        sent += static_cast<std::size_t>(wrote);
                     }
 
-                    sent += static_cast<std::size_t>(wrote);
+                    ok = true;
+                }
+                catch (const std::exception& ex)
+                {
+                    error = ex.what();
                 }
 
-                ok = true;
-            }
-            catch (const std::exception& ex)
-            {
-                error = ex.what();
-            }
-
-            self->loop.post([self, ok, error, callback = std::move(callback)]() mutable
-            {
-                callback(ok, ok ? std::string() : error);
+                self->loop.post([self, ok, error, callback = std::move(callback)]() mutable
+                {
+                    callback(ok, ok ? std::string() : error);
+                    self->completeSecure();
+                });
             });
         });
         // clang-format on
@@ -288,6 +326,8 @@ private:
     varn::runtime::Runtime* runtime = nullptr;
     bool closed = false;
     bool secure = false;
+    std::deque<std::function<void()>> secureQueue;
+    bool secureBusy = false;
 };
 
 class PocoStreamListener : public TcpListener, public std::enable_shared_from_this<PocoStreamListener>

@@ -1,9 +1,9 @@
-# apple slices for the xcframework. each entry maps a leetal/ios-cmake PLATFORM token to the
-# xcframework "group" it belongs to (one group per os + device/simulator variant). archs that
-# share a group are fused with lipo before the frameworks are bundled into the xcframework.
+# apple slices for the xcframework.
+# each entry maps a leetal/ios-cmake PLATFORM token to the xcframework "group" it belongs to (one group per os + device/simulator variant).
+# archs that share a group are fused with lipo before the frameworks are bundled into the xcframework.
 #
-# every slice builds the full driver set (http, socket, crypto, ffi). on tvos/watchos/visionos
-# CMake defines POCO_NO_FORK_EXEC so poco still builds without the unavailable fork/exec path.
+# every slice builds the full driver set (http, socket, crypto, ffi).
+# on tvos/watchos/visionos CMake defines POCO_NO_FORK_EXEC so poco still builds without the unavailable fork/exec path.
 # watchos is pinned to arm64-family archs (device arm64_32, simulator arm64).
 slices = [
     {"group": "ios", "platform": "OS64", "deployment_target": "15.0"},

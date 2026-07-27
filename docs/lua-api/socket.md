@@ -12,9 +12,11 @@ Async TCP, TLS, UDP, and unix-domain sockets. Every operation returns a promise.
 ## TLS
 
 - `socket.tls.connect(host, port, opts?)` → promise resolving to a secure socket with the same `send`/`receive`/`close` surface as a TCP socket. The connection completes the TLS handshake before resolving.
+- `sock:startTls(host, opts?)` → upgrade an already-connected plaintext TCP socket to TLS in place, for protocols that negotiate TLS mid-stream (such as MySQL); resolves once the handshake completes. `opts` takes `insecure = true` to skip certificate verification.
 - `opts` is an optional table: `timeoutMs` bounds the connect like the TCP variant, and `insecure = true` skips certificate verification.
 - Certificates are verified against the system trust store by default; an invalid certificate rejects the connect. Use `insecure = true` only for self-signed endpoints under your control.
 - TLS requires a build with TLS enabled; otherwise `socket.tls.connect` rejects with a clear error.
+- On a secure socket the reads, writes and the handshake are serialized per connection, so overlapping operations on the same TLS socket run in order rather than in parallel; issue a concurrent send and receive on separate connections if you need true full-duplex.
 
 ## Unix-domain
 

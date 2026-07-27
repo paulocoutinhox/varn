@@ -1,4 +1,4 @@
-# fs: async read/write and sync exists backed by a storage driver.
+# fs provides async read/write and sync exists backed by a storage driver
 
 if(NOT DEFINED CACHE{VARN_FS_DRIVER})
     set(VARN_FS_DRIVER "STD" CACHE STRING "fs storage backend: STD DUMMY")

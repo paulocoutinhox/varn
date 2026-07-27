@@ -133,7 +133,7 @@ async.run(function()
         assert(errored == 2, "both waiters should observe the connect failure")
     end
 
-    -- stress: many concurrent workers share a small pool and every one completes without deadlock
+    -- a stress run where many concurrent workers share a small pool and every one completes without deadlock
     do
         local p, state = makePool(4)
         local completed = 0

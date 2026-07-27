@@ -1,4 +1,4 @@
-# zip: archive create/extract/list backed by libzip, toggled by VARN_ENABLE_ZIP.
+# archive create, extract and list backed by libzip, toggled by VARN_ENABLE_ZIP
 
 list(APPEND VARN_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/include")
 list(APPEND VARN_SOURCES

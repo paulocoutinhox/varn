@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# builds varn for linux inside docker and runs the comparison benchmark there (the real deploy target).
-# the repo and the CPM source cache are mounted so dep sources and the build dir persist across runs.
+# builds varn for linux inside docker and runs the comparison benchmark there against the real deploy target
+# the repo and the CPM source cache are mounted so dep sources and the build dir persist across runs
 #   THREADS=4 CONNECTIONS=200 DURATION=10s WORKERS=1 bash bench/docker-bench.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."

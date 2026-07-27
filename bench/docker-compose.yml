@@ -1,5 +1,5 @@
-# real-world benchmark stack: mysql and redis behind the three runtimes under test. the bench
-# service builds varn for linux, then drives /plaintext, /json, /db and /cache with wrk.
+# real-world benchmark stack with mysql and redis behind the three runtimes under test
+# the bench service builds varn for linux, then drives /plaintext, /json, /db and /cache with wrk
 services:
   mysql:
     image: mysql:8.0

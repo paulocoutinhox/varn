@@ -1,4 +1,4 @@
-# json: a standalone require("json") module plus the serializer used by http responses.
+# json is a standalone require("json") module plus the serializer used by http responses
 
 if(NOT DEFINED CACHE{VARN_JSON_DRIVER})
     set(VARN_JSON_DRIVER "NLOHMANN" CACHE STRING "json serializer backend: NLOHMANN DUMMY")

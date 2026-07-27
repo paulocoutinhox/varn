@@ -5,6 +5,8 @@ Filesystem access. Reads and writes run off the main loop and return promises.
 - `fs.readFile(path)` → promise resolving to the file contents (binary-safe). Reads the whole file with no artificial size cap, like Node.
 - `fs.writeFile(path, content)` → promise resolving to `"ok"`.
 - `fs.exists(path)` → boolean, checked synchronously.
+- `fs.mkdir(path)` → promise resolving to `"ok"`; creates the directory and any missing parents.
+- `fs.removeRecursive(path)` → promise resolving to `"ok"`; removes a file or a whole directory tree.
 - `fs.open(path, mode)` → promise resolving to a streaming file handle. `mode` is one of `r`, `w`, `a`, `r+`, `w+`, `a+`. Use this instead of `readFile` for large files so the whole content never sits in memory at once:
   - `handle:read(maxBytes)` → promise resolving to up to `maxBytes` bytes (binary-safe), or an empty string at end of file.
   - `handle:write(data)` → promise resolving to `"ok"`.

@@ -5,6 +5,7 @@
 #include "varn/runtime/WorkLedger.h"
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -28,6 +29,8 @@ namespace varn::runtime
 class Runtime
 {
 public:
+    using HostFunction = std::function<std::string(const std::string&)>;
+
     explicit Runtime(std::vector<std::string> args, std::size_t scriptArgIndex = 1);
     ~Runtime();
 
@@ -39,6 +42,8 @@ public:
     TaskPool& taskPool();
     TaskPool& ioPool();
     lua_State* luaState();
+
+    void registerHostFunction(const std::string& name, HostFunction fn);
 
     void addServer(std::shared_ptr<varn::http::HttpServer> server);
     void stop();
@@ -61,6 +66,7 @@ private:
     std::unique_ptr<TaskPool> ioWorkers;
     std::atomic<int> backgroundDrivers{0};
     std::unique_ptr<varn::lua::LuaEngine> engine;
+    std::vector<std::unique_ptr<HostFunction>> hostFunctions;
     mutable std::mutex serversMutex;
     std::vector<std::shared_ptr<varn::http::HttpServer>> servers;
     std::atomic<bool> stopFlag{false};

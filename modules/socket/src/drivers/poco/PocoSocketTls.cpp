@@ -131,38 +131,44 @@ void PocoStreamConnection::startTlsAsync(varn::runtime::Runtime& runtime, std::s
     // enter the secure state before the pool handshake so a concurrent close defers the fd release to raii instead of racing the syscall
     markSecure(runtime);
 
-    // run the whole tls handshake blocking on the io pool so the ssl backend drives it synchronously, which avoids the readiness races the loop-driven handshake hits on windows schannel
+    // run the handshake through the per-connection secure strand so no queued read or write can touch the ssl object until it completes and the upgraded socket is adopted
     // clang-format off
-    runtime.ioPool().post([self, rt, loop, host, verify, done]
+    enqueueSecure([self, rt, loop, host, verify, done]
     {
-        bool ok = false;
-        std::string error;
-        Poco::Net::StreamSocket upgraded;
-        try
+        rt->ioPool().post([self, rt, loop, host, verify, done]
         {
-            self->socket.setBlocking(true);
-            Poco::Net::SecureStreamSocket secure = Poco::Net::SecureStreamSocket::attach(self->socket, host, tlsClientContext(verify));
-            secure.setBlocking(true);
-            secure.completeHandshake();
-            upgraded = secure;
-            ok = true;
-        }
-        catch (const std::exception& ex)
-        {
-            error = ex.what();
-        }
-
-        // hand the settled transport back to the loop thread that owns the connection
-        loop->post([self, rt, upgraded, ok, error, done]() mutable
-        {
-            if (ok)
+            bool ok = false;
+            std::string error;
+            Poco::Net::StreamSocket upgraded;
+            try
             {
-                self->adoptSecure(upgraded, *rt);
-                (*done)(true, std::string());
-                return;
+                self->socket.setBlocking(true);
+                Poco::Net::SecureStreamSocket secure = Poco::Net::SecureStreamSocket::attach(self->socket, host, tlsClientContext(verify));
+                secure.setBlocking(true);
+                secure.completeHandshake();
+                upgraded = secure;
+                ok = true;
+            }
+            catch (const std::exception& ex)
+            {
+                error = ex.what();
             }
 
-            (*done)(false, error);
+            // hand the settled transport back to the loop thread that owns the connection
+            loop->post([self, rt, upgraded, ok, error, done]() mutable
+            {
+                if (ok)
+                {
+                    self->adoptSecure(upgraded, *rt);
+                    (*done)(true, std::string());
+                }
+                else
+                {
+                    (*done)(false, error);
+                }
+
+                self->completeSecure();
+            });
         });
     });
     // clang-format on

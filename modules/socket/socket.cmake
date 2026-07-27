@@ -1,4 +1,4 @@
-# socket: tcp and udp transports exposed to lua through a network driver.
+# socket exposes tcp and udp transports to lua through a network driver
 
 if(NOT DEFINED CACHE{VARN_SOCKET_DRIVER})
     set(VARN_SOCKET_DRIVER "POCO" CACHE STRING "socket backend: POCO DUMMY")

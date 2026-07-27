@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Fair comparison benchmark: the same /plaintext and /json routes on Varn, Node, and Python
-# (uvicorn/ASGI), driven by the same wrk load. Single-core by default; set WORKERS=N for multi-core.
+# fair comparison of the same /plaintext and /json routes on varn, node and python (uvicorn/asgi) under the same wrk load
+# single-core by default, set WORKERS=N for multi-core
 #
 #   THREADS=4 CONNECTIONS=200 DURATION=10s WORKERS=1 bash bench/run.sh
 #
-# Knobs (env): THREADS, CONNECTIONS, DURATION, WORKERS, PORT_BASE, VARN.
+# env knobs are THREADS, CONNECTIONS, DURATION, WORKERS, PORT_BASE and VARN
 set -u
 cd "$(dirname "$0")/.."
 
@@ -16,7 +16,7 @@ WORKERS=${WORKERS:-1}
 PORT_BASE=${PORT_BASE:-38010}
 ROUTES=${ROUTES:-"/plaintext /json /db /cache"}
 
-# database and cache endpoints, inherited by every server process.
+# database and cache endpoints inherited by every server process
 export MYSQL_HOST=${MYSQL_HOST:-127.0.0.1}
 export MYSQL_PORT=${MYSQL_PORT:-3306}
 export MYSQL_USER=${MYSQL_USER:-bench}

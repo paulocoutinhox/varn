@@ -25,7 +25,7 @@ configure_file(
     @ONLY
 )
 
-# toolchains set EMSCRIPTEN, and CMAKE_SYSTEM_NAME is a fallback so wasm builds still stub drivers.
+# toolchains set EMSCRIPTEN and CMAKE_SYSTEM_NAME also flags an emscripten build so wasm still stubs drivers
 if(EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     set(VARN_BUILDING_FOR_EMSCRIPTEN ON)
 else()
@@ -45,7 +45,7 @@ option(VARN_NO_SENDFILE "disable the zero-copy sendfile fast path and serve file
 option(VARN_BUILD_TESTS "build the native C++ test target (googletest)" OFF)
 set(VARN_SANITIZE "" CACHE STRING "comma-separated sanitizers to build with, e.g. address,undefined (clang/gcc only)")
 
-# the browser cannot host raw tcp or an in-page server, so force the wasm-capable driver set.
+# the browser cannot host raw tcp or an in-page server, so force the wasm-capable driver set
 if(VARN_BUILDING_FOR_EMSCRIPTEN)
     set(VARN_ENABLE_TLS OFF CACHE BOOL "tls (disabled for Emscripten)" FORCE)
     set(VARN_HTTP_SERVER_DRIVER "DUMMY" CACHE STRING "" FORCE)
@@ -84,13 +84,12 @@ set(VARN_SOURCES "")
 set(VARN_INCLUDE_DIRS "")
 set(VARN_COMPILE_DEFS "")
 
-# tls always needs openssl, even when crypto uses it through poco.
+# tls always needs openssl even when crypto reaches it through poco
 if(VARN_ENABLE_TLS)
     set(VARN_NEEDS_OPENSSL ON)
 endif()
 
-# modules: core first, then the public api and features. each declares its sources, driver,
-# and dependency needs.
+# core is included first so the public api and feature modules can declare their sources, drivers and dependencies on top of it
 foreach(_varn_module
     core api platform log async fs crypto json xml zip socket http ffi process datetime)
     include("${VARN_ROOT}/modules/${_varn_module}/${_varn_module}.cmake")
@@ -120,8 +119,7 @@ message(STATUS "Varn ffi driver: ${VARN_FFI_DRIVER}")
 message(STATUS "Varn tls enabled: ${VARN_ENABLE_TLS}")
 message(STATUS "Varn zip module: ${VARN_ENABLE_ZIP}")
 
-# build target selector. cli/wasm build an executable on top of the static core.
-# apple/android build the embeddable shared library packaged downstream (xcframework / aar).
+# cli and wasm produce an executable on the static core while apple, android and lib produce the shared library
 if(NOT DEFINED CACHE{VARN_TARGET})
     if(VARN_BUILDING_FOR_EMSCRIPTEN)
         set(VARN_TARGET "wasm" CACHE STRING "build target: cli wasm apple android")
@@ -129,16 +127,15 @@ if(NOT DEFINED CACHE{VARN_TARGET})
         set(VARN_TARGET "cli" CACHE STRING "build target: cli wasm apple android")
     endif()
 endif()
-set_property(CACHE VARN_TARGET PROPERTY STRINGS cli wasm apple android)
-set(_varn_target_ok cli wasm apple android)
+set_property(CACHE VARN_TARGET PROPERTY STRINGS cli wasm apple android lib)
+set(_varn_target_ok cli wasm apple android lib)
 if(NOT VARN_TARGET IN_LIST _varn_target_ok)
     message(FATAL_ERROR "VARN_TARGET must be one of: ${_varn_target_ok} (got '${VARN_TARGET}')")
 endif()
 message(STATUS "Varn build target: ${VARN_TARGET}")
 
 if(VARN_TARGET STREQUAL "apple")
-    # Varn.framework: a self-contained dynamic framework. compiling the sources into a shared
-    # library pulls every module in, and the linker resolves the static deps it touches.
+    # a self-contained dynamic framework that compiles every module into one shared image
     add_library(Varn SHARED ${VARN_SOURCES} "${VARN_ROOT}/modules/api/include/varn/varn.h")
     varn_apply_usage(Varn PRIVATE)
     varn_apply_warnings(Varn)
@@ -152,13 +149,76 @@ if(VARN_TARGET STREQUAL "apple")
         PUBLIC_HEADER "${VARN_ROOT}/modules/api/include/varn/varn.h"
     )
 elseif(VARN_TARGET STREQUAL "android")
-    # static core only. the android/ gradle module links it with the jni bindings into libvarn.so.
+    # the android gradle module links this static core with the jni bindings into libvarn.so
     add_library(varn_core STATIC ${VARN_SOURCES})
     set_target_properties(varn_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
     varn_apply_usage(varn_core PUBLIC)
     varn_apply_warnings(varn_core)
+elseif(VARN_TARGET STREQUAL "lib")
+    # an embeddable shared library that exports only the C API with every dependency linked in privately, installed as a find_package(varn) package
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
+
+    add_library(varn SHARED ${VARN_SOURCES} "${VARN_ROOT}/modules/api/include/varn/varn.h")
+    add_library(varn::varn ALIAS varn)
+    varn_apply_usage(varn PRIVATE)
+    varn_apply_warnings(varn)
+    set_target_properties(varn PROPERTIES
+        OUTPUT_NAME varn
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+        C_VISIBILITY_PRESET hidden
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
+        PUBLIC_HEADER "${VARN_ROOT}/modules/api/include/varn/varn.h"
+    )
+    target_include_directories(varn PUBLIC
+        "$<BUILD_INTERFACE:${VARN_ROOT}/modules/api/include>"
+        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+    )
+
+    # VARN_SHARED marks the C API dllexport on windows, and the linker script hides every private dependency symbol on elf and mach-o where the visibility preset cannot reach
+    target_compile_definitions(varn PRIVATE VARN_SHARED)
+    if(APPLE)
+        target_link_options(varn PRIVATE "LINKER:-exported_symbols_list,${VARN_ROOT}/cmake/varn-exports.symbols")
+        set_target_properties(varn PROPERTIES LINK_DEPENDS "${VARN_ROOT}/cmake/varn-exports.symbols")
+    elseif(UNIX)
+        target_link_options(varn PRIVATE "LINKER:--version-script=${VARN_ROOT}/cmake/varn-exports.map")
+        set_target_properties(varn PROPERTIES LINK_DEPENDS "${VARN_ROOT}/cmake/varn-exports.map")
+    endif()
+
+    # tagging every install rule with the varn component keeps a --component varn install to the library, header and cmake package
+    install(TARGETS varn EXPORT varnTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT varn
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT varn
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT varn
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/varn COMPONENT varn
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+    install(EXPORT varnTargets
+        NAMESPACE varn::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/varn
+        FILE varnTargets.cmake
+        COMPONENT varn
+    )
+    configure_package_config_file(
+        "${VARN_ROOT}/cmake/varnConfig.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/varnConfig.cmake"
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/varn
+    )
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/varnConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/varnConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/varnConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/varn
+        COMPONENT varn
+    )
 else()
-    # cli / wasm: build the static core once, then link the host executable against it.
+    # build the static core once, then link the host executable against it
     add_library(varn_core STATIC ${VARN_SOURCES})
     set_target_properties(varn_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
     varn_apply_usage(varn_core PUBLIC)
@@ -183,18 +243,15 @@ else()
             "SHELL:-s FILESYSTEM=1"
         )
     elseif(NOT CMAKE_SYSTEM_NAME MATCHES "^(iOS|tvOS|watchOS|visionOS)$")
-        # the host cli only makes sense on desktop. a mobile apple platform cannot run a plain
-        # executable, so a cli build there stops at the static core.
+        # a mobile apple platform cannot run a plain executable, so a cli build there stops at the static core
         add_executable(varn "${VARN_ROOT}/src/main.cpp")
         target_link_libraries(varn PRIVATE varn_core)
 
         if(MSVC)
-            # windows defaults the main thread to a 1 MB stack, well under the 8 MB unix gives. recursive
-            # work such as parsing deeply nested json needs the same headroom, so match it here.
+            # windows gives the main thread a 1 MB stack against the 8 MB unix gives, so match it for deeply recursive work like json parsing
             target_link_options(varn PRIVATE /STACK:8388608)
 
-            # the crash handler resolves a backtrace through dbghelp, and program-database symbols let it
-            # print function names with file and line even in a release build.
+            # the crash handler resolves a backtrace through dbghelp, and program-database symbols name the frames with file and line even in release
             target_link_libraries(varn PRIVATE dbghelp)
             target_compile_options(varn_core PRIVATE /Zi)
             target_compile_options(varn PRIVATE /Zi)
@@ -205,7 +262,7 @@ else()
     endif()
 endif()
 
-# native C++ unit tests, kept off the shippable build and out of the wasm/mobile targets.
+# native C++ unit tests kept off the shippable build and out of the wasm and mobile targets
 if(VARN_BUILD_TESTS AND TARGET varn_core AND NOT VARN_BUILDING_FOR_EMSCRIPTEN)
     enable_testing()
     add_subdirectory("${VARN_ROOT}/tests/cpp")

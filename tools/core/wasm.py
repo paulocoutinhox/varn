@@ -20,7 +20,7 @@ def build(args: Namespace) -> None:
     helper.run(["cmake", "--build", build_dir, "--config", args.config, "-j", str(helper.jobs())])
 
 
-# builds varn_wasm, then drives the vite project. "build" bundles dist/ and "dev" serves it.
+# builds varn_wasm then drives the vite project where "build" bundles dist/ and "dev" serves it
 def _vite(args: Namespace, script: str) -> None:
     build(args)
 
