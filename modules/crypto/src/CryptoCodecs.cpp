@@ -17,58 +17,62 @@ constexpr char kBase64Url[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 constexpr signed char kSkip = -1;
 constexpr signed char kPad = -2;
 
-std::array<signed char, 256> makeBase64Reverse()
+class CryptoCodecsHelpers
 {
-    std::array<signed char, 256> table{};
-    for (int i = 0; i < 256; ++i)
+public:
+    static std::array<signed char, 256> makeBase64Reverse()
     {
-        table[static_cast<std::size_t>(i)] = kSkip;
+        std::array<signed char, 256> table{};
+        for (int i = 0; i < 256; ++i)
+        {
+            table[static_cast<std::size_t>(i)] = kSkip;
+        }
+
+        // accept both alphabets on decode so a standard or url-safe string is read interchangeably
+        table[static_cast<unsigned char>('+')] = 62;
+        table[static_cast<unsigned char>('/')] = 63;
+        table[static_cast<unsigned char>('-')] = 62;
+        table[static_cast<unsigned char>('_')] = 63;
+        table[static_cast<unsigned char>('=')] = kPad;
+
+        for (int i = 0; i < 26; ++i)
+        {
+            table[static_cast<unsigned char>('A' + i)] = static_cast<signed char>(i);
+            table[static_cast<unsigned char>('a' + i)] = static_cast<signed char>(i + 26);
+        }
+
+        for (int i = 0; i < 10; ++i)
+        {
+            table[static_cast<unsigned char>('0' + i)] = static_cast<signed char>(i + 52);
+        }
+
+        return table;
     }
 
-    // accept both alphabets on decode so a standard or url-safe string is read interchangeably
-    table[static_cast<unsigned char>('+')] = 62;
-    table[static_cast<unsigned char>('/')] = 63;
-    table[static_cast<unsigned char>('-')] = 62;
-    table[static_cast<unsigned char>('_')] = 63;
-    table[static_cast<unsigned char>('=')] = kPad;
-
-    for (int i = 0; i < 26; ++i)
+    static const std::array<signed char, 256>& base64Reverse()
     {
-        table[static_cast<unsigned char>('A' + i)] = static_cast<signed char>(i);
-        table[static_cast<unsigned char>('a' + i)] = static_cast<signed char>(i + 26);
+        static const std::array<signed char, 256> table = makeBase64Reverse();
+        return table;
     }
 
-    for (int i = 0; i < 10; ++i)
+    static int hexNibble(unsigned char c)
     {
-        table[static_cast<unsigned char>('0' + i)] = static_cast<signed char>(i + 52);
-    }
+        if (c >= '0' && c <= '9')
+        {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f')
+        {
+            return c - 'a' + 10;
+        }
+        if (c >= 'A' && c <= 'F')
+        {
+            return c - 'A' + 10;
+        }
 
-    return table;
-}
-
-const std::array<signed char, 256>& base64Reverse()
-{
-    static const std::array<signed char, 256> table = makeBase64Reverse();
-    return table;
-}
-
-int hexNibble(unsigned char c)
-{
-    if (c >= '0' && c <= '9')
-    {
-        return c - '0';
+        return -1;
     }
-    if (c >= 'a' && c <= 'f')
-    {
-        return c - 'a' + 10;
-    }
-    if (c >= 'A' && c <= 'F')
-    {
-        return c - 'A' + 10;
-    }
-
-    return -1;
-}
+};
 } // namespace
 
 std::string CryptoCodecs::base64Encode(std::string_view data, bool urlSafe, bool padding)
@@ -124,7 +128,7 @@ std::string CryptoCodecs::base64Encode(std::string_view data, bool urlSafe, bool
 
 std::string CryptoCodecs::base64Decode(std::string_view data)
 {
-    const std::array<signed char, 256>& rev = base64Reverse();
+    const std::array<signed char, 256>& rev = CryptoCodecsHelpers::base64Reverse();
 
     std::string out;
     // four input characters become three output bytes so this never over-reserves by more than two bytes
@@ -203,8 +207,8 @@ std::string CryptoCodecs::hexDecode(std::string_view data)
     const auto* in = reinterpret_cast<const unsigned char*>(data.data());
     for (std::size_t i = 0; i < out.size(); ++i)
     {
-        const int hi = hexNibble(in[i * 2]);
-        const int lo = hexNibble(in[i * 2 + 1]);
+        const int hi = CryptoCodecsHelpers::hexNibble(in[i * 2]);
+        const int lo = CryptoCodecsHelpers::hexNibble(in[i * 2 + 1]);
         if (hi < 0 || lo < 0)
         {
             throw std::runtime_error("[CryptoPrimitives] The hex input contains an invalid character.");

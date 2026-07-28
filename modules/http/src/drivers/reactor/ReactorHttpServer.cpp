@@ -87,181 +87,9 @@ enum class FileSend
     Error
 };
 
-FileSend sendFileToSocket(int socketFd, int fileFd, std::uint64_t offset, std::size_t count, std::size_t& sent)
-{
-    // hand up to count bytes from the open file straight to the socket without copying through user space, reporting the bytes moved in sent
-    sent = 0;
-
-#if defined(__linux__)
-    off_t cursor = static_cast<off_t>(offset);
-    const ssize_t moved = ::sendfile(socketFd, fileFd, &cursor, count);
-
-    if (moved > 0)
-    {
-        sent = static_cast<std::size_t>(moved);
-        return FileSend::Progress;
-    }
-
-    if (moved == 0)
-    {
-        return FileSend::Eof;
-    }
-
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
-    {
-        return FileSend::WouldBlock;
-    }
-
-    return FileSend::Error;
-#else
-    off_t length = static_cast<off_t>(count);
-    const int rc = ::sendfile(fileFd, socketFd, static_cast<off_t>(offset), &length, nullptr, 0);
-    sent = static_cast<std::size_t>(length);
-
-    if (rc == 0)
-    {
-        return length > 0 ? FileSend::Progress : FileSend::Eof;
-    }
-
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
-    {
-        return length > 0 ? FileSend::Progress : FileSend::WouldBlock;
-    }
-
-    return FileSend::Error;
 #endif
-}
-
-#endif
-
-long long nowMs()
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
-        .count();
-}
-
-const char* reasonPhrase(int code)
-{
-    switch (code)
-    {
-    case 200:
-        return "OK";
-    case 201:
-        return "Created";
-    case 202:
-        return "Accepted";
-    case 204:
-        return "No Content";
-    case 206:
-        return "Partial Content";
-    case 301:
-        return "Moved Permanently";
-    case 302:
-        return "Found";
-    case 303:
-        return "See Other";
-    case 304:
-        return "Not Modified";
-    case 307:
-        return "Temporary Redirect";
-    case 308:
-        return "Permanent Redirect";
-    case 400:
-        return "Bad Request";
-    case 401:
-        return "Unauthorized";
-    case 403:
-        return "Forbidden";
-    case 404:
-        return "Not Found";
-    case 405:
-        return "Method Not Allowed";
-    case 408:
-        return "Request Timeout";
-    case 413:
-        return "Payload Too Large";
-    case 429:
-        return "Too Many Requests";
-    case 500:
-        return "Internal Server Error";
-    case 502:
-        return "Bad Gateway";
-    case 503:
-        return "Service Unavailable";
-    case 504:
-        return "Gateway Timeout";
-    default:
-        // leave the reason phrase empty for an unlisted code since http allows it and inventing "OK" would misdescribe the status
-        return "";
-    }
-}
-
-std::string sanitizeHeader(const std::string& value)
-{
-    std::string out;
-    out.reserve(value.size());
-    for (char c : value)
-    {
-        const unsigned char u = static_cast<unsigned char>(c);
-        if (u >= 0x20 && u != 0x7f)
-        {
-            out += c;
-        }
-    }
-
-    return out;
-}
 
 constexpr std::size_t kCompressThreshold = 1024;
-
-#if defined(VARN_HAVE_ZLIB)
-
-bool gzipEncode(const std::string& input, std::string& output)
-{
-    // gzip a body with the standard 16+MAX_WBITS window so the output carries a gzip header rather than raw deflate
-    z_stream stream{};
-    if (deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK)
-    {
-        return false;
-    }
-
-    stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(input.data()));
-    stream.avail_in = static_cast<uInt>(input.size());
-
-    output.clear();
-    output.resize(deflateBound(&stream, static_cast<uLong>(input.size())));
-
-    stream.next_out = reinterpret_cast<Bytef*>(output.data());
-    stream.avail_out = static_cast<uInt>(output.size());
-
-    const int result = deflate(&stream, Z_FINISH);
-    deflateEnd(&stream);
-
-    if (result != Z_STREAM_END)
-    {
-        return false;
-    }
-
-    output.resize(stream.total_out);
-    return true;
-}
-
-bool compressibleType(const std::string& contentType)
-{
-    // json, xml and any text/* payload compress well, whereas already-encoded media gains nothing
-    std::string lowered = contentType;
-    Poco::toLowerInPlace(lowered);
-    return lowered.rfind("text/", 0) == 0 || lowered.rfind("application/json", 0) == 0 || lowered.rfind("application/xml", 0) == 0;
-}
-
-bool acceptsGzip(const std::string& acceptEncoding)
-{
-    std::string lowered = acceptEncoding;
-    Poco::toLowerInPlace(lowered);
-    return lowered.find("gzip") != std::string::npos;
-}
-
-#endif
 
 constexpr int kWsContinuation = 0x0;
 constexpr int kWsText = 0x1;
@@ -288,124 +116,302 @@ enum class WsParse
     Error
 };
 
-WsParse parseWsFrame(const std::string& buffer, WsFrame& frame)
-{
-    const std::size_t size = buffer.size();
-    if (size < 2)
-    {
-        return WsParse::NeedMore;
-    }
-
-    const auto byteAt = [&](std::size_t i)
-    { return static_cast<unsigned char>(buffer[i]); };
-    frame.fin = (byteAt(0) & 0x80) != 0;
-
-    // no extension is negotiated, so any reserved bit set is a protocol error
-    if ((byteAt(0) & 0x70) != 0)
-    {
-        return WsParse::Error;
-    }
-
-    frame.opcode = byteAt(0) & 0x0F;
-    const bool masked = (byteAt(1) & 0x80) != 0;
-
-    std::uint64_t length = byteAt(1) & 0x7F;
-    std::size_t header = 2;
-    if (length == 126)
-    {
-        if (size < 4)
-        {
-            return WsParse::NeedMore;
-        }
-
-        length = (static_cast<std::uint64_t>(byteAt(2)) << 8) | byteAt(3);
-        header = 4;
-    }
-    else if (length == 127)
-    {
-        if (size < 10)
-        {
-            return WsParse::NeedMore;
-        }
-
-        length = 0;
-        for (std::size_t i = 0; i < 8; ++i)
-        {
-            length = (length << 8) | byteAt(2 + i);
-        }
-
-        header = 10;
-    }
-
-    if (!masked || length > kWsMaxMessageBytes)
-    {
-        return WsParse::Error;
-    }
-
-    if (size < header + 4 + length)
-    {
-        return WsParse::NeedMore;
-    }
-
-    const std::size_t maskOffset = header;
-    const std::size_t dataOffset = header + 4;
-    frame.payload.resize(static_cast<std::size_t>(length));
-    for (std::size_t i = 0; i < length; ++i)
-    {
-        frame.payload[i] = static_cast<char>(byteAt(dataOffset + i) ^ byteAt(maskOffset + (i & 3)));
-    }
-
-    frame.consumed = dataOffset + static_cast<std::size_t>(length);
-    return WsParse::Ok;
-}
-
-std::string buildWsFrame(int opcode, const std::string& payload)
-{
-    std::string out;
-    out.push_back(static_cast<char>(0x80 | (opcode & 0x0F)));
-
-    const std::size_t length = payload.size();
-    if (length < 126)
-    {
-        out.push_back(static_cast<char>(length));
-    }
-    else if (length <= 0xFFFF)
-    {
-        out.push_back(static_cast<char>(126));
-        out.push_back(static_cast<char>((length >> 8) & 0xFF));
-        out.push_back(static_cast<char>(length & 0xFF));
-    }
-    else
-    {
-        out.push_back(static_cast<char>(127));
-        for (int shift = 56; shift >= 0; shift -= 8)
-        {
-            out.push_back(static_cast<char>((static_cast<std::uint64_t>(length) >> shift) & 0xFF));
-        }
-    }
-
-    out += payload;
-    return out;
-}
-
-std::string computeWsAccept(const std::string& key)
-{
-    Poco::SHA1Engine sha1;
-    sha1.update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
-    const Poco::DigestEngine::Digest& digest = sha1.digest();
-
-    std::ostringstream encoded;
-    Poco::Base64Encoder base64(encoded);
-    base64.write(reinterpret_cast<const char*>(digest.data()), static_cast<std::streamsize>(digest.size()));
-    base64.close();
-
-    std::string accept = encoded.str();
-    accept.erase(std::remove(accept.begin(), accept.end(), '\n'), accept.end());
-    accept.erase(std::remove(accept.begin(), accept.end(), '\r'), accept.end());
-    return accept;
-}
-
 class HttpConnection;
+
+class ReactorHelpers
+{
+public:
+#if defined(VARN_HAS_SENDFILE)
+    static FileSend sendFileToSocket(int socketFd, int fileFd, std::uint64_t offset, std::size_t count, std::size_t& sent)
+    {
+        // hand up to count bytes from the open file straight to the socket without copying through user space, reporting the bytes moved in sent
+        sent = 0;
+
+#if defined(__linux__)
+        off_t cursor = static_cast<off_t>(offset);
+        const ssize_t moved = ::sendfile(socketFd, fileFd, &cursor, count);
+
+        if (moved > 0)
+        {
+            sent = static_cast<std::size_t>(moved);
+            return FileSend::Progress;
+        }
+
+        if (moved == 0)
+        {
+            return FileSend::Eof;
+        }
+
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            return FileSend::WouldBlock;
+        }
+
+        return FileSend::Error;
+#else
+        off_t length = static_cast<off_t>(count);
+        const int rc = ::sendfile(fileFd, socketFd, static_cast<off_t>(offset), &length, nullptr, 0);
+        sent = static_cast<std::size_t>(length);
+
+        if (rc == 0)
+        {
+            return length > 0 ? FileSend::Progress : FileSend::Eof;
+        }
+
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            return length > 0 ? FileSend::Progress : FileSend::WouldBlock;
+        }
+
+        return FileSend::Error;
+#endif
+    }
+#endif
+
+    static long long nowMs()
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    }
+
+    static const char* reasonPhrase(int code)
+    {
+        switch (code)
+        {
+        case 200:
+            return "OK";
+        case 201:
+            return "Created";
+        case 202:
+            return "Accepted";
+        case 204:
+            return "No Content";
+        case 206:
+            return "Partial Content";
+        case 301:
+            return "Moved Permanently";
+        case 302:
+            return "Found";
+        case 303:
+            return "See Other";
+        case 304:
+            return "Not Modified";
+        case 307:
+            return "Temporary Redirect";
+        case 308:
+            return "Permanent Redirect";
+        case 400:
+            return "Bad Request";
+        case 401:
+            return "Unauthorized";
+        case 403:
+            return "Forbidden";
+        case 404:
+            return "Not Found";
+        case 405:
+            return "Method Not Allowed";
+        case 408:
+            return "Request Timeout";
+        case 413:
+            return "Payload Too Large";
+        case 429:
+            return "Too Many Requests";
+        case 500:
+            return "Internal Server Error";
+        case 502:
+            return "Bad Gateway";
+        case 503:
+            return "Service Unavailable";
+        case 504:
+            return "Gateway Timeout";
+        default:
+            // leave the reason phrase empty for an unlisted code since http allows it and inventing "OK" would misdescribe the status
+            return "";
+        }
+    }
+
+    static std::string sanitizeHeader(const std::string& value)
+    {
+        std::string out;
+        out.reserve(value.size());
+        for (char c : value)
+        {
+            const unsigned char u = static_cast<unsigned char>(c);
+            if (u >= 0x20 && u != 0x7f)
+            {
+                out += c;
+            }
+        }
+
+        return out;
+    }
+
+#if defined(VARN_HAVE_ZLIB)
+    static bool gzipEncode(const std::string& input, std::string& output)
+    {
+        // gzip a body with the standard 16+MAX_WBITS window so the output carries a gzip header rather than raw deflate
+        z_stream stream{};
+        if (deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK)
+        {
+            return false;
+        }
+
+        stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(input.data()));
+        stream.avail_in = static_cast<uInt>(input.size());
+
+        output.clear();
+        output.resize(deflateBound(&stream, static_cast<uLong>(input.size())));
+
+        stream.next_out = reinterpret_cast<Bytef*>(output.data());
+        stream.avail_out = static_cast<uInt>(output.size());
+
+        const int result = deflate(&stream, Z_FINISH);
+        deflateEnd(&stream);
+
+        if (result != Z_STREAM_END)
+        {
+            return false;
+        }
+
+        output.resize(stream.total_out);
+        return true;
+    }
+
+    static bool compressibleType(const std::string& contentType)
+    {
+        // json, xml and any text/* payload compress well, whereas already-encoded media gains nothing
+        std::string lowered = contentType;
+        Poco::toLowerInPlace(lowered);
+        return lowered.rfind("text/", 0) == 0 || lowered.rfind("application/json", 0) == 0 || lowered.rfind("application/xml", 0) == 0;
+    }
+
+    static bool acceptsGzip(const std::string& acceptEncoding)
+    {
+        std::string lowered = acceptEncoding;
+        Poco::toLowerInPlace(lowered);
+        return lowered.find("gzip") != std::string::npos;
+    }
+#endif
+
+    static WsParse parseWsFrame(const std::string& buffer, WsFrame& frame)
+    {
+        const std::size_t size = buffer.size();
+        if (size < 2)
+        {
+            return WsParse::NeedMore;
+        }
+
+        const auto byteAt = [&](std::size_t i)
+        { return static_cast<unsigned char>(buffer[i]); };
+        frame.fin = (byteAt(0) & 0x80) != 0;
+
+        // no extension is negotiated, so any reserved bit set is a protocol error
+        if ((byteAt(0) & 0x70) != 0)
+        {
+            return WsParse::Error;
+        }
+
+        frame.opcode = byteAt(0) & 0x0F;
+        const bool masked = (byteAt(1) & 0x80) != 0;
+
+        std::uint64_t length = byteAt(1) & 0x7F;
+        std::size_t header = 2;
+        if (length == 126)
+        {
+            if (size < 4)
+            {
+                return WsParse::NeedMore;
+            }
+
+            length = (static_cast<std::uint64_t>(byteAt(2)) << 8) | byteAt(3);
+            header = 4;
+        }
+        else if (length == 127)
+        {
+            if (size < 10)
+            {
+                return WsParse::NeedMore;
+            }
+
+            length = 0;
+            for (std::size_t i = 0; i < 8; ++i)
+            {
+                length = (length << 8) | byteAt(2 + i);
+            }
+
+            header = 10;
+        }
+
+        if (!masked || length > kWsMaxMessageBytes)
+        {
+            return WsParse::Error;
+        }
+
+        if (size < header + 4 + length)
+        {
+            return WsParse::NeedMore;
+        }
+
+        const std::size_t maskOffset = header;
+        const std::size_t dataOffset = header + 4;
+        frame.payload.resize(static_cast<std::size_t>(length));
+        for (std::size_t i = 0; i < length; ++i)
+        {
+            frame.payload[i] = static_cast<char>(byteAt(dataOffset + i) ^ byteAt(maskOffset + (i & 3)));
+        }
+
+        frame.consumed = dataOffset + static_cast<std::size_t>(length);
+        return WsParse::Ok;
+    }
+
+    static std::string buildWsFrame(int opcode, const std::string& payload)
+    {
+        std::string out;
+        out.push_back(static_cast<char>(0x80 | (opcode & 0x0F)));
+
+        const std::size_t length = payload.size();
+        if (length < 126)
+        {
+            out.push_back(static_cast<char>(length));
+        }
+        else if (length <= 0xFFFF)
+        {
+            out.push_back(static_cast<char>(126));
+            out.push_back(static_cast<char>((length >> 8) & 0xFF));
+            out.push_back(static_cast<char>(length & 0xFF));
+        }
+        else
+        {
+            out.push_back(static_cast<char>(127));
+            for (int shift = 56; shift >= 0; shift -= 8)
+            {
+                out.push_back(static_cast<char>((static_cast<std::uint64_t>(length) >> shift) & 0xFF));
+            }
+        }
+
+        out += payload;
+        return out;
+    }
+
+    static std::string computeWsAccept(const std::string& key)
+    {
+        Poco::SHA1Engine sha1;
+        sha1.update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+        const Poco::DigestEngine::Digest& digest = sha1.digest();
+
+        std::ostringstream encoded;
+        Poco::Base64Encoder base64(encoded);
+        base64.write(reinterpret_cast<const char*>(digest.data()), static_cast<std::streamsize>(digest.size()));
+        base64.close();
+
+        std::string accept = encoded.str();
+        accept.erase(std::remove(accept.begin(), accept.end(), '\n'), accept.end());
+        accept.erase(std::remove(accept.begin(), accept.end(), '\r'), accept.end());
+        return accept;
+    }
+
+    static void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<HttpConnection>>> registry, std::shared_ptr<std::atomic<bool>> stopping, long long timeoutMs);
+};
 
 // the response is filled by the lua handler on the loop thread and handed to the connection's i/o thread when end runs
 class ReactorResponse final : public HttpResponse
@@ -431,7 +437,7 @@ public:
     {
         if (!finished)
         {
-            headerMap[sanitizeHeader(name)] = sanitizeHeader(value);
+            headerMap[ReactorHelpers::sanitizeHeader(name)] = ReactorHelpers::sanitizeHeader(value);
         }
     }
 
@@ -439,7 +445,7 @@ public:
     {
         if (!finished)
         {
-            extraHeaders.emplace_back(sanitizeHeader(name), sanitizeHeader(value));
+            extraHeaders.emplace_back(ReactorHelpers::sanitizeHeader(name), ReactorHelpers::sanitizeHeader(value));
         }
     }
 
@@ -513,7 +519,7 @@ public:
         {
         }
 
-        requestStartMs = nowMs();
+        requestStartMs = ReactorHelpers::nowMs();
         llhttp_init(&parser, HTTP_REQUEST, requestSettings());
     }
 
@@ -558,7 +564,7 @@ public:
 
         writeBuffer = std::move(data);
         writeOffset = 0;
-        lastWriteMs = nowMs();
+        lastWriteMs = ReactorHelpers::nowMs();
         keepAlive = keepAliveAfter;
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool
@@ -591,7 +597,7 @@ public:
         }
 
         // the writer starts draining now, so the staleness clock begins here and only a real flush advances it afterwards
-        lastWriteMs = nowMs();
+        lastWriteMs = ReactorHelpers::nowMs();
         streamWriteArmed = true;
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool
@@ -608,7 +614,7 @@ public:
 
         writeBuffer = std::move(head);
         writeOffset = 0;
-        lastWriteMs = nowMs();
+        lastWriteMs = ReactorHelpers::nowMs();
         keepAlive = keepAliveAfter;
 
         // a head-only response or an empty range has no body to stream after the headers
@@ -635,7 +641,7 @@ public:
         std::string response = "HTTP/1.1 101 Switching Protocols\r\n";
         response += "Upgrade: websocket\r\n";
         response += "Connection: Upgrade\r\n";
-        response += "Sec-WebSocket-Accept: " + computeWsAccept(wsKey) + "\r\n\r\n";
+        response += "Sec-WebSocket-Accept: " + ReactorHelpers::computeWsAccept(wsKey) + "\r\n\r\n";
 
         // drop the consumed handshake request so the frame parser starts on client frame bytes
         readBuffer.erase(0, wsRequestEnd);
@@ -644,7 +650,7 @@ public:
         keepAlive = true;
         writeBuffer = std::move(response);
         writeOffset = 0;
-        lastWriteMs = nowMs();
+        lastWriteMs = ReactorHelpers::nowMs();
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool
                         { return self->onWritable(); });
@@ -717,7 +723,7 @@ private:
 
     void armWrite()
     {
-        lastWriteMs = nowMs();
+        lastWriteMs = ReactorHelpers::nowMs();
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool
                         { return self->onWritable(); });
@@ -910,7 +916,7 @@ private:
             }
 
             writeOffset += static_cast<std::size_t>(wrote);
-            lastWriteMs = nowMs();
+            lastWriteMs = ReactorHelpers::nowMs();
         }
 
         // a file response sends its body before the connection's keep-alive fate is decided
@@ -939,13 +945,13 @@ private:
             {
                 const std::size_t count = static_cast<std::size_t>(std::min<std::uint64_t>(fileRemaining, kFileChunkBytes));
                 std::size_t sent = 0;
-                const FileSend result = sendFileToSocket(socket.impl()->sockfd(), fileFd, fileOffset, count, sent);
+                const FileSend result = ReactorHelpers::sendFileToSocket(socket.impl()->sockfd(), fileFd, fileOffset, count, sent);
 
                 if (sent > 0)
                 {
                     fileOffset += sent;
                     fileRemaining -= sent;
-                    lastWriteMs = nowMs();
+                    lastWriteMs = ReactorHelpers::nowMs();
                 }
 
                 if (result == FileSend::Progress)
@@ -1508,7 +1514,7 @@ private:
 
         bool gzipAllowed = false;
 #if defined(VARN_HAVE_ZLIB)
-        gzipAllowed = options.compress && acceptsGzip(headerValue(request.headers, "Accept-Encoding"));
+        gzipAllowed = options.compress && ReactorHelpers::acceptsGzip(headerValue(request.headers, "Accept-Encoding"));
 #endif
 
         auto response = std::make_shared<ReactorResponse>(shared_from_this(), keepAlive, request.method == "HEAD", gzipAllowed);
@@ -1552,7 +1558,7 @@ private:
         for (;;)
         {
             WsFrame frame;
-            const WsParse result = parseWsFrame(readBuffer, frame);
+            const WsParse result = ReactorHelpers::parseWsFrame(readBuffer, frame);
             if (result == WsParse::NeedMore)
             {
                 return Progress::NeedMore;
@@ -1662,7 +1668,7 @@ private:
             return;
         }
 
-        wsOut += buildWsFrame(opcode, payload);
+        wsOut += ReactorHelpers::buildWsFrame(opcode, payload);
         if (wsWriting)
         {
             return;
@@ -1793,8 +1799,8 @@ private:
 
     void sendSimpleAndClose(int code)
     {
-        const std::string body = std::string(reasonPhrase(code)) + ".";
-        std::string head = "HTTP/1.1 " + std::to_string(code) + " " + reasonPhrase(code) + "\r\n";
+        const std::string body = std::string(ReactorHelpers::reasonPhrase(code)) + ".";
+        std::string head = "HTTP/1.1 " + std::to_string(code) + " " + ReactorHelpers::reasonPhrase(code) + "\r\n";
         head += "Content-Type: text/plain; charset=utf-8\r\n";
         head += "Content-Length: " + std::to_string(body.size()) + "\r\n";
         head += "Connection: close\r\n\r\n";
@@ -1816,8 +1822,8 @@ private:
         }
 
         draining = true;
-        const std::string body = std::string(reasonPhrase(code)) + ".";
-        std::string head = "HTTP/1.1 " + std::to_string(code) + " " + reasonPhrase(code) + "\r\n";
+        const std::string body = std::string(ReactorHelpers::reasonPhrase(code)) + ".";
+        std::string head = "HTTP/1.1 " + std::to_string(code) + " " + ReactorHelpers::reasonPhrase(code) + "\r\n";
         head += "Content-Type: text/plain; charset=utf-8\r\n";
         head += "Content-Length: " + std::to_string(body.size()) + "\r\n";
         head += "Connection: close\r\n\r\n";
@@ -1825,7 +1831,7 @@ private:
         keepAlive = false;
         writeBuffer = std::move(head);
         writeOffset = 0;
-        lastWriteMs = nowMs();
+        lastWriteMs = ReactorHelpers::nowMs();
         auto self = shared_from_this();
         loop.watchWrite(socket, [self]() -> bool
                         { return self->onWritable(); });
@@ -1855,7 +1861,7 @@ private:
         streamingActive = false;
         streamWriteArmed = false;
         streamReadArmed = false;
-        requestStartMs = nowMs();
+        requestStartMs = ReactorHelpers::nowMs();
     }
 
     Poco::Net::StreamSocket socket;
@@ -1937,7 +1943,7 @@ std::string ReactorResponse::buildHead(std::size_t contentLength, bool emitConte
     head += "HTTP/1.1 ";
     head += std::to_string(statusCode);
     head += ' ';
-    head += reasonPhrase(statusCode);
+    head += ReactorHelpers::reasonPhrase(statusCode);
     head += "\r\n";
 
     bool hasContentType = false;
@@ -2012,13 +2018,13 @@ void ReactorResponse::maybeCompress()
         }
     }
 
-    if (alreadyEncoded || !compressibleType(contentType))
+    if (alreadyEncoded || !ReactorHelpers::compressibleType(contentType))
     {
         return;
     }
 
     std::string compressed;
-    if (!gzipEncode(bodyBuffer, compressed) || compressed.size() >= bodyBuffer.size())
+    if (!ReactorHelpers::gzipEncode(bodyBuffer, compressed) || compressed.size() >= bodyBuffer.size())
     {
         return;
     }
@@ -2157,7 +2163,7 @@ void ReactorResponse::sendFile(const std::string& path, std::uint64_t start, std
     connection->streamFile(std::move(head), path, start, length, headersOnly, keepAlive);
 }
 
-void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<HttpConnection>>> registry, std::shared_ptr<std::atomic<bool>> stopping, long long timeoutMs)
+void ReactorHelpers::scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<HttpConnection>>> registry, std::shared_ptr<std::atomic<bool>> stopping, long long timeoutMs)
 {
     // clang-format off
     loop.postDelayed(kSweepIntervalMs, [&loop, registry, stopping, timeoutMs]()
@@ -2178,7 +2184,7 @@ void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<Ht
         }
 
         // close connections still idle-receiving past the deadline and compact the registry in place
-        const long long now = nowMs();
+        const long long now = ReactorHelpers::nowMs();
         auto& connections = *registry;
         std::size_t kept = 0;
         for (std::size_t i = 0; i < connections.size(); ++i)
@@ -2201,7 +2207,7 @@ void scheduleSweep(EventLoop& loop, std::shared_ptr<std::vector<std::weak_ptr<Ht
 
         connections.resize(kept);
 
-        scheduleSweep(loop, registry, stopping, timeoutMs);
+        ReactorHelpers::scheduleSweep(loop, registry, stopping, timeoutMs);
     });
     // clang-format on
 }
@@ -2318,7 +2324,7 @@ void ReactorHttpServer::start()
     // clang-format on
 
     // the sweep also compacts the connection registry, so it runs even when the idle and slowloris timeout is disabled
-    scheduleSweep(loop, registry, stopping, timeoutMs);
+    ReactorHelpers::scheduleSweep(loop, registry, stopping, timeoutMs);
 }
 
 void ReactorHttpServer::stop()

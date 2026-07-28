@@ -13,17 +13,21 @@ namespace varn::http::client
 
 namespace
 {
-Poco::URI parseUri(const std::string& url)
+class HttpUrlHelpers
 {
-    Poco::URI uri(url);
-    const std::string scheme = uri.getScheme();
-    if (scheme != "http" && scheme != "https")
+public:
+    static Poco::URI parseUri(const std::string& url)
     {
-        throw std::runtime_error("[PocoHttpClient] The URL scheme must be http or https.");
-    }
+        Poco::URI uri(url);
+        const std::string scheme = uri.getScheme();
+        if (scheme != "http" && scheme != "https")
+        {
+            throw std::runtime_error("[PocoHttpClient] The URL scheme must be http or https.");
+        }
 
-    return uri;
-}
+        return uri;
+    }
+};
 } // namespace
 
 ClientResponse HttpClientPerform::perform(
@@ -33,7 +37,7 @@ ClientResponse HttpClientPerform::perform(
     const std::string& body,
     const ClientRequestOptions& options)
 {
-    const Poco::URI uri = parseUri(url);
+    const Poco::URI uri = HttpUrlHelpers::parseUri(url);
 
     if (uri.getScheme() == "https")
     {
@@ -56,7 +60,7 @@ void HttpClientPerform::performStream(
     const StreamResponseFn& onResponse,
     const StreamChunkFn& onChunk)
 {
-    const Poco::URI uri = parseUri(url);
+    const Poco::URI uri = HttpUrlHelpers::parseUri(url);
 
     if (uri.getScheme() == "https")
     {

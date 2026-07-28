@@ -26,34 +26,38 @@ namespace varn::http::client
 #if defined(VARN_ENABLE_TLS) && !defined(_WIN32)
 namespace
 {
-// the bundled openssl ships no trust store, so point verification at the os ca bundle
-std::string resolveCaBundle()
+class PocoClientTlsHelpers
 {
-    if (const char* env = std::getenv("SSL_CERT_FILE"); env != nullptr && env[0] != '\0')
+public:
+    // the bundled openssl ships no trust store, so point verification at the os ca bundle
+    static std::string resolveCaBundle()
     {
-        return env;
-    }
-
-    static const char* const candidates[] = {
-        "/etc/ssl/cert.pem",
-        "/etc/ssl/certs/ca-certificates.crt",
-        "/etc/pki/tls/certs/ca-bundle.crt",
-        "/etc/ssl/ca-bundle.pem",
-        "/opt/homebrew/etc/openssl@3/cert.pem",
-        "/usr/local/etc/openssl@3/cert.pem",
-    };
-
-    for (const char* path : candidates)
-    {
-        std::error_code ec;
-        if (std::filesystem::exists(path, ec))
+        if (const char* env = std::getenv("SSL_CERT_FILE"); env != nullptr && env[0] != '\0')
         {
-            return path;
+            return env;
         }
-    }
 
-    return std::string();
-}
+        static const char* const candidates[] = {
+            "/etc/ssl/cert.pem",
+            "/etc/ssl/certs/ca-certificates.crt",
+            "/etc/pki/tls/certs/ca-bundle.crt",
+            "/etc/ssl/ca-bundle.pem",
+            "/opt/homebrew/etc/openssl@3/cert.pem",
+            "/usr/local/etc/openssl@3/cert.pem",
+        };
+
+        for (const char* path : candidates)
+        {
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec))
+            {
+                return path;
+            }
+        }
+
+        return std::string();
+    }
+};
 } // namespace
 #endif
 
@@ -244,7 +248,7 @@ Poco::Net::Context::Ptr PocoClientExchange::tlsClientContext(bool verify)
 #else
     if (verify)
     {
-        static const std::string caBundle = resolveCaBundle();
+        static const std::string caBundle = PocoClientTlsHelpers::resolveCaBundle();
         if (caBundle.empty())
         {
             throw std::runtime_error("[PocoClientExchange] No system CA trust store was found for certificate verification.");

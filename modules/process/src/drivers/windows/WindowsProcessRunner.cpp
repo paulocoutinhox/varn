@@ -21,71 +21,75 @@ namespace varn::process
 
 namespace
 {
-std::wstring toWide(const std::string& utf8)
-{
-    if (utf8.empty())
-    {
-        return std::wstring();
-    }
-
-    const int size = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
-    std::wstring wide(static_cast<std::size_t>(size), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), wide.data(), size);
-    return wide;
-}
-
-std::string toUtf8(const wchar_t* wide, int wideLen)
-{
-    if (wideLen <= 0)
-    {
-        return std::string();
-    }
-
-    const int size = WideCharToMultiByte(CP_UTF8, 0, wide, wideLen, nullptr, 0, nullptr, nullptr);
-    std::string utf8(static_cast<std::size_t>(size), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wide, wideLen, utf8.data(), size, nullptr, nullptr);
-    return utf8;
-}
-
 // bound the captured output so a child that streams without end cannot exhaust host memory
 constexpr std::size_t kMaxCaptureBytes = 64 * 1024 * 1024;
 
-// reads until the write ends are closed, stopping once the combined capture reaches the cap
-std::string drainPipe(HANDLE pipe, std::atomic<std::size_t>& captured)
+class WindowsProcessHelpers
 {
-    std::string out;
-    std::vector<char> chunk(65536);
-
-    while (true)
+public:
+    static std::wstring toWide(const std::string& utf8)
     {
-        DWORD got = 0;
-        const BOOL ok = ReadFile(pipe, chunk.data(), static_cast<DWORD>(chunk.size()), &got, nullptr);
-        if (!ok || got == 0)
+        if (utf8.empty())
         {
-            break;
+            return std::wstring();
         }
 
-        const std::size_t before = captured.fetch_add(static_cast<std::size_t>(got));
-        const std::size_t room = before < kMaxCaptureBytes ? kMaxCaptureBytes - before : 0;
-        out.append(chunk.data(), std::min(room, static_cast<std::size_t>(got)));
+        const int size = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
+        std::wstring wide(static_cast<std::size_t>(size), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), wide.data(), size);
+        return wide;
+    }
 
-        if (static_cast<std::size_t>(got) >= room)
+    static std::string toUtf8(const wchar_t* wide, int wideLen)
+    {
+        if (wideLen <= 0)
         {
-            break;
+            return std::string();
+        }
+
+        const int size = WideCharToMultiByte(CP_UTF8, 0, wide, wideLen, nullptr, 0, nullptr, nullptr);
+        std::string utf8(static_cast<std::size_t>(size), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, wide, wideLen, utf8.data(), size, nullptr, nullptr);
+        return utf8;
+    }
+
+    // reads until the write ends are closed, stopping once the combined capture reaches the cap
+    static std::string drainPipe(HANDLE pipe, std::atomic<std::size_t>& captured)
+    {
+        std::string out;
+        std::vector<char> chunk(65536);
+
+        while (true)
+        {
+            DWORD got = 0;
+            const BOOL ok = ReadFile(pipe, chunk.data(), static_cast<DWORD>(chunk.size()), &got, nullptr);
+            if (!ok || got == 0)
+            {
+                break;
+            }
+
+            const std::size_t before = captured.fetch_add(static_cast<std::size_t>(got));
+            const std::size_t room = before < kMaxCaptureBytes ? kMaxCaptureBytes - before : 0;
+            out.append(chunk.data(), std::min(room, static_cast<std::size_t>(got)));
+
+            if (static_cast<std::size_t>(got) >= room)
+            {
+                break;
+            }
+        }
+
+        return out;
+    }
+
+    static void closeHandle(HANDLE& handle)
+    {
+        if (handle != nullptr && handle != INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(handle);
+            handle = nullptr;
         }
     }
-
-    return out;
-}
-
-void closeHandle(HANDLE& handle)
-{
-    if (handle != nullptr && handle != INVALID_HANDLE_VALUE)
-    {
-        CloseHandle(handle);
-        handle = nullptr;
-    }
-}
+};
 } // namespace
 
 bool ProcessRunner::available()
@@ -113,10 +117,10 @@ ProcessResult ProcessRunner::exec(const std::string& command)
 
         if (!CreatePipe(&outRead, &outWrite, &inheritable, 0) || !CreatePipe(&errRead, &errWrite, &inheritable, 0))
         {
-            closeHandle(outRead);
-            closeHandle(outWrite);
-            closeHandle(errRead);
-            closeHandle(errWrite);
+            WindowsProcessHelpers::closeHandle(outRead);
+            WindowsProcessHelpers::closeHandle(outWrite);
+            WindowsProcessHelpers::closeHandle(errRead);
+            WindowsProcessHelpers::closeHandle(errWrite);
             throw std::runtime_error("[ProcessRunner] A pipe could not be created.");
         }
 
@@ -124,7 +128,7 @@ ProcessResult ProcessRunner::exec(const std::string& command)
         SetHandleInformation(outRead, HANDLE_FLAG_INHERIT, 0);
         SetHandleInformation(errRead, HANDLE_FLAG_INHERIT, 0);
 
-        const std::wstring commandLine = L"cmd.exe /c " + toWide(command);
+        const std::wstring commandLine = L"cmd.exe /c " + WindowsProcessHelpers::toWide(command);
         std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
         mutableCommand.push_back(L'\0');
 
@@ -138,16 +142,16 @@ ProcessResult ProcessRunner::exec(const std::string& command)
         const BOOL started = CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
         if (!started)
         {
-            closeHandle(outRead);
-            closeHandle(outWrite);
-            closeHandle(errRead);
-            closeHandle(errWrite);
+            WindowsProcessHelpers::closeHandle(outRead);
+            WindowsProcessHelpers::closeHandle(outWrite);
+            WindowsProcessHelpers::closeHandle(errRead);
+            WindowsProcessHelpers::closeHandle(errWrite);
             throw std::runtime_error("[ProcessRunner] The process could not be started.");
         }
 
         // close the parent copies of the write ends inside the lock so the reads terminate and no later spawn inherits them
-        closeHandle(outWrite);
-        closeHandle(errWrite);
+        WindowsProcessHelpers::closeHandle(outWrite);
+        WindowsProcessHelpers::closeHandle(errWrite);
     }
 
     ProcessResult result;
@@ -159,7 +163,7 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     std::thread errReader([&errData, errRead, &captured]
     {
         // an escaping exception in a thread body would terminate the process, so a failed capture yields no stderr instead
-        try { errData = drainPipe(errRead, captured); }
+        try { errData = WindowsProcessHelpers::drainPipe(errRead, captured); }
         catch (...) {}
     });
     // clang-format on
@@ -167,7 +171,7 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     // guard the main drain too so the reader thread is always joined even if the capture throws
     try
     {
-        result.stdoutData = drainPipe(outRead, captured);
+        result.stdoutData = WindowsProcessHelpers::drainPipe(outRead, captured);
     }
     catch (...)
     {
@@ -176,8 +180,8 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     errReader.join();
     result.stderrData = std::move(errData);
 
-    closeHandle(outRead);
-    closeHandle(errRead);
+    WindowsProcessHelpers::closeHandle(outRead);
+    WindowsProcessHelpers::closeHandle(errRead);
 
     // a child that overran the output cap is terminated so it cannot linger blocked on a full pipe
     if (captured.load() >= kMaxCaptureBytes)
@@ -191,15 +195,15 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     GetExitCodeProcess(process.hProcess, &code);
     result.code = static_cast<int>(code);
 
-    closeHandle(process.hProcess);
-    closeHandle(process.hThread);
+    WindowsProcessHelpers::closeHandle(process.hProcess);
+    WindowsProcessHelpers::closeHandle(process.hThread);
 
     return result;
 }
 
 std::optional<std::string> ProcessRunner::getenv(const std::string& name)
 {
-    const std::wstring wideName = toWide(name);
+    const std::wstring wideName = WindowsProcessHelpers::toWide(name);
 
     // retry until the buffer fits since another thread can enlarge the variable between the size probe and the read
     for (;;)
@@ -219,7 +223,7 @@ std::optional<std::string> ProcessRunner::getenv(const std::string& name)
 
         if (written < needed)
         {
-            return toUtf8(buffer.data(), static_cast<int>(written));
+            return WindowsProcessHelpers::toUtf8(buffer.data(), static_cast<int>(written));
         }
     }
 }
@@ -246,8 +250,8 @@ std::vector<std::pair<std::string, std::string>> ProcessRunner::environment()
             continue;
         }
 
-        const std::string key = toUtf8(entry.data(), static_cast<int>(equals));
-        const std::string value = toUtf8(entry.data() + equals + 1, static_cast<int>(entry.size() - equals - 1));
+        const std::string key = WindowsProcessHelpers::toUtf8(entry.data(), static_cast<int>(equals));
+        const std::string value = WindowsProcessHelpers::toUtf8(entry.data() + equals + 1, static_cast<int>(entry.size() - equals - 1));
         entries.emplace_back(key, value);
     }
 
@@ -266,7 +270,7 @@ std::string ProcessRunner::cwd()
     std::wstring buffer(needed, L'\0');
     const DWORD written = GetCurrentDirectoryW(needed, buffer.data());
 
-    return toUtf8(buffer.data(), static_cast<int>(written));
+    return WindowsProcessHelpers::toUtf8(buffer.data(), static_cast<int>(written));
 }
 
 } // namespace varn::process

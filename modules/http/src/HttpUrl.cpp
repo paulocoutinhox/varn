@@ -7,41 +7,45 @@ namespace varn::http
 
 namespace
 {
-int hexValue(char c)
+class HttpUrlHelpers
 {
-    if (c >= '0' && c <= '9')
+public:
+    static int hexValue(char c)
     {
-        return c - '0';
-    }
-    if (c >= 'a' && c <= 'f')
-    {
-        return c - 'a' + 10;
-    }
-    if (c >= 'A' && c <= 'F')
-    {
-        return c - 'A' + 10;
+        if (c >= '0' && c <= '9')
+        {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f')
+        {
+            return c - 'a' + 10;
+        }
+        if (c >= 'A' && c <= 'F')
+        {
+            return c - 'A' + 10;
+        }
+
+        return -1;
     }
 
-    return -1;
-}
+    static bool unreserved(unsigned char c)
+    {
+        if (c >= 'A' && c <= 'Z')
+        {
+            return true;
+        }
+        if (c >= 'a' && c <= 'z')
+        {
+            return true;
+        }
+        if (c >= '0' && c <= '9')
+        {
+            return true;
+        }
 
-bool unreserved(unsigned char c)
-{
-    if (c >= 'A' && c <= 'Z')
-    {
-        return true;
+        return c == '-' || c == '_' || c == '.' || c == '~';
     }
-    if (c >= 'a' && c <= 'z')
-    {
-        return true;
-    }
-    if (c >= '0' && c <= '9')
-    {
-        return true;
-    }
-
-    return c == '-' || c == '_' || c == '.' || c == '~';
-}
+};
 } // namespace
 
 std::string HttpUrl::encode(std::string_view input)
@@ -55,7 +59,7 @@ std::string HttpUrl::encode(std::string_view input)
     {
         const unsigned char c = static_cast<unsigned char>(raw);
 
-        if (unreserved(c))
+        if (HttpUrlHelpers::unreserved(c))
         {
             out += static_cast<char>(c);
             continue;
@@ -87,8 +91,8 @@ std::string HttpUrl::decode(std::string_view input)
 
         if (c == '%' && i + 2 < input.size())
         {
-            const int hi = hexValue(input[i + 1]);
-            const int lo = hexValue(input[i + 2]);
+            const int hi = HttpUrlHelpers::hexValue(input[i + 1]);
+            const int lo = HttpUrlHelpers::hexValue(input[i + 2]);
 
             if (hi >= 0 && lo >= 0)
             {

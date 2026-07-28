@@ -342,7 +342,11 @@ struct EventLoop::Poller
 
 namespace
 {
-void boundingTimerNoop(uv_timer_t*) {}
+class EventLoopHelpers
+{
+public:
+    static void boundingTimerNoop(uv_timer_t*) {}
+};
 } // namespace
 
 #else
@@ -582,7 +586,7 @@ void EventLoop::run()
         }
 
         // bound the libuv wait by the next timer deadline, though socket readiness or a cross-thread wakeup returns it sooner
-        uv_timer_start(&poller->timer, boundingTimerNoop, static_cast<std::uint64_t>(timeoutMs), 0);
+        uv_timer_start(&poller->timer, &EventLoopHelpers::boundingTimerNoop, static_cast<std::uint64_t>(timeoutMs), 0);
         uv_run(&poller->loop, UV_RUN_ONCE);
         uv_timer_stop(&poller->timer);
     }

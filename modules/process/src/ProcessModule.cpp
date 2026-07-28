@@ -18,31 +18,35 @@ using varn::runtime::Runtime;
 
 namespace
 {
-void pushEnvTable(lua_State* L)
+class ProcessModuleHelpers
 {
-    const std::vector<std::pair<std::string, std::string>> entries = ProcessRunner::environment();
-
-    lua_createtable(L, 0, static_cast<int>(entries.size()));
-    for (const auto& entry : entries)
+public:
+    static void pushEnvTable(lua_State* L)
     {
-        lua_pushlstring(L, entry.second.data(), entry.second.size());
-        lua_setfield(L, -2, entry.first.c_str());
+        const std::vector<std::pair<std::string, std::string>> entries = ProcessRunner::environment();
+
+        lua_createtable(L, 0, static_cast<int>(entries.size()));
+        for (const auto& entry : entries)
+        {
+            lua_pushlstring(L, entry.second.data(), entry.second.size());
+            lua_setfield(L, -2, entry.first.c_str());
+        }
     }
-}
 
-void pushArgvTable(lua_State* L, Runtime& rt)
-{
-    // builds a 1-based array of the script arguments only
-    const auto& args = rt.args();
-    const std::size_t base = rt.scriptArgIndex();
-
-    lua_createtable(L, args.size() > base ? static_cast<int>(args.size() - base) : 0, 0);
-    for (std::size_t i = base; i < args.size(); ++i)
+    static void pushArgvTable(lua_State* L, Runtime& rt)
     {
-        lua_pushlstring(L, args[i].data(), args[i].size());
-        lua_rawseti(L, -2, static_cast<lua_Integer>(i - base + 1));
+        // builds a 1-based array of the script arguments only
+        const auto& args = rt.args();
+        const std::size_t base = rt.scriptArgIndex();
+
+        lua_createtable(L, args.size() > base ? static_cast<int>(args.size() - base) : 0, 0);
+        for (std::size_t i = base; i < args.size(); ++i)
+        {
+            lua_pushlstring(L, args[i].data(), args[i].size());
+            lua_rawseti(L, -2, static_cast<lua_Integer>(i - base + 1));
+        }
     }
-}
+};
 } // namespace
 
 Runtime& ProcessModule::luaRuntime(lua_State* L)
@@ -117,10 +121,10 @@ int ProcessModule::luaOpen(lua_State* L)
     lua_pushcfunction(L, &ProcessModule::luaCwd);
     lua_setfield(L, -2, "cwd");
 
-    pushEnvTable(L);
+    ProcessModuleHelpers::pushEnvTable(L);
     lua_setfield(L, -2, "env");
 
-    pushArgvTable(L, rt);
+    ProcessModuleHelpers::pushArgvTable(L, rt);
     lua_setfield(L, -2, "argv");
 
     lua_pushboolean(L, ProcessRunner::available());

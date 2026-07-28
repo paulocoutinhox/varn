@@ -9,145 +9,6 @@ namespace varn::crypto::portable
 
 namespace
 {
-std::uint32_t rotr32(std::uint32_t x, int n)
-{
-    return (x >> n) | (x << (32 - n));
-}
-
-std::uint32_t rotl32(std::uint32_t x, int n)
-{
-    return (x << n) | (x >> (32 - n));
-}
-
-std::uint64_t rotr64(std::uint64_t x, int n)
-{
-    return (x >> n) | (x << (64 - n));
-}
-
-void appendBigEndian32(std::string& out, std::uint32_t value)
-{
-    out.push_back(static_cast<char>((value >> 24) & 0xFF));
-    out.push_back(static_cast<char>((value >> 16) & 0xFF));
-    out.push_back(static_cast<char>((value >> 8) & 0xFF));
-    out.push_back(static_cast<char>(value & 0xFF));
-}
-
-void appendBigEndian64(std::string& out, std::uint64_t value)
-{
-    for (int shift = 56; shift >= 0; shift -= 8)
-    {
-        out.push_back(static_cast<char>((value >> shift) & 0xFF));
-    }
-}
-
-// the sha-1 and sha-256 families pad to a multiple of 64 bytes with a 64-bit big-endian bit length
-std::string pad64(std::string_view data)
-{
-    std::string message(data);
-    const std::uint64_t bitLength = static_cast<std::uint64_t>(data.size()) * 8;
-
-    message.push_back(static_cast<char>(0x80));
-    while (message.size() % 64 != 56)
-    {
-        message.push_back('\0');
-    }
-    appendBigEndian64(message, bitLength);
-
-    return message;
-}
-
-// the sha-512 family pads to a multiple of 128 bytes with a 128-bit big-endian bit length
-std::string pad128(std::string_view data)
-{
-    std::string message(data);
-    const std::uint64_t bitLength = static_cast<std::uint64_t>(data.size()) * 8;
-
-    message.push_back(static_cast<char>(0x80));
-    while (message.size() % 128 != 112)
-    {
-        message.push_back('\0');
-    }
-    appendBigEndian64(message, 0);
-    appendBigEndian64(message, bitLength);
-
-    return message;
-}
-
-std::string sha1Impl(std::string_view data)
-{
-    std::uint32_t h[5] = {0x67452301u, 0xEFCDAB89u, 0x98BADCFEu, 0x10325476u, 0xC3D2E1F0u};
-
-    const std::string message = pad64(data);
-    const auto* bytes = reinterpret_cast<const unsigned char*>(message.data());
-
-    for (std::size_t offset = 0; offset < message.size(); offset += 64)
-    {
-        std::uint32_t w[80];
-        for (int t = 0; t < 16; ++t)
-        {
-            const std::size_t i = offset + static_cast<std::size_t>(t) * 4;
-            w[t] = (static_cast<std::uint32_t>(bytes[i]) << 24) | (static_cast<std::uint32_t>(bytes[i + 1]) << 16) | (static_cast<std::uint32_t>(bytes[i + 2]) << 8) | static_cast<std::uint32_t>(bytes[i + 3]);
-        }
-        for (int t = 16; t < 80; ++t)
-        {
-            w[t] = rotl32(w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16], 1);
-        }
-
-        std::uint32_t a = h[0];
-        std::uint32_t b = h[1];
-        std::uint32_t c = h[2];
-        std::uint32_t d = h[3];
-        std::uint32_t e = h[4];
-
-        for (int t = 0; t < 80; ++t)
-        {
-            std::uint32_t f = 0;
-            std::uint32_t k = 0;
-            if (t < 20)
-            {
-                f = (b & c) | (~b & d);
-                k = 0x5A827999u;
-            }
-            else if (t < 40)
-            {
-                f = b ^ c ^ d;
-                k = 0x6ED9EBA1u;
-            }
-            else if (t < 60)
-            {
-                f = (b & c) | (b & d) | (c & d);
-                k = 0x8F1BBCDCu;
-            }
-            else
-            {
-                f = b ^ c ^ d;
-                k = 0xCA62C1D6u;
-            }
-
-            const std::uint32_t temp = rotl32(a, 5) + f + e + k + w[t];
-            e = d;
-            d = c;
-            c = rotl32(b, 30);
-            b = a;
-            a = temp;
-        }
-
-        h[0] += a;
-        h[1] += b;
-        h[2] += c;
-        h[3] += d;
-        h[4] += e;
-    }
-
-    std::string out;
-    for (std::uint32_t word : h)
-    {
-        appendBigEndian32(out, word);
-    }
-
-    return out;
-}
-
 const std::uint32_t kSha256K[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -157,79 +18,6 @@ const std::uint32_t kSha256K[64] = {
     0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
     0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
-
-std::string sha256Core(std::string_view data, const std::uint32_t initial[8], std::size_t outputBytes)
-{
-    std::uint32_t h[8];
-    for (int i = 0; i < 8; ++i)
-    {
-        h[i] = initial[i];
-    }
-
-    const std::string message = pad64(data);
-    const auto* bytes = reinterpret_cast<const unsigned char*>(message.data());
-
-    for (std::size_t offset = 0; offset < message.size(); offset += 64)
-    {
-        std::uint32_t w[64];
-        for (int t = 0; t < 16; ++t)
-        {
-            const std::size_t i = offset + static_cast<std::size_t>(t) * 4;
-            w[t] = (static_cast<std::uint32_t>(bytes[i]) << 24) | (static_cast<std::uint32_t>(bytes[i + 1]) << 16) | (static_cast<std::uint32_t>(bytes[i + 2]) << 8) | static_cast<std::uint32_t>(bytes[i + 3]);
-        }
-        for (int t = 16; t < 64; ++t)
-        {
-            const std::uint32_t s0 = rotr32(w[t - 15], 7) ^ rotr32(w[t - 15], 18) ^ (w[t - 15] >> 3);
-            const std::uint32_t s1 = rotr32(w[t - 2], 17) ^ rotr32(w[t - 2], 19) ^ (w[t - 2] >> 10);
-            w[t] = w[t - 16] + s0 + w[t - 7] + s1;
-        }
-
-        std::uint32_t a = h[0];
-        std::uint32_t b = h[1];
-        std::uint32_t c = h[2];
-        std::uint32_t d = h[3];
-        std::uint32_t e = h[4];
-        std::uint32_t f = h[5];
-        std::uint32_t g = h[6];
-        std::uint32_t hh = h[7];
-
-        for (int t = 0; t < 64; ++t)
-        {
-            const std::uint32_t S1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
-            const std::uint32_t ch = (e & f) ^ (~e & g);
-            const std::uint32_t temp1 = hh + S1 + ch + kSha256K[t] + w[t];
-            const std::uint32_t S0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
-            const std::uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
-            const std::uint32_t temp2 = S0 + maj;
-
-            hh = g;
-            g = f;
-            f = e;
-            e = d + temp1;
-            d = c;
-            c = b;
-            b = a;
-            a = temp1 + temp2;
-        }
-
-        h[0] += a;
-        h[1] += b;
-        h[2] += c;
-        h[3] += d;
-        h[4] += e;
-        h[5] += f;
-        h[6] += g;
-        h[7] += hh;
-    }
-
-    std::string full;
-    for (std::uint32_t word : h)
-    {
-        appendBigEndian32(full, word);
-    }
-
-    return full.substr(0, outputBytes);
-}
 
 const std::uint64_t kSha512K[80] = {
     0x428a2f98d728ae22ull, 0x7137449123ef65cdull, 0xb5c0fbcfec4d3b2full, 0xe9b5dba58189dbbcull,
@@ -253,135 +41,351 @@ const std::uint64_t kSha512K[80] = {
     0x28db77f523047d84ull, 0x32caab7b40c72493ull, 0x3c9ebe0a15c9bebcull, 0x431d67c49c100d4cull,
     0x4cc5d4becb3e42b6ull, 0x597f299cfc657e2aull, 0x5fcb6fab3ad6faecull, 0x6c44198c4a475817ull};
 
-std::string sha512Core(std::string_view data, const std::uint64_t initial[8], std::size_t outputBytes)
+class ShaOps
 {
-    std::uint64_t h[8];
-    for (int i = 0; i < 8; ++i)
+public:
+    static std::uint32_t rotr32(std::uint32_t x, int n)
     {
-        h[i] = initial[i];
+        return (x >> n) | (x << (32 - n));
     }
 
-    const std::string message = pad128(data);
-    const auto* bytes = reinterpret_cast<const unsigned char*>(message.data());
-
-    for (std::size_t offset = 0; offset < message.size(); offset += 128)
+    static std::uint32_t rotl32(std::uint32_t x, int n)
     {
-        std::uint64_t w[80];
-        for (int t = 0; t < 16; ++t)
+        return (x << n) | (x >> (32 - n));
+    }
+
+    static std::uint64_t rotr64(std::uint64_t x, int n)
+    {
+        return (x >> n) | (x << (64 - n));
+    }
+
+    static void appendBigEndian32(std::string& out, std::uint32_t value)
+    {
+        out.push_back(static_cast<char>((value >> 24) & 0xFF));
+        out.push_back(static_cast<char>((value >> 16) & 0xFF));
+        out.push_back(static_cast<char>((value >> 8) & 0xFF));
+        out.push_back(static_cast<char>(value & 0xFF));
+    }
+
+    static void appendBigEndian64(std::string& out, std::uint64_t value)
+    {
+        for (int shift = 56; shift >= 0; shift -= 8)
         {
-            const std::size_t i = offset + static_cast<std::size_t>(t) * 8;
-            std::uint64_t value = 0;
-            for (int b = 0; b < 8; ++b)
+            out.push_back(static_cast<char>((value >> shift) & 0xFF));
+        }
+    }
+
+    // the sha-1 and sha-256 families pad to a multiple of 64 bytes with a 64-bit big-endian bit length
+    static std::string pad64(std::string_view data)
+    {
+        std::string message(data);
+        const std::uint64_t bitLength = static_cast<std::uint64_t>(data.size()) * 8;
+
+        message.push_back(static_cast<char>(0x80));
+        while (message.size() % 64 != 56)
+        {
+            message.push_back('\0');
+        }
+        appendBigEndian64(message, bitLength);
+
+        return message;
+    }
+
+    // the sha-512 family pads to a multiple of 128 bytes with a 128-bit big-endian bit length
+    static std::string pad128(std::string_view data)
+    {
+        std::string message(data);
+        const std::uint64_t bitLength = static_cast<std::uint64_t>(data.size()) * 8;
+
+        message.push_back(static_cast<char>(0x80));
+        while (message.size() % 128 != 112)
+        {
+            message.push_back('\0');
+        }
+        appendBigEndian64(message, 0);
+        appendBigEndian64(message, bitLength);
+
+        return message;
+    }
+
+    static std::string sha1Impl(std::string_view data)
+    {
+        std::uint32_t h[5] = {0x67452301u, 0xEFCDAB89u, 0x98BADCFEu, 0x10325476u, 0xC3D2E1F0u};
+
+        const std::string message = pad64(data);
+        const auto* bytes = reinterpret_cast<const unsigned char*>(message.data());
+
+        for (std::size_t offset = 0; offset < message.size(); offset += 64)
+        {
+            std::uint32_t w[80];
+            for (int t = 0; t < 16; ++t)
             {
-                value = (value << 8) | static_cast<std::uint64_t>(bytes[i + b]);
+                const std::size_t i = offset + static_cast<std::size_t>(t) * 4;
+                w[t] = (static_cast<std::uint32_t>(bytes[i]) << 24) | (static_cast<std::uint32_t>(bytes[i + 1]) << 16) | (static_cast<std::uint32_t>(bytes[i + 2]) << 8) | static_cast<std::uint32_t>(bytes[i + 3]);
             }
-            w[t] = value;
+            for (int t = 16; t < 80; ++t)
+            {
+                w[t] = rotl32(w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16], 1);
+            }
+
+            std::uint32_t a = h[0];
+            std::uint32_t b = h[1];
+            std::uint32_t c = h[2];
+            std::uint32_t d = h[3];
+            std::uint32_t e = h[4];
+
+            for (int t = 0; t < 80; ++t)
+            {
+                std::uint32_t f = 0;
+                std::uint32_t k = 0;
+                if (t < 20)
+                {
+                    f = (b & c) | (~b & d);
+                    k = 0x5A827999u;
+                }
+                else if (t < 40)
+                {
+                    f = b ^ c ^ d;
+                    k = 0x6ED9EBA1u;
+                }
+                else if (t < 60)
+                {
+                    f = (b & c) | (b & d) | (c & d);
+                    k = 0x8F1BBCDCu;
+                }
+                else
+                {
+                    f = b ^ c ^ d;
+                    k = 0xCA62C1D6u;
+                }
+
+                const std::uint32_t temp = rotl32(a, 5) + f + e + k + w[t];
+                e = d;
+                d = c;
+                c = rotl32(b, 30);
+                b = a;
+                a = temp;
+            }
+
+            h[0] += a;
+            h[1] += b;
+            h[2] += c;
+            h[3] += d;
+            h[4] += e;
         }
-        for (int t = 16; t < 80; ++t)
+
+        std::string out;
+        for (std::uint32_t word : h)
         {
-            const std::uint64_t s0 = rotr64(w[t - 15], 1) ^ rotr64(w[t - 15], 8) ^ (w[t - 15] >> 7);
-            const std::uint64_t s1 = rotr64(w[t - 2], 19) ^ rotr64(w[t - 2], 61) ^ (w[t - 2] >> 6);
-            w[t] = w[t - 16] + s0 + w[t - 7] + s1;
+            appendBigEndian32(out, word);
         }
 
-        std::uint64_t a = h[0];
-        std::uint64_t b = h[1];
-        std::uint64_t c = h[2];
-        std::uint64_t d = h[3];
-        std::uint64_t e = h[4];
-        std::uint64_t f = h[5];
-        std::uint64_t g = h[6];
-        std::uint64_t hh = h[7];
-
-        for (int t = 0; t < 80; ++t)
-        {
-            const std::uint64_t S1 = rotr64(e, 14) ^ rotr64(e, 18) ^ rotr64(e, 41);
-            const std::uint64_t ch = (e & f) ^ (~e & g);
-            const std::uint64_t temp1 = hh + S1 + ch + kSha512K[t] + w[t];
-            const std::uint64_t S0 = rotr64(a, 28) ^ rotr64(a, 34) ^ rotr64(a, 39);
-            const std::uint64_t maj = (a & b) ^ (a & c) ^ (b & c);
-            const std::uint64_t temp2 = S0 + maj;
-
-            hh = g;
-            g = f;
-            f = e;
-            e = d + temp1;
-            d = c;
-            c = b;
-            b = a;
-            a = temp1 + temp2;
-        }
-
-        h[0] += a;
-        h[1] += b;
-        h[2] += c;
-        h[3] += d;
-        h[4] += e;
-        h[5] += f;
-        h[6] += g;
-        h[7] += hh;
+        return out;
     }
 
-    std::string full;
-    for (std::uint64_t word : h)
+    static std::string sha256Core(std::string_view data, const std::uint32_t initial[8], std::size_t outputBytes)
     {
-        appendBigEndian64(full, word);
+        std::uint32_t h[8];
+        for (int i = 0; i < 8; ++i)
+        {
+            h[i] = initial[i];
+        }
+
+        const std::string message = pad64(data);
+        const auto* bytes = reinterpret_cast<const unsigned char*>(message.data());
+
+        for (std::size_t offset = 0; offset < message.size(); offset += 64)
+        {
+            std::uint32_t w[64];
+            for (int t = 0; t < 16; ++t)
+            {
+                const std::size_t i = offset + static_cast<std::size_t>(t) * 4;
+                w[t] = (static_cast<std::uint32_t>(bytes[i]) << 24) | (static_cast<std::uint32_t>(bytes[i + 1]) << 16) | (static_cast<std::uint32_t>(bytes[i + 2]) << 8) | static_cast<std::uint32_t>(bytes[i + 3]);
+            }
+            for (int t = 16; t < 64; ++t)
+            {
+                const std::uint32_t s0 = rotr32(w[t - 15], 7) ^ rotr32(w[t - 15], 18) ^ (w[t - 15] >> 3);
+                const std::uint32_t s1 = rotr32(w[t - 2], 17) ^ rotr32(w[t - 2], 19) ^ (w[t - 2] >> 10);
+                w[t] = w[t - 16] + s0 + w[t - 7] + s1;
+            }
+
+            std::uint32_t a = h[0];
+            std::uint32_t b = h[1];
+            std::uint32_t c = h[2];
+            std::uint32_t d = h[3];
+            std::uint32_t e = h[4];
+            std::uint32_t f = h[5];
+            std::uint32_t g = h[6];
+            std::uint32_t hh = h[7];
+
+            for (int t = 0; t < 64; ++t)
+            {
+                const std::uint32_t S1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+                const std::uint32_t ch = (e & f) ^ (~e & g);
+                const std::uint32_t temp1 = hh + S1 + ch + kSha256K[t] + w[t];
+                const std::uint32_t S0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+                const std::uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+                const std::uint32_t temp2 = S0 + maj;
+
+                hh = g;
+                g = f;
+                f = e;
+                e = d + temp1;
+                d = c;
+                c = b;
+                b = a;
+                a = temp1 + temp2;
+            }
+
+            h[0] += a;
+            h[1] += b;
+            h[2] += c;
+            h[3] += d;
+            h[4] += e;
+            h[5] += f;
+            h[6] += g;
+            h[7] += hh;
+        }
+
+        std::string full;
+        for (std::uint32_t word : h)
+        {
+            appendBigEndian32(full, word);
+        }
+
+        return full.substr(0, outputBytes);
     }
 
-    return full.substr(0, outputBytes);
-}
-
-std::string normalize(std::string_view algorithm)
-{
-    std::string out;
-    for (char c : algorithm)
+    static std::string sha512Core(std::string_view data, const std::uint64_t initial[8], std::size_t outputBytes)
     {
-        if (c >= 'a' && c <= 'z')
+        std::uint64_t h[8];
+        for (int i = 0; i < 8; ++i)
         {
-            out.push_back(static_cast<char>(c - 'a' + 'A'));
+            h[i] = initial[i];
         }
-        else if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+
+        const std::string message = pad128(data);
+        const auto* bytes = reinterpret_cast<const unsigned char*>(message.data());
+
+        for (std::size_t offset = 0; offset < message.size(); offset += 128)
         {
-            out.push_back(c);
+            std::uint64_t w[80];
+            for (int t = 0; t < 16; ++t)
+            {
+                const std::size_t i = offset + static_cast<std::size_t>(t) * 8;
+                std::uint64_t value = 0;
+                for (int b = 0; b < 8; ++b)
+                {
+                    value = (value << 8) | static_cast<std::uint64_t>(bytes[i + b]);
+                }
+                w[t] = value;
+            }
+            for (int t = 16; t < 80; ++t)
+            {
+                const std::uint64_t s0 = rotr64(w[t - 15], 1) ^ rotr64(w[t - 15], 8) ^ (w[t - 15] >> 7);
+                const std::uint64_t s1 = rotr64(w[t - 2], 19) ^ rotr64(w[t - 2], 61) ^ (w[t - 2] >> 6);
+                w[t] = w[t - 16] + s0 + w[t - 7] + s1;
+            }
+
+            std::uint64_t a = h[0];
+            std::uint64_t b = h[1];
+            std::uint64_t c = h[2];
+            std::uint64_t d = h[3];
+            std::uint64_t e = h[4];
+            std::uint64_t f = h[5];
+            std::uint64_t g = h[6];
+            std::uint64_t hh = h[7];
+
+            for (int t = 0; t < 80; ++t)
+            {
+                const std::uint64_t S1 = rotr64(e, 14) ^ rotr64(e, 18) ^ rotr64(e, 41);
+                const std::uint64_t ch = (e & f) ^ (~e & g);
+                const std::uint64_t temp1 = hh + S1 + ch + kSha512K[t] + w[t];
+                const std::uint64_t S0 = rotr64(a, 28) ^ rotr64(a, 34) ^ rotr64(a, 39);
+                const std::uint64_t maj = (a & b) ^ (a & c) ^ (b & c);
+                const std::uint64_t temp2 = S0 + maj;
+
+                hh = g;
+                g = f;
+                f = e;
+                e = d + temp1;
+                d = c;
+                c = b;
+                b = a;
+                a = temp1 + temp2;
+            }
+
+            h[0] += a;
+            h[1] += b;
+            h[2] += c;
+            h[3] += d;
+            h[4] += e;
+            h[5] += f;
+            h[6] += g;
+            h[7] += hh;
         }
+
+        std::string full;
+        for (std::uint64_t word : h)
+        {
+            appendBigEndian64(full, word);
+        }
+
+        return full.substr(0, outputBytes);
     }
 
-    return out;
-}
+    static std::string normalize(std::string_view algorithm)
+    {
+        std::string out;
+        for (char c : algorithm)
+        {
+            if (c >= 'a' && c <= 'z')
+            {
+                out.push_back(static_cast<char>(c - 'a' + 'A'));
+            }
+            else if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+            {
+                out.push_back(c);
+            }
+        }
+
+        return out;
+    }
+};
 } // namespace
 
 std::string Sha::sha1(std::string_view data)
 {
-    return sha1Impl(data);
+    return ShaOps::sha1Impl(data);
 }
 
 std::string Sha::sha224(std::string_view data)
 {
     static const std::uint32_t iv[8] = {0xc1059ed8, 0x367cd507, 0x3070dd17, 0xf70e5939, 0xffc00b31, 0x68581511, 0x64f98fa7, 0xbefa4fa4};
-    return sha256Core(data, iv, 28);
+    return ShaOps::sha256Core(data, iv, 28);
 }
 
 std::string Sha::sha256(std::string_view data)
 {
     static const std::uint32_t iv[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
-    return sha256Core(data, iv, 32);
+    return ShaOps::sha256Core(data, iv, 32);
 }
 
 std::string Sha::sha384(std::string_view data)
 {
     static const std::uint64_t iv[8] = {0xcbbb9d5dc1059ed8ull, 0x629a292a367cd507ull, 0x9159015a3070dd17ull, 0x152fecd8f70e5939ull, 0x67332667ffc00b31ull, 0x8eb44a8768581511ull, 0xdb0c2e0d64f98fa7ull, 0x47b5481dbefa4fa4ull};
-    return sha512Core(data, iv, 48);
+    return ShaOps::sha512Core(data, iv, 48);
 }
 
 std::string Sha::sha512(std::string_view data)
 {
     static const std::uint64_t iv[8] = {0x6a09e667f3bcc908ull, 0xbb67ae8584caa73bull, 0x3c6ef372fe94f82bull, 0xa54ff53a5f1d36f1ull, 0x510e527fade682d1ull, 0x9b05688c2b3e6c1full, 0x1f83d9abfb41bd6bull, 0x5be0cd19137e2179ull};
-    return sha512Core(data, iv, 64);
+    return ShaOps::sha512Core(data, iv, 64);
 }
 
 std::size_t Sha::blockSize(std::string_view algorithm)
 {
-    const std::string name = normalize(algorithm);
+    const std::string name = ShaOps::normalize(algorithm);
     if (name == "SHA384" || name == "SHA512")
     {
         return 128;
@@ -392,13 +396,13 @@ std::size_t Sha::blockSize(std::string_view algorithm)
 
 bool Sha::isSupported(std::string_view algorithm)
 {
-    const std::string name = normalize(algorithm);
+    const std::string name = ShaOps::normalize(algorithm);
     return name == "SHA1" || name == "SHA224" || name == "SHA256" || name == "SHA384" || name == "SHA512";
 }
 
 std::string Sha::hashByName(std::string_view algorithm, std::string_view data)
 {
-    const std::string name = normalize(algorithm);
+    const std::string name = ShaOps::normalize(algorithm);
     if (name == "SHA1")
     {
         return sha1(data);

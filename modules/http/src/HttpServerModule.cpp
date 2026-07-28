@@ -30,112 +30,116 @@ namespace
 {
 constexpr const char* kRequestMeta = "varn.HttpRequest";
 
-int luaRequestIndex(lua_State* L)
+class HttpRequestLua
 {
-    auto* request = static_cast<HttpRequest*>(luaL_checkudata(L, 1, kRequestMeta));
-    const char* key = lua_tostring(L, 2);
-    if (key == nullptr)
+public:
+    static int luaRequestIndex(lua_State* L)
     {
+        auto* request = static_cast<HttpRequest*>(luaL_checkudata(L, 1, kRequestMeta));
+        const char* key = lua_tostring(L, 2);
+        if (key == nullptr)
+        {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        if (std::strcmp(key, "path") == 0)
+        {
+            lua_pushlstring(L, request->path.data(), request->path.size());
+            return 1;
+        }
+
+        if (std::strcmp(key, "method") == 0)
+        {
+            lua_pushlstring(L, request->method.data(), request->method.size());
+            return 1;
+        }
+
+        if (std::strcmp(key, "host") == 0)
+        {
+            lua_pushlstring(L, request->host.data(), request->host.size());
+            return 1;
+        }
+
+        if (std::strcmp(key, "target") == 0)
+        {
+            lua_pushlstring(L, request->target.data(), request->target.size());
+            return 1;
+        }
+
+        if (std::strcmp(key, "queryString") == 0)
+        {
+            lua_pushlstring(L, request->queryString.data(), request->queryString.size());
+            return 1;
+        }
+
+        if (std::strcmp(key, "body") == 0)
+        {
+            lua_pushlstring(L, request->body.data(), request->body.size());
+            return 1;
+        }
+
+        if (std::strcmp(key, "remoteAddress") == 0)
+        {
+            lua_pushlstring(L, request->remoteAddress.data(), request->remoteAddress.size());
+            return 1;
+        }
+
+        if (std::strcmp(key, "headers") == 0)
+        {
+            varn::lua::LuaHelpers::pushStringMap(L, request->headers);
+            return 1;
+        }
+
+        if (std::strcmp(key, "cookies") == 0)
+        {
+            varn::lua::LuaHelpers::pushStringMap(L, request->cookies);
+            return 1;
+        }
+
+        if (std::strcmp(key, "query") == 0)
+        {
+            varn::lua::LuaHelpers::pushStringMap(L, request->query);
+            return 1;
+        }
+
         lua_pushnil(L);
         return 1;
     }
 
-    if (std::strcmp(key, "path") == 0)
+    static int luaRequestGc(lua_State* L)
     {
-        lua_pushlstring(L, request->path.data(), request->path.size());
-        return 1;
+        auto* request = static_cast<HttpRequest*>(lua_touserdata(L, 1));
+        if (request != nullptr)
+        {
+            std::destroy_at(request);
+        }
+
+        return 0;
     }
 
-    if (std::strcmp(key, "method") == 0)
+    static void pushRequestUserdata(lua_State* L, HttpRequest&& request)
     {
-        lua_pushlstring(L, request->method.data(), request->method.size());
-        return 1;
+        // the request is owned by this userdata so its fields are pushed only when the handler reads them, and it survives across an await
+        void* memory = lua_newuserdatauv(L, sizeof(HttpRequest), 0);
+        new (memory) HttpRequest(std::move(request));
+        luaL_getmetatable(L, kRequestMeta);
+        lua_setmetatable(L, -2);
     }
 
-    if (std::strcmp(key, "host") == 0)
+    static void createRequestMetatable(lua_State* L)
     {
-        lua_pushlstring(L, request->host.data(), request->host.size());
-        return 1;
+        if (luaL_newmetatable(L, kRequestMeta))
+        {
+            lua_pushcfunction(L, &HttpRequestLua::luaRequestIndex);
+            lua_setfield(L, -2, "__index");
+            lua_pushcfunction(L, &HttpRequestLua::luaRequestGc);
+            lua_setfield(L, -2, "__gc");
+        }
+
+        lua_pop(L, 1);
     }
-
-    if (std::strcmp(key, "target") == 0)
-    {
-        lua_pushlstring(L, request->target.data(), request->target.size());
-        return 1;
-    }
-
-    if (std::strcmp(key, "queryString") == 0)
-    {
-        lua_pushlstring(L, request->queryString.data(), request->queryString.size());
-        return 1;
-    }
-
-    if (std::strcmp(key, "body") == 0)
-    {
-        lua_pushlstring(L, request->body.data(), request->body.size());
-        return 1;
-    }
-
-    if (std::strcmp(key, "remoteAddress") == 0)
-    {
-        lua_pushlstring(L, request->remoteAddress.data(), request->remoteAddress.size());
-        return 1;
-    }
-
-    if (std::strcmp(key, "headers") == 0)
-    {
-        varn::lua::LuaHelpers::pushStringMap(L, request->headers);
-        return 1;
-    }
-
-    if (std::strcmp(key, "cookies") == 0)
-    {
-        varn::lua::LuaHelpers::pushStringMap(L, request->cookies);
-        return 1;
-    }
-
-    if (std::strcmp(key, "query") == 0)
-    {
-        varn::lua::LuaHelpers::pushStringMap(L, request->query);
-        return 1;
-    }
-
-    lua_pushnil(L);
-    return 1;
-}
-
-int luaRequestGc(lua_State* L)
-{
-    auto* request = static_cast<HttpRequest*>(lua_touserdata(L, 1));
-    if (request != nullptr)
-    {
-        std::destroy_at(request);
-    }
-
-    return 0;
-}
-
-void pushRequestUserdata(lua_State* L, HttpRequest&& request)
-{
-    // the request is owned by this userdata so its fields are pushed only when the handler reads them, and it survives across an await
-    void* memory = lua_newuserdatauv(L, sizeof(HttpRequest), 0);
-    new (memory) HttpRequest(std::move(request));
-    luaL_getmetatable(L, kRequestMeta);
-    lua_setmetatable(L, -2);
-}
-
-void createRequestMetatable(lua_State* L)
-{
-    if (luaL_newmetatable(L, kRequestMeta))
-    {
-        lua_pushcfunction(L, &luaRequestIndex);
-        lua_setfield(L, -2, "__index");
-        lua_pushcfunction(L, &luaRequestGc);
-        lua_setfield(L, -2, "__gc");
-    }
-
-    lua_pop(L, 1);
-}
+};
 } // namespace
 
 class HttpServerLuaBindings
@@ -300,7 +304,7 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L)
         lua_rawgeti(mainState, LUA_REGISTRYINDEX, persistedHandlerRef);
         lua_xmove(mainState, thread, 1);
 
-        pushRequestUserdata(thread, std::move(request));
+        HttpRequestLua::pushRequestUserdata(thread, std::move(request));
         HttpServerLuaBindings::pushResponse(thread, response);
 
         int nres = 0;
@@ -378,7 +382,7 @@ int HttpServerLuaBindings::luaCreateServer(lua_State* L)
 
 void HttpServerLuaBindings::createMetatables(lua_State* L)
 {
-    createRequestMetatable(L);
+    HttpRequestLua::createRequestMetatable(L);
 
     if (luaL_newmetatable(L, kResponseMeta))
     {

@@ -5,10 +5,14 @@
 namespace
 {
 
-varn_runtime* asRuntime(jlong handle)
+class JniHelpers
 {
-    return reinterpret_cast<varn_runtime*>(handle);
-}
+public:
+    static varn_runtime* asRuntime(jlong handle)
+    {
+        return reinterpret_cast<varn_runtime*>(handle);
+    }
+};
 
 } // namespace
 
@@ -24,7 +28,7 @@ extern "C"
     {
         // GetStringUTFChars requires a non-null jstring, so a null argument is forwarded as null for the C api to reject
         const char* nativePath = path != nullptr ? env->GetStringUTFChars(path, nullptr) : nullptr;
-        const jint code = varn_runtime_run_file(asRuntime(handle), nativePath);
+        const jint code = varn_runtime_run_file(JniHelpers::asRuntime(handle), nativePath);
         if (nativePath != nullptr)
         {
             env->ReleaseStringUTFChars(path, nativePath);
@@ -36,7 +40,7 @@ extern "C"
     {
         const char* nativeSource = source != nullptr ? env->GetStringUTFChars(source, nullptr) : nullptr;
         const char* nativeChunk = chunkName != nullptr ? env->GetStringUTFChars(chunkName, nullptr) : nullptr;
-        const jint code = varn_runtime_run_string(asRuntime(handle), nativeSource, nativeChunk);
+        const jint code = varn_runtime_run_string(JniHelpers::asRuntime(handle), nativeSource, nativeChunk);
         if (nativeSource != nullptr)
         {
             env->ReleaseStringUTFChars(source, nativeSource);
@@ -50,12 +54,12 @@ extern "C"
 
     JNIEXPORT void JNICALL Java_com_varn_VarnRuntime_nativeStop(JNIEnv*, jclass, jlong handle)
     {
-        varn_runtime_stop(asRuntime(handle));
+        varn_runtime_stop(JniHelpers::asRuntime(handle));
     }
 
     JNIEXPORT void JNICALL Java_com_varn_VarnRuntime_nativeFree(JNIEnv*, jclass, jlong handle)
     {
-        varn_runtime_free(asRuntime(handle));
+        varn_runtime_free(JniHelpers::asRuntime(handle));
     }
 
     JNIEXPORT jstring JNICALL Java_com_varn_VarnRuntime_nativeVersion(JNIEnv* env, jclass)

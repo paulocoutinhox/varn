@@ -32,86 +32,90 @@ using varn::runtime::EventLoop;
 namespace
 {
 
-#if !defined(_WIN32)
-// the bundled openssl ships no trust store, so point verification at the os ca bundle
-std::string resolveCaBundle()
+class PocoSocketTlsHelpers
 {
-    if (const char* env = std::getenv("SSL_CERT_FILE"); env != nullptr && env[0] != '\0')
+public:
+#if !defined(_WIN32)
+    // the bundled openssl ships no trust store, so point verification at the os ca bundle
+    static std::string resolveCaBundle()
     {
-        return env;
-    }
-
-    static const char* const candidates[] = {
-        "/etc/ssl/cert.pem",
-        "/etc/ssl/certs/ca-certificates.crt",
-        "/etc/pki/tls/certs/ca-bundle.crt",
-        "/etc/ssl/ca-bundle.pem",
-        "/opt/homebrew/etc/openssl@3/cert.pem",
-        "/usr/local/etc/openssl@3/cert.pem",
-    };
-
-    for (const char* path : candidates)
-    {
-        std::error_code ec;
-        if (std::filesystem::exists(path, ec))
+        if (const char* env = std::getenv("SSL_CERT_FILE"); env != nullptr && env[0] != '\0')
         {
-            return path;
+            return env;
         }
-    }
 
-    return std::string();
-}
+        static const char* const candidates[] = {
+            "/etc/ssl/cert.pem",
+            "/etc/ssl/certs/ca-certificates.crt",
+            "/etc/pki/tls/certs/ca-bundle.crt",
+            "/etc/ssl/ca-bundle.pem",
+            "/opt/homebrew/etc/openssl@3/cert.pem",
+            "/usr/local/etc/openssl@3/cert.pem",
+        };
+
+        for (const char* path : candidates)
+        {
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec))
+            {
+                return path;
+            }
+        }
+
+        return std::string();
+    }
 #endif
 
-Poco::Net::Context::Ptr tlsClientContext(bool verify)
-{
-    static Poco::Crypto::OpenSSLInitializer openSslInitializer;
-
-    // sets the ssl manager default handler once so a strict session fails closed on an invalid certificate
-    static std::once_flag onceFlag;
-    // clang-format off
-    std::call_once(onceFlag, []
+    static Poco::Net::Context::Ptr tlsClientContext(bool verify)
     {
-        Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> handler(new Poco::Net::RejectCertificateHandler(false));
-        Poco::Net::SSLManager::instance().initializeClient(nullptr, handler, nullptr);
-    });
-    // clang-format on
+        static Poco::Crypto::OpenSSLInitializer openSslInitializer;
+
+        // sets the ssl manager default handler once so a strict session fails closed on an invalid certificate
+        static std::once_flag onceFlag;
+        // clang-format off
+        std::call_once(onceFlag, []
+        {
+            Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> handler(new Poco::Net::RejectCertificateHandler(false));
+            Poco::Net::SSLManager::instance().initializeClient(nullptr, handler, nullptr);
+        });
+        // clang-format on
 
 #if defined(_WIN32)
-    if (verify)
-    {
-        // verify against the system root store since the personal store holds no trusted roots
-        static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
-            Poco::Net::Context::TLS_CLIENT_USE, "", Poco::Net::Context::VERIFY_STRICT,
-            Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_ROOT);
-        return strict;
-    }
-
-    static Poco::Net::Context::Ptr insecure = new Poco::Net::Context(
-        Poco::Net::Context::TLS_CLIENT_USE, "", Poco::Net::Context::VERIFY_NONE,
-        Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_ROOT);
-    return insecure;
-#else
-    if (verify)
-    {
-        static const std::string caBundle = resolveCaBundle();
-        if (caBundle.empty())
+        if (verify)
         {
-            throw std::runtime_error("[SocketTls] No system CA trust store was found for certificate verification.");
+            // verify against the system root store since the personal store holds no trusted roots
+            static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
+                Poco::Net::Context::TLS_CLIENT_USE, "", Poco::Net::Context::VERIFY_STRICT,
+                Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_ROOT);
+            return strict;
         }
 
-        static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
-            Poco::Net::Context::TLS_CLIENT_USE, "", "", caBundle, Poco::Net::Context::VERIFY_STRICT, 9, true,
-            "DEFAULT@SECLEVEL=2");
-        return strict;
-    }
+        static Poco::Net::Context::Ptr insecure = new Poco::Net::Context(
+            Poco::Net::Context::TLS_CLIENT_USE, "", Poco::Net::Context::VERIFY_NONE,
+            Poco::Net::Context::OPT_DEFAULTS, Poco::Net::Context::CERT_STORE_ROOT);
+        return insecure;
+#else
+        if (verify)
+        {
+            static const std::string caBundle = PocoSocketTlsHelpers::resolveCaBundle();
+            if (caBundle.empty())
+            {
+                throw std::runtime_error("[SocketTls] No system CA trust store was found for certificate verification.");
+            }
 
-    static Poco::Net::Context::Ptr insecure = new Poco::Net::Context(
-        Poco::Net::Context::TLS_CLIENT_USE, "", "", "", Poco::Net::Context::VERIFY_NONE, 9, false,
-        "DEFAULT@SECLEVEL=2");
-    return insecure;
+            static Poco::Net::Context::Ptr strict = new Poco::Net::Context(
+                Poco::Net::Context::TLS_CLIENT_USE, "", "", caBundle, Poco::Net::Context::VERIFY_STRICT, 9, true,
+                "DEFAULT@SECLEVEL=2");
+            return strict;
+        }
+
+        static Poco::Net::Context::Ptr insecure = new Poco::Net::Context(
+            Poco::Net::Context::TLS_CLIENT_USE, "", "", "", Poco::Net::Context::VERIFY_NONE, 9, false,
+            "DEFAULT@SECLEVEL=2");
+        return insecure;
 #endif
-}
+    }
+};
 
 } // namespace
 
@@ -143,7 +147,7 @@ void PocoStreamConnection::startTlsAsync(varn::runtime::Runtime& runtime, std::s
             try
             {
                 self->socket.setBlocking(true);
-                Poco::Net::SecureStreamSocket secure = Poco::Net::SecureStreamSocket::attach(self->socket, host, tlsClientContext(verify));
+                Poco::Net::SecureStreamSocket secure = Poco::Net::SecureStreamSocket::attach(self->socket, host, PocoSocketTlsHelpers::tlsClientContext(verify));
                 secure.setBlocking(true);
                 secure.completeHandshake();
                 upgraded = secure;
@@ -201,7 +205,7 @@ void SocketTransport::connectTlsAsync(varn::runtime::Runtime& runtime, const std
                 raw.connect(address);
             }
 
-            Poco::Net::SecureStreamSocket secure = Poco::Net::SecureStreamSocket::attach(raw, host, tlsClientContext(verify));
+            Poco::Net::SecureStreamSocket secure = Poco::Net::SecureStreamSocket::attach(raw, host, PocoSocketTlsHelpers::tlsClientContext(verify));
             secure.setBlocking(true);
             secure.completeHandshake();
             connection = std::make_shared<PocoStreamConnection>(secure, *loop);

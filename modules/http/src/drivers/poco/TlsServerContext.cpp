@@ -29,51 +29,55 @@ namespace varn::http
 #if defined(_WIN32)
 namespace
 {
-// bundle the pem certificate and private key into an in-memory pkcs12 with an empty passphrase, the only shape schannel imports
-std::vector<char> buildPkcs12FromPem(const std::string& keyFile, const std::string& certFile)
+class TlsServerHelpers
 {
-    std::unique_ptr<BIO, decltype(&BIO_free)> certBio(BIO_new_file(certFile.c_str(), "rb"), BIO_free);
-    if (!certBio)
+public:
+    // bundle the pem certificate and private key into an in-memory pkcs12 with an empty passphrase, the only shape schannel imports
+    static std::vector<char> buildPkcs12FromPem(const std::string& keyFile, const std::string& certFile)
     {
-        throw std::runtime_error("[TlsServerContext] The TLS certificate file could not be opened.");
-    }
+        std::unique_ptr<BIO, decltype(&BIO_free)> certBio(BIO_new_file(certFile.c_str(), "rb"), BIO_free);
+        if (!certBio)
+        {
+            throw std::runtime_error("[TlsServerContext] The TLS certificate file could not be opened.");
+        }
 
-    std::unique_ptr<X509, decltype(&X509_free)> certificate(PEM_read_bio_X509(certBio.get(), nullptr, nullptr, nullptr), X509_free);
-    if (!certificate)
-    {
-        throw std::runtime_error("[TlsServerContext] The TLS certificate is not valid PEM.");
-    }
+        std::unique_ptr<X509, decltype(&X509_free)> certificate(PEM_read_bio_X509(certBio.get(), nullptr, nullptr, nullptr), X509_free);
+        if (!certificate)
+        {
+            throw std::runtime_error("[TlsServerContext] The TLS certificate is not valid PEM.");
+        }
 
-    std::unique_ptr<BIO, decltype(&BIO_free)> keyBio(BIO_new_file(keyFile.c_str(), "rb"), BIO_free);
-    if (!keyBio)
-    {
-        throw std::runtime_error("[TlsServerContext] The TLS private key file could not be opened.");
-    }
+        std::unique_ptr<BIO, decltype(&BIO_free)> keyBio(BIO_new_file(keyFile.c_str(), "rb"), BIO_free);
+        if (!keyBio)
+        {
+            throw std::runtime_error("[TlsServerContext] The TLS private key file could not be opened.");
+        }
 
-    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> privateKey(PEM_read_bio_PrivateKey(keyBio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-    if (!privateKey)
-    {
-        throw std::runtime_error("[TlsServerContext] The TLS private key is not valid PEM.");
-    }
+        std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> privateKey(PEM_read_bio_PrivateKey(keyBio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+        if (!privateKey)
+        {
+            throw std::runtime_error("[TlsServerContext] The TLS private key is not valid PEM.");
+        }
 
-    // leave the certificate bag unencrypted since it is public, which also avoids the legacy cipher openssl 3 no longer enables by default
-    std::unique_ptr<PKCS12, decltype(&PKCS12_free)> bundle(
-        PKCS12_create("", "varn", privateKey.get(), certificate.get(), nullptr, 0, -1, 0, 0, 0), PKCS12_free);
-    if (!bundle)
-    {
-        throw std::runtime_error("[TlsServerContext] The TLS key material could not be bundled for the platform.");
-    }
+        // leave the certificate bag unencrypted since it is public, which also avoids the legacy cipher openssl 3 no longer enables by default
+        std::unique_ptr<PKCS12, decltype(&PKCS12_free)> bundle(
+            PKCS12_create("", "varn", privateKey.get(), certificate.get(), nullptr, 0, -1, 0, 0, 0), PKCS12_free);
+        if (!bundle)
+        {
+            throw std::runtime_error("[TlsServerContext] The TLS key material could not be bundled for the platform.");
+        }
 
-    std::unique_ptr<BIO, decltype(&BIO_free)> sink(BIO_new(BIO_s_mem()), BIO_free);
-    if (!sink || i2d_PKCS12_bio(sink.get(), bundle.get()) != 1)
-    {
-        throw std::runtime_error("[TlsServerContext] The TLS key material could not be serialized.");
-    }
+        std::unique_ptr<BIO, decltype(&BIO_free)> sink(BIO_new(BIO_s_mem()), BIO_free);
+        if (!sink || i2d_PKCS12_bio(sink.get(), bundle.get()) != 1)
+        {
+            throw std::runtime_error("[TlsServerContext] The TLS key material could not be serialized.");
+        }
 
-    char* data = nullptr;
-    const long length = BIO_get_mem_data(sink.get(), &data);
-    return std::vector<char>(data, data + length);
-}
+        char* data = nullptr;
+        const long length = BIO_get_mem_data(sink.get(), &data);
+        return std::vector<char>(data, data + length);
+    }
+};
 
 // import the key material straight from memory so the private key never touches disk, unlike the file path schannel documents
 class MemoryPkcs12Context : public Poco::Net::Context
@@ -97,7 +101,7 @@ Poco::Net::Context::Ptr TlsServerContext::create(const HttpServerOptions& opts)
 
 #if defined(_WIN32)
     // schannel imports one pkcs12 blob, so bundle the same pem key and certificate in memory to keep the lua config identical across desktop os
-    const std::vector<char> bundle = buildPkcs12FromPem(opts.keyFile, opts.certFile);
+    const std::vector<char> bundle = TlsServerHelpers::buildPkcs12FromPem(opts.keyFile, opts.certFile);
     Poco::Net::Context::Ptr context = new MemoryPkcs12Context(bundle);
 #else
     // a modern suite of forward-secret aead ciphers, leaving tls 1.3 to negotiate its own

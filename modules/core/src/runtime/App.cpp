@@ -34,17 +34,22 @@ namespace
 constexpr long long kWorkerMinLifetimeMs = 1000;
 
 volatile sig_atomic_t gWorkerShutdown = 0;
-void onWorkerSignal(int)
-{
-    gWorkerShutdown = 1;
-}
 
-void resetChildSignals()
+class PosixWorkerHelpers
 {
-    // restore default signal handlers so a worker terminates on the parent's shutdown signal
-    signal(SIGINT, SIG_DFL);
-    signal(SIGTERM, SIG_DFL);
-}
+public:
+    static void onWorkerSignal(int)
+    {
+        gWorkerShutdown = 1;
+    }
+
+    static void resetChildSignals()
+    {
+        // restore default signal handlers so a worker terminates on the parent's shutdown signal
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+    }
+};
 } // namespace
 #endif
 
@@ -53,50 +58,54 @@ namespace
 {
 volatile LONG gWinWorkerShutdown = 0;
 
-BOOL WINAPI onWorkerConsoleEvent(DWORD)
+class WinWorkerHelpers
 {
-    // any console control event asks the supervisor to stop restarting and tear the workers down
-    InterlockedExchange(&gWinWorkerShutdown, 1);
-    return TRUE;
-}
-
-HANDLE spawnWorker(const std::wstring& commandLine)
-{
-    STARTUPINFOW startup{};
-    startup.cb = static_cast<DWORD>(sizeof(startup));
-
-    // inherit the supervisor's standard streams so redirected stdout and stderr reach the workers like a posix fork does
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-    startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-    for (HANDLE stream : {startup.hStdInput, startup.hStdOutput, startup.hStdError})
+public:
+    static BOOL WINAPI onWorkerConsoleEvent(DWORD)
     {
-        if (stream != nullptr && stream != INVALID_HANDLE_VALUE)
+        // any console control event asks the supervisor to stop restarting and tear the workers down
+        InterlockedExchange(&gWinWorkerShutdown, 1);
+        return TRUE;
+    }
+
+    static HANDLE spawnWorker(const std::wstring& commandLine)
+    {
+        STARTUPINFOW startup{};
+        startup.cb = static_cast<DWORD>(sizeof(startup));
+
+        // inherit the supervisor's standard streams so redirected stdout and stderr reach the workers like a posix fork does
+        startup.dwFlags = STARTF_USESTDHANDLES;
+        startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+        startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+        for (HANDLE stream : {startup.hStdInput, startup.hStdOutput, startup.hStdError})
         {
-            SetHandleInformation(stream, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            if (stream != nullptr && stream != INVALID_HANDLE_VALUE)
+            {
+                SetHandleInformation(stream, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            }
         }
+
+        PROCESS_INFORMATION process{};
+        std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+        mutableCommand.push_back(L'\0');
+
+        if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup, &process))
+        {
+            return nullptr;
+        }
+
+        CloseHandle(process.hThread);
+        return process.hProcess;
     }
 
-    PROCESS_INFORMATION process{};
-    std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
-    mutableCommand.push_back(L'\0');
-
-    if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup, &process))
+    static void clearWorkerChildMarker()
     {
-        return nullptr;
+        // drop the recursion guard from the child environment so os.getenv never exposes the supervisor detail
+        _putenv("VARN_WORKER_CHILD=");
+        SetEnvironmentVariableW(L"VARN_WORKER_CHILD", nullptr);
     }
-
-    CloseHandle(process.hThread);
-    return process.hProcess;
-}
-
-void clearWorkerChildMarker()
-{
-    // drop the recursion guard from the child environment so os.getenv never exposes the supervisor detail
-    _putenv("VARN_WORKER_CHILD=");
-    SetEnvironmentVariableW(L"VARN_WORKER_CHILD", nullptr);
-}
+};
 } // namespace
 #endif
 
@@ -126,7 +135,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
 
     // install handlers without SA_RESTART before the first fork so a signal during startup cannot orphan workers, and waitpid returns EINTR on shutdown
     struct sigaction action = {};
-    action.sa_handler = onWorkerSignal;
+    action.sa_handler = PosixWorkerHelpers::onWorkerSignal;
     sigemptyset(&action.sa_mask);
     action.sa_flags = 0;
     sigaction(SIGINT, &action, nullptr);
@@ -143,7 +152,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
 
         if (pid == 0)
         {
-            resetChildSignals();
+            PosixWorkerHelpers::resetChildSignals();
             _exit(runChild());
         }
 
@@ -214,7 +223,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
         const pid_t replacement = fork();
         if (replacement == 0)
         {
-            resetChildSignals();
+            PosixWorkerHelpers::resetChildSignals();
             _exit(runChild());
         }
 
@@ -250,7 +259,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
 int App::superviseWorkers(int count, const std::function<int()>& runChild)
 {
     // windows has no fork, so each worker is a relaunch of this executable flagged so it runs the script instead of supervising again
-    SetConsoleCtrlHandler(&onWorkerConsoleEvent, TRUE);
+    SetConsoleCtrlHandler(&WinWorkerHelpers::onWorkerConsoleEvent, TRUE);
     SetEnvironmentVariableW(L"VARN_WORKER_CHILD", L"1");
 
     const std::wstring commandLine = GetCommandLineW();
@@ -259,7 +268,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
     workers.reserve(static_cast<std::size_t>(count));
     for (int i = 0; i < count; ++i)
     {
-        HANDLE worker = spawnWorker(commandLine);
+        HANDLE worker = WinWorkerHelpers::spawnWorker(commandLine);
         if (worker != nullptr)
         {
             workers.push_back(worker);
@@ -272,7 +281,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
     // if not a single worker could be launched, fall back to serving in this process rather than exiting having done nothing
     if (workers.empty())
     {
-        SetConsoleCtrlHandler(&onWorkerConsoleEvent, FALSE);
+        SetConsoleCtrlHandler(&WinWorkerHelpers::onWorkerConsoleEvent, FALSE);
         return runChild();
     }
 
@@ -293,7 +302,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
             }
 
             CloseHandle(worker);
-            HANDLE replacement = spawnWorker(commandLine);
+            HANDLE replacement = WinWorkerHelpers::spawnWorker(commandLine);
             if (replacement == nullptr)
             {
                 log::Log::error("App", "Failed to restart a worker process.");
@@ -381,7 +390,7 @@ int App::run(int argc, char** argv)
 #if defined(_WIN32) && !defined(VARN_NO_FORK)
     if (workerChild)
     {
-        clearWorkerChildMarker();
+        WinWorkerHelpers::clearWorkerChildMarker();
     }
 #endif
 

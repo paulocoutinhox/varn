@@ -17,23 +17,27 @@ namespace varn::fs
 
 namespace
 {
-// build a path from utf-8 code units so windows converts to the native wide encoding instead of the active code page
-std::filesystem::path toPath(const std::string& utf8)
+class StdFsPathHelpers
 {
-    return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
-}
+public:
+    // build a path from utf-8 code units so windows converts to the native wide encoding instead of the active code page
+    static std::filesystem::path toPath(const std::string& utf8)
+    {
+        return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+    }
 
-// return a native path as utf-8 so listings and generated names read the same across desktop os
-std::string fromPath(const std::filesystem::path& path)
-{
-    const std::u8string encoded = path.u8string();
-    return std::string(encoded.begin(), encoded.end());
-}
+    // return a native path as utf-8 so listings and generated names read the same across desktop os
+    static std::string fromPath(const std::filesystem::path& path)
+    {
+        const std::u8string encoded = path.u8string();
+        return std::string(encoded.begin(), encoded.end());
+    }
+};
 } // namespace
 
 std::string FsStorage::readAll(const std::string& path)
 {
-    const std::filesystem::path p = toPath(path);
+    const std::filesystem::path p = StdFsPathHelpers::toPath(path);
 
     // refuse endless streams like devices or fifos so a read into memory always terminates
     std::error_code ec;
@@ -74,7 +78,7 @@ std::string FsStorage::readAll(const std::string& path)
 
 void FsStorage::writeAll(const std::string& path, const std::string& content)
 {
-    const std::filesystem::path p = toPath(path);
+    const std::filesystem::path p = StdFsPathHelpers::toPath(path);
     if (p.has_parent_path())
     {
         std::filesystem::create_directories(p.parent_path());
@@ -96,13 +100,13 @@ void FsStorage::writeAll(const std::string& path, const std::string& content)
 
 bool FsStorage::exists(const std::string& path)
 {
-    return std::filesystem::exists(toPath(path));
+    return std::filesystem::exists(StdFsPathHelpers::toPath(path));
 }
 
 void FsStorage::mkdir(const std::string& path)
 {
     std::error_code ec;
-    std::filesystem::create_directories(toPath(path), ec);
+    std::filesystem::create_directories(StdFsPathHelpers::toPath(path), ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -112,7 +116,7 @@ void FsStorage::mkdir(const std::string& path)
 void FsStorage::removeRecursive(const std::string& path)
 {
     std::error_code ec;
-    std::filesystem::remove_all(toPath(path), ec);
+    std::filesystem::remove_all(StdFsPathHelpers::toPath(path), ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -121,7 +125,7 @@ void FsStorage::removeRecursive(const std::string& path)
 
 FsStat FsStorage::stat(const std::string& path)
 {
-    const std::filesystem::path p = toPath(path);
+    const std::filesystem::path p = StdFsPathHelpers::toPath(path);
     std::error_code ec;
 
     // read symlink status without following the target
@@ -166,7 +170,7 @@ FsStat FsStorage::stat(const std::string& path)
 std::vector<std::string> FsStorage::readdir(const std::string& path)
 {
     std::error_code ec;
-    std::filesystem::directory_iterator it(toPath(path), ec);
+    std::filesystem::directory_iterator it(StdFsPathHelpers::toPath(path), ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -175,7 +179,7 @@ std::vector<std::string> FsStorage::readdir(const std::string& path)
     std::vector<std::string> names;
     for (const auto& entry : it)
     {
-        names.push_back(fromPath(entry.path().filename()));
+        names.push_back(StdFsPathHelpers::fromPath(entry.path().filename()));
     }
 
     return names;
@@ -184,7 +188,7 @@ std::vector<std::string> FsStorage::readdir(const std::string& path)
 void FsStorage::rename(const std::string& from, const std::string& to)
 {
     std::error_code ec;
-    std::filesystem::rename(toPath(from), toPath(to), ec);
+    std::filesystem::rename(StdFsPathHelpers::toPath(from), StdFsPathHelpers::toPath(to), ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -194,7 +198,7 @@ void FsStorage::rename(const std::string& from, const std::string& to)
 void FsStorage::copy(const std::string& from, const std::string& to)
 {
     std::error_code ec;
-    std::filesystem::copy_file(toPath(from), toPath(to), std::filesystem::copy_options::overwrite_existing, ec);
+    std::filesystem::copy_file(StdFsPathHelpers::toPath(from), StdFsPathHelpers::toPath(to), std::filesystem::copy_options::overwrite_existing, ec);
     if (ec)
     {
         throw std::runtime_error("[FsStorage] " + ec.message() + ".");
@@ -203,7 +207,7 @@ void FsStorage::copy(const std::string& from, const std::string& to)
 
 void FsStorage::append(const std::string& path, const std::string& data)
 {
-    const std::filesystem::path p = toPath(path);
+    const std::filesystem::path p = StdFsPathHelpers::toPath(path);
     if (p.has_parent_path())
     {
         std::filesystem::create_directories(p.parent_path());
@@ -225,7 +229,7 @@ void FsStorage::append(const std::string& path, const std::string& data)
 
 std::string FsStorage::mkdtemp(const std::string& prefix)
 {
-    const std::filesystem::path base = toPath(prefix);
+    const std::filesystem::path base = StdFsPathHelpers::toPath(prefix);
     if (base.has_parent_path())
     {
         std::filesystem::create_directories(base.parent_path());
@@ -247,7 +251,7 @@ std::string FsStorage::mkdtemp(const std::string& prefix)
         {
             // restrict the directory to its owner like posix mkdtemp so its contents stay private to this user
             std::filesystem::permissions(candidate, std::filesystem::perms::owner_all, std::filesystem::perm_options::replace, ec);
-            return fromPath(candidate);
+            return StdFsPathHelpers::fromPath(candidate);
         }
     }
 
@@ -331,42 +335,46 @@ private:
     std::mutex mutex;
 };
 
-std::ios::openmode openmodeFor(const std::string& mode)
+class StdFsHelpers
 {
-    const std::ios::openmode binary = std::ios::binary;
-    if (mode == "r")
+public:
+    static std::ios::openmode openmodeFor(const std::string& mode)
     {
-        return binary | std::ios::in;
-    }
-    if (mode == "w")
-    {
-        return binary | std::ios::out | std::ios::trunc;
-    }
-    if (mode == "a")
-    {
-        return binary | std::ios::out | std::ios::app;
-    }
-    if (mode == "r+")
-    {
-        return binary | std::ios::in | std::ios::out;
-    }
-    if (mode == "w+")
-    {
-        return binary | std::ios::in | std::ios::out | std::ios::trunc;
-    }
-    if (mode == "a+")
-    {
-        return binary | std::ios::in | std::ios::out | std::ios::app;
-    }
+        const std::ios::openmode binary = std::ios::binary;
+        if (mode == "r")
+        {
+            return binary | std::ios::in;
+        }
+        if (mode == "w")
+        {
+            return binary | std::ios::out | std::ios::trunc;
+        }
+        if (mode == "a")
+        {
+            return binary | std::ios::out | std::ios::app;
+        }
+        if (mode == "r+")
+        {
+            return binary | std::ios::in | std::ios::out;
+        }
+        if (mode == "w+")
+        {
+            return binary | std::ios::in | std::ios::out | std::ios::trunc;
+        }
+        if (mode == "a+")
+        {
+            return binary | std::ios::in | std::ios::out | std::ios::app;
+        }
 
-    throw std::runtime_error("[FsStorage] The file mode is not one of r, w, a, r+, w+, a+.");
-}
+        throw std::runtime_error("[FsStorage] The file mode is not one of r, w, a, r+, w+, a+.");
+    }
+};
 } // namespace
 
 std::shared_ptr<FsHandle> FsStorage::open(const std::string& path, const std::string& mode)
 {
-    const std::ios::openmode flags = openmodeFor(mode);
-    const std::filesystem::path p = toPath(path);
+    const std::ios::openmode flags = StdFsHelpers::openmodeFor(mode);
+    const std::filesystem::path p = StdFsPathHelpers::toPath(path);
 
     if (mode == "w" || mode == "a" || mode == "w+" || mode == "a+")
     {

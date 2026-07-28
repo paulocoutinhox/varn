@@ -16,13 +16,17 @@ namespace varn::runtime
 
 namespace
 {
-void waitForDrain(const std::shared_ptr<WorkLedger>& ledger)
+class ConcurrencyTestHelpers
 {
-    while (ledger->depth() > 0)
+public:
+    static void waitForDrain(const std::shared_ptr<WorkLedger>& ledger)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        while (ledger->depth() > 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
     }
-}
+};
 } // namespace
 
 TEST(TaskPool, RunsEveryPostedJobAndBalancesTheLedger)
@@ -43,7 +47,7 @@ TEST(TaskPool, RunsEveryPostedJobAndBalancesTheLedger)
         // clang-format on
     }
 
-    waitForDrain(ledger);
+    ConcurrencyTestHelpers::waitForDrain(ledger);
     pool.stop();
 
     EXPECT_EQ(ran.load(), kJobs);
@@ -80,7 +84,7 @@ TEST(TaskPool, ConcurrentProducersHaveEveryJobRun)
         producer.join();
     }
 
-    waitForDrain(ledger);
+    ConcurrencyTestHelpers::waitForDrain(ledger);
     pool.stop();
 
     EXPECT_EQ(ran.load(), kProducers * kPerProducer);
@@ -105,7 +109,7 @@ TEST(TaskPool, AThrowingJobDoesNotCrashAndReleasesItsLedgerEntry)
     });
     // clang-format on
 
-    waitForDrain(ledger);
+    ConcurrencyTestHelpers::waitForDrain(ledger);
     pool.stop();
 
     EXPECT_EQ(ranAfter.load(), 1);

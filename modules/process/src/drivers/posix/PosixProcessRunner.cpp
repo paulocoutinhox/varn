@@ -27,88 +27,92 @@ namespace
 // bound the captured output so a child that streams without end cannot exhaust host memory
 constexpr std::size_t kMaxCaptureBytes = 64 * 1024 * 1024;
 
-// drain stdout and stderr together so a child that fills one pipe buffer while writing the other never deadlocks the parent
-// returns true when the combined capture reached the cap so the caller can terminate a runaway child
-bool drainPipes(int outFd, int errFd, std::string& outData, std::string& errData)
+class PosixProcessHelpers
 {
-    std::array<char, 65536> chunk{};
-
-    // clang-format off
-    pollfd fds[2];
-    fds[0].fd = outFd;
-    fds[1].fd = errFd;
-
-    while (fds[0].fd >= 0 || fds[1].fd >= 0)
+public:
+    // drain stdout and stderr together so a child that fills one pipe buffer while writing the other never deadlocks the parent
+    // returns true when the combined capture reached the cap so the caller can terminate a runaway child
+    static bool drainPipes(int outFd, int errFd, std::string& outData, std::string& errData)
     {
-        fds[0].events = fds[0].fd >= 0 ? POLLIN : 0;
-        fds[1].events = fds[1].fd >= 0 ? POLLIN : 0;
-        fds[0].revents = 0;
-        fds[1].revents = 0;
+        std::array<char, 65536> chunk{};
 
-        if (::poll(fds, 2, -1) < 0)
+        // clang-format off
+        pollfd fds[2];
+        fds[0].fd = outFd;
+        fds[1].fd = errFd;
+
+        while (fds[0].fd >= 0 || fds[1].fd >= 0)
         {
-            if (errno == EINTR)
+            fds[0].events = fds[0].fd >= 0 ? POLLIN : 0;
+            fds[1].events = fds[1].fd >= 0 ? POLLIN : 0;
+            fds[0].revents = 0;
+            fds[1].revents = 0;
+
+            if (::poll(fds, 2, -1) < 0)
             {
-                continue;
-            }
-
-            break;
-        }
-
-        for (int i = 0; i < 2; ++i)
-        {
-            if (fds[i].fd < 0 || fds[i].revents == 0)
-            {
-                continue;
-            }
-
-            const ssize_t got = ::read(fds[i].fd, chunk.data(), chunk.size());
-            if (got > 0)
-            {
-                std::string& sink = (i == 0 ? outData : errData);
-                const std::size_t captured = outData.size() + errData.size();
-                const std::size_t room = captured < kMaxCaptureBytes ? kMaxCaptureBytes - captured : 0;
-                sink.append(chunk.data(), std::min(room, static_cast<std::size_t>(got)));
-
-                if (static_cast<std::size_t>(got) >= room)
+                if (errno == EINTR)
                 {
-                    return true;
+                    continue;
                 }
 
-                continue;
+                break;
             }
 
-            if (got < 0 && errno == EINTR)
+            for (int i = 0; i < 2; ++i)
             {
-                continue;
-            }
+                if (fds[i].fd < 0 || fds[i].revents == 0)
+                {
+                    continue;
+                }
 
-            // eof or a read error retires this pipe from the poll set
-            fds[i].fd = -1;
+                const ssize_t got = ::read(fds[i].fd, chunk.data(), chunk.size());
+                if (got > 0)
+                {
+                    std::string& sink = (i == 0 ? outData : errData);
+                    const std::size_t captured = outData.size() + errData.size();
+                    const std::size_t room = captured < kMaxCaptureBytes ? kMaxCaptureBytes - captured : 0;
+                    sink.append(chunk.data(), std::min(room, static_cast<std::size_t>(got)));
+
+                    if (static_cast<std::size_t>(got) >= room)
+                    {
+                        return true;
+                    }
+
+                    continue;
+                }
+
+                if (got < 0 && errno == EINTR)
+                {
+                    continue;
+                }
+
+                // eof or a read error retires this pipe from the poll set
+                fds[i].fd = -1;
+            }
+        }
+        // clang-format on
+
+        return false;
+    }
+
+    static void closeFd(int& fd)
+    {
+        if (fd >= 0)
+        {
+            ::close(fd);
+            fd = -1;
         }
     }
-    // clang-format on
 
-    return false;
-}
-
-void closeFd(int& fd)
-{
-    if (fd >= 0)
+    static void setCloexec(int fd)
     {
-        ::close(fd);
-        fd = -1;
+        const int flags = ::fcntl(fd, F_GETFD);
+        if (flags >= 0)
+        {
+            ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+        }
     }
-}
-
-void setCloexec(int fd)
-{
-    const int flags = ::fcntl(fd, F_GETFD);
-    if (flags >= 0)
-    {
-        ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
-    }
-}
+};
 } // namespace
 
 bool ProcessRunner::available()
@@ -129,26 +133,26 @@ ProcessResult ProcessRunner::exec(const std::string& command)
 
         if (::pipe(outPipe) != 0 || ::pipe(errPipe) != 0)
         {
-            closeFd(outPipe[0]);
-            closeFd(outPipe[1]);
-            closeFd(errPipe[0]);
-            closeFd(errPipe[1]);
+            PosixProcessHelpers::closeFd(outPipe[0]);
+            PosixProcessHelpers::closeFd(outPipe[1]);
+            PosixProcessHelpers::closeFd(errPipe[0]);
+            PosixProcessHelpers::closeFd(errPipe[1]);
             throw std::runtime_error("[ProcessRunner] A pipe could not be created.");
         }
 
         // mark every pipe end close-on-exec so no other exec'd process keeps a copy that would block our reads
-        setCloexec(outPipe[0]);
-        setCloexec(outPipe[1]);
-        setCloexec(errPipe[0]);
-        setCloexec(errPipe[1]);
+        PosixProcessHelpers::setCloexec(outPipe[0]);
+        PosixProcessHelpers::setCloexec(outPipe[1]);
+        PosixProcessHelpers::setCloexec(errPipe[0]);
+        PosixProcessHelpers::setCloexec(errPipe[1]);
 
         pid = ::fork();
         if (pid < 0)
         {
-            closeFd(outPipe[0]);
-            closeFd(outPipe[1]);
-            closeFd(errPipe[0]);
-            closeFd(errPipe[1]);
+            PosixProcessHelpers::closeFd(outPipe[0]);
+            PosixProcessHelpers::closeFd(outPipe[1]);
+            PosixProcessHelpers::closeFd(errPipe[0]);
+            PosixProcessHelpers::closeFd(errPipe[1]);
             throw std::runtime_error("[ProcessRunner] The process could not be forked.");
         }
 
@@ -171,14 +175,14 @@ ProcessResult ProcessRunner::exec(const std::string& command)
         }
 
         // close the write ends inside the lock so the reads see eof once the child exits and no later spawn inherits them
-        closeFd(outPipe[1]);
-        closeFd(errPipe[1]);
+        PosixProcessHelpers::closeFd(outPipe[1]);
+        PosixProcessHelpers::closeFd(errPipe[1]);
     }
 
     ProcessResult result;
-    const bool truncated = drainPipes(outPipe[0], errPipe[0], result.stdoutData, result.stderrData);
-    closeFd(outPipe[0]);
-    closeFd(errPipe[0]);
+    const bool truncated = PosixProcessHelpers::drainPipes(outPipe[0], errPipe[0], result.stdoutData, result.stderrData);
+    PosixProcessHelpers::closeFd(outPipe[0]);
+    PosixProcessHelpers::closeFd(errPipe[0]);
 
     // a child that overran the output cap is terminated so it cannot linger blocked on a full pipe
     if (truncated)

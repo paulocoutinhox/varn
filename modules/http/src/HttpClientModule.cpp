@@ -24,30 +24,34 @@ using varn::runtime::Runtime;
 
 namespace
 {
-int luaUrlEncode(lua_State* L)
+class HttpClientUrlLua
 {
-    std::size_t len = 0;
-    const char* data = luaL_checklstring(L, 1, &len);
-    const std::string out = HttpUrl::encode(std::string_view(data, len));
-    lua_pushlstring(L, out.data(), out.size());
-    return 1;
-}
+public:
+    static int luaUrlEncode(lua_State* L)
+    {
+        std::size_t len = 0;
+        const char* data = luaL_checklstring(L, 1, &len);
+        const std::string out = HttpUrl::encode(std::string_view(data, len));
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
 
-int luaUrlDecode(lua_State* L)
-{
-    std::size_t len = 0;
-    const char* data = luaL_checklstring(L, 1, &len);
-    const std::string out = HttpUrl::decode(std::string_view(data, len));
-    lua_pushlstring(L, out.data(), out.size());
-    return 1;
-}
+    static int luaUrlDecode(lua_State* L)
+    {
+        std::size_t len = 0;
+        const char* data = luaL_checklstring(L, 1, &len);
+        const std::string out = HttpUrl::decode(std::string_view(data, len));
+        lua_pushlstring(L, out.data(), out.size());
+        return 1;
+    }
 
-void logCallbackError(lua_State* L, const char* fallback)
-{
-    const char* message = lua_tostring(L, -1);
-    varn::log::Log::error("HttpClientModule", message != nullptr ? message : fallback);
-    lua_pop(L, 1);
-}
+    static void logCallbackError(lua_State* L, const char* fallback)
+    {
+        const char* message = lua_tostring(L, -1);
+        varn::log::Log::error("HttpClientModule", message != nullptr ? message : fallback);
+        lua_pop(L, 1);
+    }
+};
 } // namespace
 
 // lua surface wrapping the raw primitives into an ergonomic response plus query/json options
@@ -202,88 +206,92 @@ Runtime& HttpClientModule::luaRuntime(lua_State* L)
 
 namespace
 {
-void readHeadersTable(lua_State* L, int absIndex, std::map<std::string, std::string>& out)
+class HttpClientHelpers
 {
-    lua_pushnil(L);
-    while (lua_next(L, absIndex) != 0)
+public:
+    static void readHeadersTable(lua_State* L, int absIndex, std::map<std::string, std::string>& out)
     {
-        // coerce a copy of the key so lua_next still sees the original on the next step
-        lua_pushvalue(L, -2);
-        std::size_t keyLen = 0;
-        std::size_t valLen = 0;
-        const char* key = lua_tolstring(L, -1, &keyLen);
-        const char* val = lua_tolstring(L, -2, &valLen);
-        if (key != nullptr && val != nullptr)
+        lua_pushnil(L);
+        while (lua_next(L, absIndex) != 0)
         {
-            out.emplace(std::string(key, keyLen), std::string(val, valLen));
-        }
+            // coerce a copy of the key so lua_next still sees the original on the next step
+            lua_pushvalue(L, -2);
+            std::size_t keyLen = 0;
+            std::size_t valLen = 0;
+            const char* key = lua_tolstring(L, -1, &keyLen);
+            const char* val = lua_tolstring(L, -2, &valLen);
+            if (key != nullptr && val != nullptr)
+            {
+                out.emplace(std::string(key, keyLen), std::string(val, valLen));
+            }
 
-        lua_pop(L, 2);
-    }
-}
-
-void readClientOptions(lua_State* L, std::string& method, std::map<std::string, std::string>& headers, std::string& body, varn::http::client::ClientRequestOptions& options)
-{
-    lua_getfield(L, 1, "method");
-    method = lua_isstring(L, -1) ? lua_tostring(L, -1) : "GET";
-    lua_pop(L, 1);
-
-    lua_getfield(L, 1, "headers");
-    if (lua_istable(L, -1))
-    {
-        readHeadersTable(L, lua_absindex(L, -1), headers);
-    }
-    lua_pop(L, 1);
-
-    lua_getfield(L, 1, "body");
-    if (lua_isstring(L, -1))
-    {
-        std::size_t len = 0;
-        const char* chunk = lua_tolstring(L, -1, &len);
-        if (chunk != nullptr)
-        {
-            body.assign(chunk, len);
+            lua_pop(L, 2);
         }
     }
-    lua_pop(L, 1);
 
-    lua_getfield(L, 1, "timeoutSeconds");
-    if (lua_isinteger(L, -1))
+    static void readClientOptions(lua_State* L, std::string& method, std::map<std::string, std::string>& headers, std::string& body, varn::http::client::ClientRequestOptions& options)
     {
-        const int value = static_cast<int>(lua_tointeger(L, -1));
-        if (value > 0)
+        lua_getfield(L, 1, "method");
+        method = lua_isstring(L, -1) ? lua_tostring(L, -1) : "GET";
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "headers");
+        if (lua_istable(L, -1))
         {
-            options.timeoutSeconds = value;
+            HttpClientHelpers::readHeadersTable(L, lua_absindex(L, -1), headers);
         }
-    }
-    lua_pop(L, 1);
+        lua_pop(L, 1);
 
-    // tls verification is on by default, with insecure as an explicit opt-in for dev certs
-    lua_getfield(L, 1, "verifyTls");
-    if (lua_isboolean(L, -1))
-    {
-        options.verifyTls = lua_toboolean(L, -1) != 0;
-    }
-    lua_pop(L, 1);
-
-    lua_getfield(L, 1, "insecure");
-    if (lua_isboolean(L, -1) && lua_toboolean(L, -1) != 0)
-    {
-        options.verifyTls = false;
-    }
-    lua_pop(L, 1);
-
-    lua_getfield(L, 1, "maxResponseBytes");
-    if (lua_isinteger(L, -1))
-    {
-        const long long value = lua_tointeger(L, -1);
-        if (value > 0)
+        lua_getfield(L, 1, "body");
+        if (lua_isstring(L, -1))
         {
-            options.maxResponseBytes = static_cast<std::size_t>(value);
+            std::size_t len = 0;
+            const char* chunk = lua_tolstring(L, -1, &len);
+            if (chunk != nullptr)
+            {
+                body.assign(chunk, len);
+            }
         }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "timeoutSeconds");
+        if (lua_isinteger(L, -1))
+        {
+            const int value = static_cast<int>(lua_tointeger(L, -1));
+            if (value > 0)
+            {
+                options.timeoutSeconds = value;
+            }
+        }
+        lua_pop(L, 1);
+
+        // tls verification is on by default, with insecure as an explicit opt-in for dev certs
+        lua_getfield(L, 1, "verifyTls");
+        if (lua_isboolean(L, -1))
+        {
+            options.verifyTls = lua_toboolean(L, -1) != 0;
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "insecure");
+        if (lua_isboolean(L, -1) && lua_toboolean(L, -1) != 0)
+        {
+            options.verifyTls = false;
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "maxResponseBytes");
+        if (lua_isinteger(L, -1))
+        {
+            const long long value = lua_tointeger(L, -1);
+            if (value > 0)
+            {
+                options.maxResponseBytes = static_cast<std::size_t>(value);
+            }
+        }
+        lua_pop(L, 1);
     }
-    lua_pop(L, 1);
-}
+};
 } // namespace
 
 int HttpClientModule::luaClientRequest(lua_State* L)
@@ -297,7 +305,7 @@ int HttpClientModule::luaClientRequest(lua_State* L)
     std::map<std::string, std::string> headers;
     std::string body;
     varn::http::client::ClientRequestOptions options;
-    readClientOptions(L, methodStr, headers, body, options);
+    HttpClientHelpers::readClientOptions(L, methodStr, headers, body, options);
 
     auto& rt = luaRuntime(L);
     auto promise = std::make_shared<Promise>(rt);
@@ -353,7 +361,7 @@ int HttpClientModule::luaClientStream(lua_State* L)
     std::map<std::string, std::string> headers;
     std::string body;
     varn::http::client::ClientRequestOptions options;
-    readClientOptions(L, methodStr, headers, body, options);
+    HttpClientHelpers::readClientOptions(L, methodStr, headers, body, options);
 
     // hold the chunk callback and the optional response callback in the registry for the duration of the stream
     lua_pushvalue(L, 2);
@@ -422,7 +430,7 @@ int HttpClientModule::luaClientStream(lua_State* L)
                     varn::http::client::HttpClientResponseLua::pushHeaders(lua, *headersCopy);
                     if (lua_pcall(lua, 2, 0, 0) != LUA_OK)
                     {
-                        logCallbackError(lua, "the stream onResponse callback failed");
+                        HttpClientUrlLua::logCallbackError(lua, "the stream onResponse callback failed");
                     }
                 });
             };
@@ -442,7 +450,7 @@ int HttpClientModule::luaClientStream(lua_State* L)
                     lua_pushlstring(lua, chunk->data(), chunk->size());
                     if (lua_pcall(lua, 1, 0, 0) != LUA_OK)
                     {
-                        logCallbackError(lua, "the stream onChunk callback failed");
+                        HttpClientUrlLua::logCallbackError(lua, "the stream onChunk callback failed");
                     }
                 });
             };
@@ -490,10 +498,10 @@ void HttpClientModule::registerClient(lua_State* L)
 {
     luaL_checktype(L, -1, LUA_TTABLE);
 
-    lua_pushcfunction(L, &luaUrlEncode);
+    lua_pushcfunction(L, &HttpClientUrlLua::luaUrlEncode);
     lua_setfield(L, -2, "urlEncode");
 
-    lua_pushcfunction(L, &luaUrlDecode);
+    lua_pushcfunction(L, &HttpClientUrlLua::luaUrlDecode);
     lua_setfield(L, -2, "urlDecode");
 
     lua_newtable(L);

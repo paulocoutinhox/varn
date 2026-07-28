@@ -28,34 +28,38 @@ namespace varn::crypto
 
 namespace
 {
-std::string hmacOver(std::string_view algorithm, std::string_view key, std::string_view data)
+class PortableCryptoHelpers
 {
-    const std::size_t block = portable::Sha::blockSize(algorithm);
-
-    std::string normalizedKey(key);
-    if (normalizedKey.size() > block)
+public:
+    static std::string hmacOver(std::string_view algorithm, std::string_view key, std::string_view data)
     {
-        normalizedKey = portable::Sha::hashByName(algorithm, normalizedKey);
-    }
-    normalizedKey.resize(block, '\0');
+        const std::size_t block = portable::Sha::blockSize(algorithm);
 
-    std::string innerKey(block, '\0');
-    std::string outerKey(block, '\0');
-    for (std::size_t i = 0; i < block; ++i)
+        std::string normalizedKey(key);
+        if (normalizedKey.size() > block)
+        {
+            normalizedKey = portable::Sha::hashByName(algorithm, normalizedKey);
+        }
+        normalizedKey.resize(block, '\0');
+
+        std::string innerKey(block, '\0');
+        std::string outerKey(block, '\0');
+        for (std::size_t i = 0; i < block; ++i)
+        {
+            const unsigned char k = static_cast<unsigned char>(normalizedKey[i]);
+            innerKey[i] = static_cast<char>(k ^ 0x36);
+            outerKey[i] = static_cast<char>(k ^ 0x5c);
+        }
+
+        const std::string inner = portable::Sha::hashByName(algorithm, innerKey + std::string(data));
+        return portable::Sha::hashByName(algorithm, outerKey + inner);
+    }
+
+    [[noreturn]] static void unavailable(const char* feature)
     {
-        const unsigned char k = static_cast<unsigned char>(normalizedKey[i]);
-        innerKey[i] = static_cast<char>(k ^ 0x36);
-        outerKey[i] = static_cast<char>(k ^ 0x5c);
+        throw std::runtime_error(std::string("[CryptoPrimitives] ") + feature + " is not available in this build.");
     }
-
-    const std::string inner = portable::Sha::hashByName(algorithm, innerKey + std::string(data));
-    return portable::Sha::hashByName(algorithm, outerKey + inner);
-}
-
-[[noreturn]] void unavailable(const char* feature)
-{
-    throw std::runtime_error(std::string("[CryptoPrimitives] ") + feature + " is not available in this build.");
-}
+};
 } // namespace
 
 std::string CryptoPrimitives::digest(std::string_view algorithm, std::string_view data, bool outputHex)
@@ -76,7 +80,7 @@ std::string CryptoPrimitives::hmac(std::string_view digestAlgorithm, std::string
         throw std::runtime_error("[CryptoPrimitives] The requested hash algorithm is not available in this build.");
     }
 
-    const std::string raw = hmacOver(digestAlgorithm, key, data);
+    const std::string raw = PortableCryptoHelpers::hmacOver(digestAlgorithm, key, data);
     return outputHex ? CryptoCodecs::hexEncode(raw) : raw;
 }
 
@@ -175,37 +179,37 @@ std::string CryptoPrimitives::uuidV7()
 
 std::string CryptoPrimitives::hashPassword(std::string_view /*password*/)
 {
-    unavailable("Password hashing");
+    PortableCryptoHelpers::unavailable("Password hashing");
 }
 
 bool CryptoPrimitives::verifyPassword(std::string_view /*password*/, std::string_view /*encoded*/)
 {
-    unavailable("Password hashing");
+    PortableCryptoHelpers::unavailable("Password hashing");
 }
 
 std::string CryptoPrimitives::aesGcmEncrypt(std::string_view /*key*/, std::string_view /*plaintext*/)
 {
-    unavailable("Authenticated encryption");
+    PortableCryptoHelpers::unavailable("Authenticated encryption");
 }
 
 std::string CryptoPrimitives::aesGcmDecrypt(std::string_view /*key*/, std::string_view /*blob*/)
 {
-    unavailable("Authenticated encryption");
+    PortableCryptoHelpers::unavailable("Authenticated encryption");
 }
 
 std::string CryptoPrimitives::pbkdf2(std::string_view /*password*/, std::string_view /*salt*/, std::size_t /*iterations*/, std::size_t /*keyLen*/, std::string_view /*algorithm*/)
 {
-    unavailable("PBKDF2");
+    PortableCryptoHelpers::unavailable("PBKDF2");
 }
 
 std::string CryptoPrimitives::hkdf(std::string_view /*key*/, std::string_view /*salt*/, std::string_view /*info*/, std::size_t /*keyLen*/, std::string_view /*algorithm*/)
 {
-    unavailable("HKDF");
+    PortableCryptoHelpers::unavailable("HKDF");
 }
 
 std::string CryptoPrimitives::rsaEncryptPublic(std::string_view /*pemPublicKey*/, std::string_view /*data*/)
 {
-    unavailable("RSA public-key encryption");
+    PortableCryptoHelpers::unavailable("RSA public-key encryption");
 }
 
 } // namespace varn::crypto

@@ -258,34 +258,38 @@ std::string CryptoPrimitives::randomBytes(std::size_t count)
 namespace
 {
 
-const EVP_MD* fetchDigest(const std::string& algo)
+class OpenSslCryptoHelpers
 {
-    const EVP_MD* md = EVP_get_digestbyname(algo.c_str());
-    if (md == nullptr)
+public:
+    static const EVP_MD* fetchDigest(const std::string& algo)
     {
-        throw std::runtime_error("[CryptoPrimitives] The requested hash algorithm is not known.");
+        const EVP_MD* md = EVP_get_digestbyname(algo.c_str());
+        if (md == nullptr)
+        {
+            throw std::runtime_error("[CryptoPrimitives] The requested hash algorithm is not known.");
+        }
+
+        return md;
     }
 
-    return md;
-}
-
-std::uint64_t scryptMaxMem(std::uint64_t costN, std::uint32_t blockR)
-{
-    // scrypt needs roughly 128*N*r bytes so give it that plus headroom because the default ceiling rejects 32 MiB params
-    return 128ULL * costN * static_cast<std::uint64_t>(blockR) * 2ULL;
-}
-
-bool constantTimeEqual(const unsigned char* a, const unsigned char* b, std::size_t len)
-{
-    // constant-time comparison so verifying a password or auth tag does not leak its bytes through timing
-    unsigned char diff = 0;
-    for (std::size_t i = 0; i < len; ++i)
+    static std::uint64_t scryptMaxMem(std::uint64_t costN, std::uint32_t blockR)
     {
-        diff |= static_cast<unsigned char>(a[i] ^ b[i]);
+        // scrypt needs roughly 128*N*r bytes so give it that plus headroom because the default ceiling rejects 32 MiB params
+        return 128ULL * costN * static_cast<std::uint64_t>(blockR) * 2ULL;
     }
 
-    return diff == 0;
-}
+    static bool constantTimeEqual(const unsigned char* a, const unsigned char* b, std::size_t len)
+    {
+        // constant-time comparison so verifying a password or auth tag does not leak its bytes through timing
+        unsigned char diff = 0;
+        for (std::size_t i = 0; i < len; ++i)
+        {
+            diff |= static_cast<unsigned char>(a[i] ^ b[i]);
+        }
+
+        return diff == 0;
+    }
+};
 
 } // namespace
 
@@ -366,7 +370,7 @@ std::string CryptoPrimitives::pbkdf2(std::string_view password, std::string_view
     }
 
     const std::string algo = trimAlgo(algorithm);
-    const EVP_MD* md = fetchDigest(algo);
+    const EVP_MD* md = OpenSslCryptoHelpers::fetchDigest(algo);
 
     std::string out(keyLen, '\0');
     if (PKCS5_PBKDF2_HMAC(password.data(),
@@ -392,7 +396,7 @@ std::string CryptoPrimitives::hkdf(std::string_view key, std::string_view salt, 
     }
 
     const std::string algo = trimAlgo(algorithm);
-    const EVP_MD* md = fetchDigest(algo);
+    const EVP_MD* md = OpenSslCryptoHelpers::fetchDigest(algo);
 
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
     if (ctx == nullptr)
@@ -442,7 +446,7 @@ std::string CryptoPrimitives::hashPassword(std::string_view password)
                        costN,
                        blockR,
                        parallelP,
-                       scryptMaxMem(costN, blockR),
+                       OpenSslCryptoHelpers::scryptMaxMem(costN, blockR),
                        reinterpret_cast<unsigned char*>(hash.data()),
                        hashLen) != 1)
     {
@@ -513,16 +517,16 @@ bool CryptoPrimitives::verifyPassword(std::string_view password, std::string_vie
                        static_cast<std::uint64_t>(costN),
                        static_cast<std::uint32_t>(blockR),
                        static_cast<std::uint32_t>(parallelP),
-                       scryptMaxMem(static_cast<std::uint64_t>(costN), static_cast<std::uint32_t>(blockR)),
+                       OpenSslCryptoHelpers::scryptMaxMem(static_cast<std::uint64_t>(costN), static_cast<std::uint32_t>(blockR)),
                        reinterpret_cast<unsigned char*>(actual.data()),
                        actual.size()) != 1)
     {
         return false;
     }
 
-    return constantTimeEqual(reinterpret_cast<const unsigned char*>(actual.data()),
-                             reinterpret_cast<const unsigned char*>(expected.data()),
-                             expected.size());
+    return OpenSslCryptoHelpers::constantTimeEqual(reinterpret_cast<const unsigned char*>(actual.data()),
+                                                   reinterpret_cast<const unsigned char*>(expected.data()),
+                                                   expected.size());
 }
 
 std::string CryptoPrimitives::aesGcmEncrypt(std::string_view key, std::string_view plaintext)

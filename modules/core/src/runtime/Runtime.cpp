@@ -16,21 +16,25 @@ namespace
 // size a dedicated pool for blocking i/o (http client, filesystem) so it never starves the cpu task pool
 constexpr std::size_t kIoThreads = 32;
 
-// bridges a Lua call to a host function, marshalling the single argument and the result through json
-int hostTrampoline(lua_State* L)
+class RuntimeHelpers
 {
-    auto* fn = static_cast<Runtime::HostFunction*>(lua_touserdata(L, lua_upvalueindex(1)));
-
-    const std::string argument = lua_gettop(L) >= 1 ? varn::json::JsonSerializer::serialize(L, 1) : std::string("null");
-    const std::string result = (*fn)(argument);
-
-    if (!varn::json::JsonSerializer::deserialize(L, result))
+public:
+    // bridges a Lua call to a host function, marshalling the single argument and the result through json
+    static int hostTrampoline(lua_State* L)
     {
-        lua_pushnil(L);
-    }
+        auto* fn = static_cast<Runtime::HostFunction*>(lua_touserdata(L, lua_upvalueindex(1)));
 
-    return 1;
-}
+        const std::string argument = lua_gettop(L) >= 1 ? varn::json::JsonSerializer::serialize(L, 1) : std::string("null");
+        const std::string result = (*fn)(argument);
+
+        if (!varn::json::JsonSerializer::deserialize(L, result))
+        {
+            lua_pushnil(L);
+        }
+
+        return 1;
+    }
+};
 } // namespace
 
 Runtime::Runtime(std::vector<std::string> args, std::size_t scriptArgIndex)
@@ -163,7 +167,7 @@ void Runtime::registerHostFunction(const std::string& name, HostFunction fn)
     }
 
     lua_pushlightuserdata(L, stored);
-    lua_pushcclosure(L, &hostTrampoline, 1);
+    lua_pushcclosure(L, &RuntimeHelpers::hostTrampoline, 1);
     lua_setfield(L, -2, name.c_str());
     lua_pop(L, 1);
 }
