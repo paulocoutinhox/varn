@@ -212,7 +212,7 @@ int App::superviseWorkers(int count, const std::function<int()>& runChild)
         if (livedMs < kWorkerMinLifetimeMs)
         {
             const long long backoffMs = kWorkerMinLifetimeMs - livedMs;
-            struct timespec pause = {backoffMs / 1000, (backoffMs % 1000) * 1000000};
+            struct timespec pause = {static_cast<time_t>(backoffMs / 1000), static_cast<long>((backoffMs % 1000) * 1000000)};
             ::nanosleep(&pause, nullptr);
             if (gWorkerShutdown)
             {
