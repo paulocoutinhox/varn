@@ -168,6 +168,18 @@ public:
     }
 #endif
 
+    // drops the already-sent prefix once it dominates the buffer, so a peer that only ever drains partially cannot grow it with the connection's cumulative traffic
+    static void compactSent(std::string& buffer, std::size_t& offset)
+    {
+        if (offset == 0 || offset < buffer.size() / 2)
+        {
+            return;
+        }
+
+        buffer.erase(0, offset);
+        offset = 0;
+    }
+
     static long long nowMs()
     {
         return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
@@ -906,6 +918,7 @@ private:
 
             if (wrote < 0)
             {
+                ReactorHelpers::compactSent(writeBuffer, writeOffset);
                 return Io::Again;
             }
 
@@ -1661,14 +1674,16 @@ private:
 
     void wsSend(int opcode, const std::string& payload)
     {
+        const std::string frame = ReactorHelpers::buildWsFrame(opcode, payload);
+
         // close instead of buffering without bound when the peer stops draining its socket
-        if (wsOut.size() > kWsMaxOutBytes)
+        if ((wsOut.size() - wsOutOffset) + frame.size() > kWsMaxOutBytes)
         {
             closeNow();
             return;
         }
 
-        wsOut += ReactorHelpers::buildWsFrame(opcode, payload);
+        wsOut += frame;
         if (wsWriting)
         {
             return;
@@ -1699,6 +1714,7 @@ private:
 
             if (wrote < 0)
             {
+                ReactorHelpers::compactSent(wsOut, wsOutOffset);
                 return false;
             }
 
