@@ -46,7 +46,8 @@ An `every` loop checks its handle before each run and before each sleep, so canc
 | `handle:cancel()` | Stop a pending one-shot or a repeating loop. |
 | `handle:isCancelled()` | Whether the handle has been cancelled. |
 
-## Examples and tests
+## Reference, examples, and tests
 
+- Full reference: [docs/components/retry.md](../../docs/components/retry.md)
 - Runnable example: [examples/](examples/) — backoff recovering from transient failures, an exhausted permanent failure, a one-shot timer, and a repeating interval cancelled after a few ticks.
 - Test: [tests/](tests/) covers backoff succeeding after failures, exhausting attempts, first-try success, awaiting a returned promise, a cancellable one-shot timer, and a stoppable repeating interval. Run it directly with `./build/bin/varn components/retry/tests/integration.lua`.

@@ -38,7 +38,8 @@ Cases are collected in declaration order and only run when `test.run()` is calle
 
 A failing matcher raises with a message describing the expected and actual value, so the case is reported as a failure with that message.
 
-## Examples and tests
+## Reference, examples, and tests
 
+- Full reference: [docs/components/test.md](../../docs/components/test.md)
 - Runnable example: [examples/](examples/) — a small suite showing `describe`/`it`/`expect` and the printed summary.
 - Test: [tests/integration.lua](tests/integration.lua) exercises every matcher and verifies each one fails on wrong input. Run it directly with `./build/bin/varn components/test/tests/integration.lua`.

@@ -57,7 +57,8 @@ Placeholders come in two forms, resolved by `vdo.sql`: positional `?` bound from
 
 For an insert, update, or delete `rowCount()` returns the number of rows changed on every driver. For a **SELECT** it is not portable: on sqlite it returns the last DML change count (mirroring PDO's sqlite behaviour), while pgsql and mysql return the selected-row total. Use `#stmt:fetchAll()` for a portable count of selected rows.
 
-## Examples and tests
+## Reference, examples, and tests
 
+- Full reference: [docs/components/vdo.md](../../docs/components/vdo.md)
 - Runnable examples: [examples/](examples/) — a driver-agnostic CRUD walkthrough and a reused prepared statement with row-at-a-time fetching, both defaulting to in-memory sqlite.
 - Test: [tests/](tests/) models a banking ledger to exercise constrained schema, reused prepared statements, atomic transfers, rollback on a constraint violation, parameter binding against injection, aggregates, null handling, and last insert ids. Only the sqlite path runs with no external setup; `VDO_MYSQL_DSN` and `VDO_PGSQL_DSN` (with matching `_USER` / `_PASS`) add those backends under the same assertions. Run it directly with `./build/bin/varn components/vdo/tests/integration.lua`.

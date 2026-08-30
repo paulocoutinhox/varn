@@ -64,7 +64,8 @@ A `request` is normalized across providers: `messages` (each `{ role, content }`
 
 Any OpenAI-compatible endpoint works by setting `baseUrl` and `model` on an existing provider. Models are passed per request or per client; this component does not pin model ids, which change over time.
 
-## Examples and tests
+## Reference, examples, and tests
 
+- Full reference: [docs/components/ai.md](../../docs/components/ai.md)
 - Runnable examples: [examples/](examples/) — text, stream, tools, vision, structured, image, audio. Each reads its key from the provider env var.
-- Test: [tests/mock_test.lua](tests/mock_test.lua) runs against an in-process mock server with no network or keys.
+- Tests: [tests/mock_test.lua](tests/mock_test.lua) and [tests/adapters_test.lua](tests/adapters_test.lua) run against an in-process mock server with no network or keys, and both are part of `python3 varn.py test`. [tests/live_test.lua](tests/live_test.lua) hits the real APIs and is opt-in through `python3 varn.py test-db --ai-live`, skipping each provider whose `*_API_KEY` is absent.

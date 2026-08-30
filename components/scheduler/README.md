@@ -61,7 +61,8 @@ The tick loop and handlers run on the event loop, so the whole lifecycle must li
 
 A task moves through `scheduled` (waiting for its time), `queued` (ready to run), `running`, and then `success`, `failed` (retries exhausted), or `cancelled`. A failing task with remaining attempts re-arms as `scheduled` after an exponential backoff; an interval task re-arms as `scheduled` after each success.
 
-## Examples and tests
+## Reference, examples, and tests
 
+- Full reference: [docs/components/scheduler.md](../../docs/components/scheduler.md)
 - Runnable examples: [examples/](examples/) — basic enqueue, future and interval scheduling, crash recovery.
 - Test: [tests/scheduler_test.lua](tests/scheduler_test.lua) covers success, retry, cancel, scheduling, interval re-arm, and crash recovery. Run it directly with `./build/bin/varn components/scheduler/tests/scheduler_test.lua` on a platform where the `vdo` sqlite backend loads, since it is not part of the cross-platform `varn.py test` runner.

@@ -21,7 +21,7 @@ end):listen(3000)
 | `http.cors(opts)` | CORS middleware; `origin` may be `"*"` or an allowlist table, with `methods` and `credentials` options. |
 | `http.securityHeaders(opts)` | Sets `frameOptions`, `referrerPolicy`, `hsts`, and related security response headers. |
 | `http.apiKey(opts)` | Gates routes behind an API key read from a `header`, compared in constant time against `keys`. |
-| `http.rateLimit(opts)` | Throttles requests to `max` per `windowMs`, emitting throttle headers and `429` past the cap. |
+| `http.rateLimit(opts)` | Throttles requests to `max` per `windowMs`, emitting throttle headers and `429` past the cap; tracks at most `maxClients` distinct addresses so the store stays bounded. |
 | `http.csrf(opts)` | Double-submit CSRF protection; issues a session-bound token and rejects unsafe requests that lack a match. |
 | `http.jwtAuth(opts)` | Verifies a `Bearer` token against `secret` and puts the decoded claims on `ctx.state.user`. |
 | `http.requireAuth()` | Middleware that answers `401` unless `ctx.state.user` is set by a prior auth step. |

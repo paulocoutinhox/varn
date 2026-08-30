@@ -18,11 +18,11 @@ The bundled examples set this up from their own location, so they run from any d
 | Component | Description |
 |-----------|-------------|
 | [🗄️ vdo](components/vdo.md) | PDO-style database access for SQLite, MySQL/MariaDB, and PostgreSQL |
-| [🐬 mysql](../components/mysql/README.md) | Async MySQL client speaking the native protocol |
+| [🐬 mysql](components/mysql.md) | Async MySQL client speaking the native protocol |
 | [🧰 redis](components/redis.md) | Redis client speaking RESP2 over a single or multiplexed connection |
-| [🏊 pool](../components/pool/README.md) | Generic async connection pool with acquire, release, and `with` |
-| [⏰ scheduler](../components/scheduler/README.md) | Durable job queue with cron-like scheduling backed by a database |
-| [🤖 ai](../components/ai/README.md) | One client for OpenAI, Anthropic, Gemini, and ElevenLabs |
+| [🏊 pool](components/pool.md) | Generic async connection pool with acquire, release, and `with` |
+| [⏰ scheduler](components/scheduler.md) | Durable job queue with cron-like scheduling backed by a database |
+| [🤖 ai](components/ai.md) | One client for OpenAI, Anthropic, Gemini, and ElevenLabs |
 | [🔧 env](components/env.md) | Load a `.env` file and read typed environment variables |
 | [✅ validate](components/validate.md) | Validate a table against a declarative schema |
 | [🧪 test](components/test.md) | A tiny `describe` / `it` / `expect` test runner |

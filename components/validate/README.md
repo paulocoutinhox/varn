@@ -46,7 +46,8 @@ local ok, errors = validate.check(schema, { name = "Alice", age = 30 })
 |---|---|
 | `validate.check(schema, data)` | Validate `data` against `schema`; return `true` on success, or `false` plus a table mapping each failing field path to its message. A non-table `data` fails with an `_` error. |
 
-## Examples and tests
+## Reference, examples, and tests
 
+- Full reference: [docs/components/validate.md](../../docs/components/validate.md)
 - Runnable example: [examples/](examples/) — a user payload validated against strings, numbers, an enum, a pattern, an array, and a nested table.
 - Test: [tests/integration.lua](tests/integration.lua) covers required and optional fields, types, min/max on values and lengths, pattern, enum, defaults, nested tables, and arrays. Run it directly with `./build/bin/varn components/validate/tests/integration.lua`.

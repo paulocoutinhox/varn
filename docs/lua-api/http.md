@@ -46,6 +46,14 @@ built-in security middleware (`http.cors`, `http.securityHeaders`, `http.apiKey`
 `http.rateLimit`, `http.csrf`, `http.jwtAuth`, `http.requireAuth`, `http.requireRole`, and
 `http.jwt.sign` / `http.jwt.verify`). The full tour is in the `app_full` example below.
 
+`http.rateLimit(opts)` takes `windowMs` (default 60000), `max` requests per window (default 100),
+`trustProxy` to read the client address from `X-Forwarded-For` (default false), and `maxClients`,
+the number of distinct client addresses tracked (default 100000). The store is bounded on purpose:
+one IPv6 client can source from an entire prefix, so once `maxClients` is reached the limiter drops
+expired entries and, if it is still full, starts a fresh window for everyone rather than growing
+without end. Size it to the traffic you expect to serve, not to the traffic you expect to be
+attacked with.
+
 ### Context response helpers
 
 Inside a handler `ctx` exposes, alongside `json`/`text`/`html`/`file`/`status`/`header`/`cookie`/`write`/`send`:
@@ -120,6 +128,16 @@ Linux the kernel load-balances new connections across the workers. On Windows, w
 `fork`, the master relaunches itself as the worker processes instead. `VARN_WORKERS` defaults to
 `1` and is capped at `1024`. tvOS, watchOS, visionOS, and the browser have no multi-process model,
 so the server stays single-process there.
+
+**Workers share nothing.** Each one is a separate process with its own `lua_State`, so anything a
+handler keeps in memory is private to the worker that served the request. That includes the session
+store behind `ctx:session()`, the CSRF secret behind `http.csrf()`, and the counters behind
+`http.rateLimit()`. Because the kernel spreads a client's connections across workers, a session
+started on one worker is invisible to the next, a CSRF token issued by one worker is rejected by
+another with `403`, and a rate limit of `max` per window becomes `max × N` in the worst case. The
+server logs an error the first time `ctx:session()` runs with `VARN_WORKERS` above `1`. Run a single
+worker when you need those, or keep the state in a shared store — the
+[redis](../components/redis.md) component is the usual choice.
 
 ## Request hardening
 

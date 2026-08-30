@@ -34,8 +34,12 @@ Every packet read and write runs on the event loop, so the whole lifecycle must 
 | `client:query(sql)` | Run a `COM_QUERY` and return an array of row tables keyed by column name; all values come back as strings with no type decoding, and there is no parameter binding or prepared statements, so build and escape the SQL and convert numerics at the call site. |
 | `client:close()` | Send `COM_QUIT` and close the socket. |
 
-Exercising this component needs a live MySQL server, so it ships no `examples/` directory; its `tests/integration.lua` runs against the docker backend through `python3 varn.py test-db`.
-
 ## Note
 
 This socket-based `mysql` component is distinct from the FFI-backed MySQL driver inside the [vdo](../vdo) component. `vdo` offers prepared statements, typed decoding, and `:name`/`?` parameter binding; reach for it when you need those. This component is a direct, dependency-light text-protocol client and pairs with the [pool](../pool) component to share connections.
+
+## Reference, examples, and tests
+
+- Full reference: [docs/components/mysql.md](../../docs/components/mysql.md)
+- Runnable example: [examples/](examples/) — create, insert, select, and an aggregate over the text protocol.
+- Test: [tests/](tests/) runs against a live server. Both need a MySQL instance; `python3 varn.py test-db` brings one up and points the test at it.

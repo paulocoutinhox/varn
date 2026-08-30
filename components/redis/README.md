@@ -43,7 +43,8 @@ Replies map directly to Lua: simple and bulk strings as strings, integers as num
 
 With `pipeline = true` the client shares one connection across many concurrent commands (the ioredis model). You do **not** call `:pipeline(builder)` on it — instead, commands issued from concurrent coroutines are batched into a single send automatically, and each resolves with its own reply in request order. The command API is otherwise identical, so `mux:set(k, v)` and `mux:get(k)` work exactly as on the single-connection client.
 
-## Examples and tests
+## Reference, examples, and tests
 
+- Full reference: [docs/components/redis.md](../../docs/components/redis.md)
 - Runnable examples: [examples/](examples/) — string values and counters, and hashes and lists.
 - Test: [tests/](tests/) covers endpoint failover, cached values with expiry, counters, hashes, lists, sets, sorted-set leaderboards, `MULTI` / `EXEC`, pipelines, and the multiplexed client. It needs a live Redis server (`VARN_REDIS_HOST` / `VARN_REDIS_PORT`, and `VARN_REDIS_USER` / `VARN_REDIS_PASS` when the server requires auth), so it runs standalone rather than in the cross-platform `varn.py test` runner. Run it directly with `./build/bin/varn components/redis/tests/integration.lua`.

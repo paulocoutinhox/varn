@@ -46,7 +46,8 @@ Every borrow and release runs on the event loop, so the whole lifecycle must liv
 | `p:with(fn)` | Acquire a connection, run `fn(conn)`, release it and return the result on success, or drop it and re-raise on failure. |
 | `p:closeAll()` | Close the pool and its idle connections; connections still checked out are closed when they are later released. |
 
-## Examples and tests
+## Reference, examples, and tests
 
+- Full reference: [docs/components/pool.md](../../docs/components/pool.md)
 - Runnable example: [examples/](examples/) — reuse, `:with`, a blocked third acquire, and `closeAll`.
 - Test: [tests/](tests/) covers lazy open up to the cap, reuse of freed connections, blocking when full, `drop` opening a slot, `:with` releasing on success and dropping on failure, and `closeAll` accounting.
