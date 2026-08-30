@@ -135,6 +135,8 @@ TaskPool& Runtime::taskPool()
 
 TaskPool& Runtime::ioPool()
 {
+    // the pool is created on first use but stop() can reach it from another thread, so publication is guarded
+    std::lock_guard<std::mutex> lock(ioWorkersMutex);
     if (!ioWorkers)
     {
         ioWorkers = std::make_unique<TaskPool>(kIoThreads, workLedger);
@@ -217,9 +219,17 @@ void Runtime::stop()
     }
 
     pool.stop();
-    if (ioWorkers)
+
+    // read the lazily created io pool under its mutex so a concurrent first use on the loop thread cannot be missed
+    TaskPool* io = nullptr;
     {
-        ioWorkers->stop();
+        std::lock_guard<std::mutex> lock(ioWorkersMutex);
+        io = ioWorkers.get();
+    }
+
+    if (io)
+    {
+        io->stop();
     }
 
     loop.stop();

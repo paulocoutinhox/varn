@@ -63,6 +63,7 @@ private:
     std::shared_ptr<WorkLedger> workLedger;
     EventLoop loop;
     TaskPool pool;
+    mutable std::mutex ioWorkersMutex;
     std::unique_ptr<TaskPool> ioWorkers;
     std::atomic<int> backgroundDrivers{0};
     std::unique_ptr<varn::lua::LuaEngine> engine;

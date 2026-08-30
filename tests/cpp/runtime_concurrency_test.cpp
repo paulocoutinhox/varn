@@ -1,4 +1,5 @@
 #include "varn/runtime/EventLoop.h"
+#include "varn/runtime/Runtime.h"
 #include "varn/runtime/TaskPool.h"
 #include "varn/runtime/WorkLedger.h"
 
@@ -8,6 +9,7 @@
 #include <chrono>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -182,6 +184,32 @@ TEST(EventLoop, RunsJobsPostedFromAnotherThread)
 
     EXPECT_EQ(ran.load(), kJobs);
     EXPECT_EQ(ledger->depth(), 0);
+}
+
+TEST(Runtime, FirstIoPoolUseRacesACrossThreadStopSafely)
+{
+    // the io pool is created lazily on one thread while stop() reaches it from another, so the attempt is repeated to land inside that narrow window
+    for (int attempt = 0; attempt < 64; ++attempt)
+    {
+        Runtime runtime(std::vector<std::string>{"varn"});
+
+        std::atomic<bool> ready{false};
+        // clang-format off
+        std::thread user([&runtime, &ready]
+        {
+            ready.store(true, std::memory_order_release);
+            runtime.ioPool().post([] {});
+        });
+        // clang-format on
+
+        while (!ready.load(std::memory_order_acquire))
+        {
+            std::this_thread::yield();
+        }
+
+        runtime.stop();
+        user.join();
+    }
 }
 
 } // namespace varn::runtime

@@ -2,8 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstring>
 #include <string>
+#include <thread>
 
 namespace
 {
@@ -62,6 +64,42 @@ TEST(CApi, RegisteredHostFunctionRoundTripsThroughLua)
     EXPECT_EQ(varn_runtime_register(rt, "x", nullptr, nullptr), 2);
     EXPECT_EQ(varn_runtime_register(nullptr, "x", &echoHost, nullptr), 2);
 
+    varn_runtime_free(rt);
+}
+
+TEST(CApi, StopFromAnotherThreadTearsDownAListeningServer)
+{
+    // run_string blocks driving the loop so a host can only stop from another thread, and the script leaves behind the listening server and the io pool that the teardown then reaches across that boundary
+    varn_runtime* rt = varn_runtime_new();
+    ASSERT_NE(rt, nullptr);
+
+    const char* script =
+        "local http = require('http')\n"
+        "local fs = require('fs')\n"
+        "local async = require('async')\n"
+        "http.createServer(function(req, res) res:send('ok') end)"
+        ":listen({ host = '127.0.0.1', port = 3987 })\n"
+        "async.spawn(function()\n"
+        "  while true do fs.readdir('.'):await() end\n"
+        "end)\n";
+
+    int exitCode = -1;
+    // clang-format off
+    std::thread runner([rt, script, &exitCode]
+    {
+        exitCode = varn_runtime_run_string(rt, script, "stop-test");
+    });
+    // clang-format on
+
+    // let the loop reach the listening state before the stop arrives
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    varn_runtime_stop(rt);
+    runner.join();
+
+    EXPECT_EQ(exitCode, 0);
+
+    // a second stop is a no-op, and the free that follows must still join every thread cleanly
+    varn_runtime_stop(rt);
     varn_runtime_free(rt);
 }
 

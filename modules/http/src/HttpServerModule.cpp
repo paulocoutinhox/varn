@@ -337,16 +337,21 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L)
     };
     // clang-format on
 
+    // the announcement reads the endpoint before the options are moved into the engine
+    std::ostringstream started;
+    started << "Listening on " << (options.tls ? "https" : "http") << "://" << options.host << ":" << options.port << ".";
+
     auto* engine = new ReactorHttpServer(rt, std::move(options), std::move(handler));
 
+    // the runtime owns this shared_ptr and drops it inside stop(), which a host may call from another thread, so the registry is only touched while the lua state is still driven by the loop
     // clang-format off
     auto server = std::shared_ptr<HttpServer>(
         engine,
-        [luaMain = rt.luaState(), persistedHandlerRef](HttpServer* p)
+        [rtPtr, persistedHandlerRef](HttpServer* p)
         {
-            if (persistedHandlerRef != LUA_NOREF)
+            if (persistedHandlerRef != LUA_NOREF && !rtPtr->stopped())
             {
-                luaL_unref(luaMain, LUA_REGISTRYINDEX, persistedHandlerRef);
+                luaL_unref(rtPtr->luaState(), LUA_REGISTRYINDEX, persistedHandlerRef);
             }
 
             delete p;
@@ -355,8 +360,6 @@ int HttpServerLuaBindings::luaServerListen(lua_State* L)
     server->start();
     rt.addServer(server);
 
-    std::ostringstream started;
-    started << "Listening on " << (options.tls ? "https" : "http") << "://" << options.host << ":" << options.port << ".";
     log::Log::line("HttpServerLuaBindings", started.str());
 
     return 0;
