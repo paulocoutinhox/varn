@@ -54,6 +54,11 @@ Runtime::Runtime(std::vector<std::string> args, std::size_t scriptArgIndex)
 Runtime::~Runtime()
 {
     stop();
+
+#if !defined(__EMSCRIPTEN__)
+    // a script that fails before the loop is entered leaves its socket watchers armed, and those handlers hold lua registry refs, so they are released here while the engine still owns the state rather than after it is closed
+    loop.shutdownIo();
+#endif
 }
 
 int Runtime::runScript(const std::string& scriptPath)

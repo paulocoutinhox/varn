@@ -52,6 +52,7 @@ public:
     void watchWrite(const Poco::Net::Socket& socket, IoHandler handler);
     void closeSocket(const Poco::Net::Socket& socket);
     bool isRunning() const;
+    void shutdownIo();
 #endif
 
 #if defined(__EMSCRIPTEN__)
@@ -63,7 +64,6 @@ private:
     void wakeFromAnotherThread();
 #if !defined(__EMSCRIPTEN__)
     bool onLoopThread() const;
-    void shutdownIo();
 #endif
 
     std::shared_ptr<WorkLedger> ledger;
