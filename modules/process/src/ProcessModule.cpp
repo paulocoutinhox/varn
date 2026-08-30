@@ -63,12 +63,35 @@ int ProcessModule::luaExec(lua_State* L)
         return luaL_error(L, "[ProcessModule] A command must not contain a null byte.");
     }
 
+    long long timeoutMs = 0;
+    if (lua_istable(L, 2))
+    {
+        lua_getfield(L, 2, "timeoutMs");
+        if (lua_isnumber(L, -1))
+        {
+            timeoutMs = static_cast<long long>(lua_tointeger(L, -1));
+            if (timeoutMs < 0)
+            {
+                lua_pop(L, 1);
+                return luaL_error(L, "[ProcessModule] A timeout must not be negative.");
+            }
+        }
+
+        lua_pop(L, 1);
+    }
+
     auto& rt = luaRuntime(L);
 
     // clang-format off
-    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "ProcessModule", [command = std::move(command)](Promise& promise)
+    return varn::async::AsyncTask::runOnPool(L, rt, rt.ioPool(), "ProcessModule", [command = std::move(command), timeoutMs](Promise& promise)
     {
-        const ProcessResult result = ProcessRunner::exec(command);
+        const ProcessResult result = ProcessRunner::exec(command, timeoutMs);
+        if (result.timedOut)
+        {
+            promise.reject("[ProcessModule] The command exceeded its timeout of " + std::to_string(timeoutMs) + " ms and was killed.");
+            return;
+        }
+
         promise.resolveCustom([result](lua_State* lua)
         {
             lua_createtable(lua, 0, 3);

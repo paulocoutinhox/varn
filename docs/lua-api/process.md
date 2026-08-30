@@ -3,7 +3,17 @@
 Run commands and read the process environment. `exec` runs off the main loop and returns a
 promise; the environment and working-directory accessors are synchronous.
 
-- `process.exec(command)` → promise resolving to a table `{stdout, stderr, code}`. The command runs through the platform shell — `/bin/sh -c` on POSIX and `cmd.exe /c` on Windows — so shell features like pipes and redirection work with each shell's own syntax. Both streams are captured binary-safe up to a combined 64 MiB cap, past which the child is killed so an endless producer cannot exhaust host memory. `code` is the exit status; a child killed by a POSIX signal reports `128 + signal` (a cap overrun is `137`), while a terminated Windows process reports its own termination code.
+- `process.exec(command, options?)` → promise resolving to a table `{stdout, stderr, code}`. The command runs through the platform shell — `/bin/sh -c` on POSIX and `cmd.exe /c` on Windows — so shell features like pipes and redirection work with each shell's own syntax. Both streams are captured binary-safe up to a combined 64 MiB cap, past which the child is killed so an endless producer cannot exhaust host memory. `code` is the exit status; a child killed by a POSIX signal reports `128 + signal` (a cap overrun is `137`), while a terminated Windows process reports its own termination code.
+- `options.timeoutMs` bounds how long the command may run. When it passes the deadline the child is killed and the promise **rejects** rather than resolving with a partial result, so an overrun can never be mistaken for a normal exit. Without it the call waits as long as the child lives, matching `child_process.exec` in Node and `subprocess.run` in Python. A negative value is refused at the call.
+
+  Each `exec` occupies one thread of the io pool for its whole run, and that pool also serves `fs` and the HTTP client. A command that may hang — anything reaching the network, or a tool that can wait on a lock or a prompt — should carry a `timeoutMs`, or enough of them will starve the pool the rest of the runtime depends on.
+
+  ```lua
+  local result, err = process.exec("curl -s https://example.com", { timeoutMs = 5000 }):await()
+  if err then
+      -- the command overran its deadline and was killed
+  end
+  ```
 - `process.env` → a table mapping each environment variable name to its value, captured when the module is required.
 - `process.getenv(name, default?)` → the value of `name`, or `default` (or `nil`) when it is unset.
 - `process.cwd()` → the current working directory as a string.

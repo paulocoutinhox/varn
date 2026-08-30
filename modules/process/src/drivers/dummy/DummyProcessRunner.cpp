@@ -14,7 +14,7 @@ bool ProcessRunner::available()
     return false;
 }
 
-ProcessResult ProcessRunner::exec(const std::string& /*command*/)
+ProcessResult ProcessRunner::exec(const std::string& /*command*/, long long /*timeoutMs*/)
 {
     throw std::runtime_error("[ProcessRunner] The process module is not available in this build.");
 }

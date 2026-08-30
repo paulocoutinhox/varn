@@ -1,7 +1,10 @@
 #include "varn/process/ProcessRunner.h"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
+#include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -27,14 +30,28 @@ namespace
 // bound the captured output so a child that streams without end cannot exhaust host memory
 constexpr std::size_t kMaxCaptureBytes = 64 * 1024 * 1024;
 
+enum class Drain
+{
+    Complete,
+    Truncated,
+    TimedOut
+};
+
 class PosixProcessHelpers
 {
 public:
+    static long long remainingMs(std::chrono::steady_clock::time_point deadline)
+    {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        return left > 0 ? left : 0;
+    }
+
     // drain stdout and stderr together so a child that fills one pipe buffer while writing the other never deadlocks the parent
-    // returns true when the combined capture reached the cap so the caller can terminate a runaway child
-    static bool drainPipes(int outFd, int errFd, std::string& outData, std::string& errData)
+    static Drain drainPipes(int outFd, int errFd, std::string& outData, std::string& errData, long long timeoutMs)
     {
         std::array<char, 65536> chunk{};
+        const bool bounded = timeoutMs > 0;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(bounded ? timeoutMs : 0);
 
         // clang-format off
         pollfd fds[2];
@@ -48,7 +65,23 @@ public:
             fds[0].revents = 0;
             fds[1].revents = 0;
 
-            if (::poll(fds, 2, -1) < 0)
+            int wait = -1;
+            if (bounded)
+            {
+                wait = static_cast<int>(std::min<long long>(remainingMs(deadline), INT_MAX));
+                if (wait == 0)
+                {
+                    return Drain::TimedOut;
+                }
+            }
+
+            const int ready = ::poll(fds, 2, wait);
+            if (ready == 0)
+            {
+                return Drain::TimedOut;
+            }
+
+            if (ready < 0)
             {
                 if (errno == EINTR)
                 {
@@ -75,7 +108,7 @@ public:
 
                     if (static_cast<std::size_t>(got) >= room)
                     {
-                        return true;
+                        return Drain::Truncated;
                     }
 
                     continue;
@@ -92,7 +125,7 @@ public:
         }
         // clang-format on
 
-        return false;
+        return Drain::Complete;
     }
 
     static void closeFd(int& fd)
@@ -120,7 +153,7 @@ bool ProcessRunner::available()
     return true;
 }
 
-ProcessResult ProcessRunner::exec(const std::string& command)
+ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutMs)
 {
     int outPipe[2] = {-1, -1};
     int errPipe[2] = {-1, -1};
@@ -180,15 +213,17 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     }
 
     ProcessResult result;
-    const bool truncated = PosixProcessHelpers::drainPipes(outPipe[0], errPipe[0], result.stdoutData, result.stderrData);
+    const Drain drained = PosixProcessHelpers::drainPipes(outPipe[0], errPipe[0], result.stdoutData, result.stderrData, timeoutMs);
     PosixProcessHelpers::closeFd(outPipe[0]);
     PosixProcessHelpers::closeFd(errPipe[0]);
 
-    // a child that overran the output cap is terminated so it cannot linger blocked on a full pipe
-    if (truncated)
+    // a child that overran the output cap or its deadline is killed so it cannot linger holding this thread
+    if (drained != Drain::Complete)
     {
         ::kill(pid, SIGKILL);
     }
+
+    result.timedOut = drained == Drain::TimedOut;
 
     int status = 0;
     while (::waitpid(pid, &status, 0) < 0 && errno == EINTR)

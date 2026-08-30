@@ -100,7 +100,7 @@ bool ProcessRunner::available()
     return true;
 }
 
-ProcessResult ProcessRunner::exec(const std::string& command)
+ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutMs)
 {
     SECURITY_ATTRIBUTES inheritable{};
     inheritable.nLength = static_cast<DWORD>(sizeof(inheritable));
@@ -159,6 +159,23 @@ ProcessResult ProcessRunner::exec(const std::string& command)
 
     ProcessResult result;
 
+    // a synchronous ReadFile cannot be given a deadline, so the deadline is enforced on the child itself and the drains end when its pipes close
+    std::atomic<bool> timedOut{false};
+    std::thread watchdog;
+    if (timeoutMs > 0)
+    {
+        // clang-format off
+        watchdog = std::thread([&timedOut, handle = process.hProcess, timeoutMs]
+        {
+            if (WaitForSingleObject(handle, static_cast<DWORD>(std::min<long long>(timeoutMs, MAXDWORD - 1))) == WAIT_TIMEOUT)
+            {
+                timedOut.store(true);
+                TerminateProcess(handle, 1);
+            }
+        });
+        // clang-format on
+    }
+
     // drain stderr on a helper thread so a child that fills one pipe buffer while writing the other never deadlocks the parent
     std::string errData;
     std::atomic<std::size_t> captured{0};
@@ -181,7 +198,13 @@ ProcessResult ProcessRunner::exec(const std::string& command)
     }
 
     errReader.join();
+    if (watchdog.joinable())
+    {
+        watchdog.join();
+    }
+
     result.stderrData = std::move(errData);
+    result.timedOut = timedOut.load();
 
     WindowsProcessHelpers::closeHandle(outRead);
     WindowsProcessHelpers::closeHandle(errRead);
