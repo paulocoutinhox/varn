@@ -56,7 +56,12 @@ attacked with.
 
 ### Context response helpers
 
-Inside a handler `ctx` exposes, alongside `json`/`text`/`html`/`file`/`status`/`header`/`cookie`/`write`/`send`:
+Inside a handler `ctx` carries the request as `ctx.req` (equivalently `ctx.request`) plus the
+shorthands `ctx.method`, `ctx.path`, `ctx.params`, `ctx.query` and `ctx.state`, and it ends the
+response through `json`/`xml`/`text`/`html`/`file`/`status`/`header`/`cookie`/`type`/`redirect`/`write`/`send`
+(`finish` is accepted as the same call as `send`, so a handler body reads the same on `createServer`
+and on `createApp`). `ctx:xml(table)` is the XML twin of `ctx:json(table)`, sending
+`application/xml; charset=utf-8`. On top of those:
 
 - `ctx:cache(seconds)` or `ctx:cache(opts)` — set `Cache-Control`. A number is shorthand for
   `public, max-age=<n>`. The options table understands `maxAge`, `sMaxAge`, `private` (default is
@@ -64,6 +69,14 @@ Inside a handler `ctx` exposes, alongside `json`/`text`/`html`/`file`/`status`/`
 - `ctx:etag(value)` — set the `ETag` header (a bare value is quoted, a `W/` prefix is kept weak).
   When the request's `If-None-Match` matches, it answers `304` and ends the response, so guard the
   rest of the handler with `if ctx.req.headers["If-None-Match"] then return end`.
+- `ctx:file(path, opts?)` — stream a file, with the content type taken from its extension. A path
+  that is not an existing regular file answers `404`, so a directory, a fifo or a device is never
+  streamed. `opts.download = true` sends it as an attachment named after the file, and
+  `opts.download = "name.ext"` names it explicitly; either way the name is encoded per RFC 6266, so a
+  filename cannot break out of the header. **The path is served exactly as given** — this is the
+  explicit escape hatch, not the guarded static handler, so a handler that builds the path from
+  request data must contain it itself. Serving a whole directory belongs to `publicDir`, which
+  resolves and confines every path for you.
 - `ctx:accepts(type1, type2, ...)` — return the best match against the request `Accept` header, or
   `nil` if none fit. A bare token like `"json"` or `"html"` matches the media subtype; a full type
   like `"application/json"` matches exactly. A missing or `*/*` Accept header returns the first type.
