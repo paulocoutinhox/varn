@@ -118,6 +118,34 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ./build/asan/bin/varn_tests
 
+  race:
+    name: Sanitizers (ThreadSanitizer)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CPM_SOURCE_CACHE }}
+            build/tsan/_deps
+          key: cpm-tsan-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}
+          restore-keys: cpm-tsan-
+
+      - name: Configure
+        run: cmake -B build/tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DVARN_SANITIZE=thread -DVARN_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build/tsan --target varn_tests -j$(nproc)
+
+      # the C++ target carries the multi-threaded runtime and teardown tests, which is where a race lives; the lua suite is not run here because forking under tsan is pathologically slow
+      - name: Run C++ tests under ThreadSanitizer
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ./build/tsan/bin/varn_tests
+
   portable-crypto:
     name: Portable crypto driver (no OpenSSL)
     runs-on: ubuntu-24.04
