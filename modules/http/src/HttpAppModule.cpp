@@ -13,6 +13,7 @@
 #include "varn/crypto/CryptoPrimitives.h"
 #include "varn/log/Log.h"
 #include "varn/lua/LuaHelpers.h"
+#include "varn/runtime/App.h"
 #include "varn/runtime/Runtime.h"
 #if VARN_JSON_DRIVER_NLOHMANN
 #include "varn/json/JsonSerializer.h"
@@ -56,6 +57,9 @@ constexpr const char* kRouteMeta = "varn.HttpRoute";
 constexpr const char* kContextMeta = "varn.HttpContext";
 constexpr const char* kWsConnMeta = "varn.HttpWsConn";
 constexpr const char* kSseMeta = "varn.HttpSse";
+
+// bound the rate-limit store the way the session store is bounded, since an ipv6 client can source from a whole prefix
+constexpr long long kMaxRateLimitBuckets = 100000;
 
 struct Group
 {
@@ -244,6 +248,7 @@ public:
     static std::string findContentType(const HttpRequest& request);
     static long long nowMs();
     static std::string randomSessionId();
+    static void warnSessionStoreIsPerProcess();
     static void sweepSessions(AppState& app, lua_State* L, long long now);
     static void evictOldestSession(AppState& app, lua_State* L);
     static int luaContextStatus(lua_State* L);
@@ -294,6 +299,7 @@ public:
     static int corsMiddleware(lua_State* L);
     static int securityHeadersMiddleware(lua_State* L);
     static int apiKeyMiddleware(lua_State* L);
+    static long long sweepRateBuckets(lua_State* L, int buckets, long long now);
     static int rateLimitMiddleware(lua_State* L);
     static int luaCors(lua_State* L);
     static int luaSecurityHeaders(lua_State* L);
@@ -418,6 +424,19 @@ std::string HttpApp::randomSessionId()
     }
 
     return id.str();
+}
+
+void HttpApp::warnSessionStoreIsPerProcess()
+{
+    // the store lives in this process, so with several workers the kernel spreads a client's requests across stores that cannot see each other
+    static bool warned = false;
+    if (warned || varn::runtime::App::workerCount() <= 1)
+    {
+        return;
+    }
+
+    warned = true;
+    log::Log::error("HttpApp", "Sessions and csrf tokens are held in the memory of a single process, so they break under VARN_WORKERS greater than 1. Run one worker, or keep session state in a shared store such as the redis component.");
 }
 
 void HttpApp::sweepSessions(AppState& app, lua_State* L, long long now)
@@ -778,6 +797,8 @@ int HttpApp::luaContextSession(lua_State* L)
     }
 
     lua_pop(L, 1);
+
+    warnSessionStoreIsPerProcess();
 
     const long long now = nowMs();
     sweepSessions(*app, L, now);
@@ -1685,8 +1706,9 @@ int HttpApp::dispatchFinalize(lua_State* L, int status, lua_KContext kctx)
         response->end(failed ? "Internal server error." : "");
     }
 
-    // onResponse hooks always run once the outcome is decided, even on errors or unmatched routes
-    for (int ref : app->responseHooks)
+    // onResponse hooks always run once the outcome is decided, even on errors or unmatched routes, and the refs are copied so a hook may register more without invalidating the loop
+    const std::vector<int> responseHooks = app->responseHooks;
+    for (int ref : responseHooks)
     {
         lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
         lua_rawgeti(L, LUA_REGISTRYINDEX, contextRef);
@@ -1743,8 +1765,9 @@ void HttpApp::runDispatch(const std::shared_ptr<AppState>& app, const HttpReques
     lua_pushvalue(thread, -1);
     context->selfRef = luaL_ref(thread, LUA_REGISTRYINDEX);
 
-    // onRequest hooks observe and set up the context before the chain runs
-    for (int ref : app->requestHooks)
+    // onRequest hooks observe and set up the context before the chain runs, and the refs are copied so a hook may register more without invalidating the loop
+    const std::vector<int> requestHooks = app->requestHooks;
+    for (int ref : requestHooks)
     {
         lua_rawgeti(thread, LUA_REGISTRYINDEX, ref);
         lua_rawgeti(thread, LUA_REGISTRYINDEX, context->selfRef);
@@ -2073,6 +2096,36 @@ int HttpApp::apiKeyMiddleware(lua_State* L)
     return 0;
 }
 
+long long HttpApp::sweepRateBuckets(lua_State* L, int buckets, long long now)
+{
+    long long live = 0;
+
+    lua_pushnil(L);
+    while (lua_next(L, buckets) != 0)
+    {
+        long long bucketReset = 0;
+        if (lua_istable(L, -1))
+        {
+            lua_getfield(L, -1, "r");
+            bucketReset = lua_tointeger(L, -1);
+            lua_pop(L, 1);
+        }
+
+        lua_pop(L, 1);
+        if (now >= bucketReset)
+        {
+            lua_pushvalue(L, -1);
+            lua_pushnil(L);
+            lua_settable(L, buckets);
+            continue;
+        }
+
+        live += 1;
+    }
+
+    return live;
+}
+
 int HttpApp::rateLimitMiddleware(lua_State* L)
 {
     auto* context = checkContext(L);
@@ -2083,6 +2136,7 @@ int HttpApp::rateLimitMiddleware(lua_State* L)
         const long long windowMs = optInt(L, opts, "windowMs", 60000);
         const long long max = optInt(L, opts, "max", 100);
         const bool trustProxy = optBool(L, opts, "trustProxy", false);
+        const long long maxClients = std::max<long long>(optInt(L, opts, "maxClients", kMaxRateLimitBuckets), 1);
         const long long now = nowMs();
         const std::string ip = clientIp(L, trustProxy);
 
@@ -2098,32 +2152,17 @@ int HttpApp::rateLimitMiddleware(lua_State* L)
 
         const int buckets = lua_gettop(L);
 
+        lua_getfield(L, state, "live");
+        long long live = lua_tointeger(L, -1);
+        lua_pop(L, 1);
+
         // drop expired buckets at most once per window so the per-request cost stays near constant
         lua_getfield(L, state, "sweptAt");
         const long long sweptAt = lua_tointeger(L, -1);
         lua_pop(L, 1);
         if (now - sweptAt >= windowMs)
         {
-            lua_pushnil(L);
-            while (lua_next(L, buckets) != 0)
-            {
-                long long bucketReset = 0;
-                if (lua_istable(L, -1))
-                {
-                    lua_getfield(L, -1, "r");
-                    bucketReset = lua_tointeger(L, -1);
-                    lua_pop(L, 1);
-                }
-
-                lua_pop(L, 1);
-                if (now >= bucketReset)
-                {
-                    lua_pushvalue(L, -1);
-                    lua_pushnil(L);
-                    lua_settable(L, buckets);
-                }
-            }
-
+            live = sweepRateBuckets(L, buckets, now);
             lua_pushinteger(L, now);
             lua_setfield(L, state, "sweptAt");
         }
@@ -2131,7 +2170,8 @@ int HttpApp::rateLimitMiddleware(lua_State* L)
         long long count = 0;
         long long reset = 0;
         lua_getfield(L, buckets, ip.c_str());
-        if (lua_istable(L, -1))
+        const bool known = lua_istable(L, -1);
+        if (known)
         {
             lua_getfield(L, -1, "n");
             count = lua_tointeger(L, -1);
@@ -2142,6 +2182,29 @@ int HttpApp::rateLimitMiddleware(lua_State* L)
         }
 
         lua_pop(L, 1);
+
+        // an address the store has never seen adds a bucket, which is the only path that can grow it
+        if (!known)
+        {
+            if (live >= maxClients)
+            {
+                live = sweepRateBuckets(L, buckets, now);
+            }
+
+            // a flood of distinct addresses must not grow the store without bound, so a store that is still full after the sweep starts a fresh window for everyone
+            if (live >= maxClients)
+            {
+                lua_newtable(L);
+                lua_replace(L, buckets);
+                lua_pushvalue(L, buckets);
+                lua_setfield(L, state, "buckets");
+                live = 0;
+            }
+
+            live += 1;
+            lua_pushinteger(L, live);
+            lua_setfield(L, state, "live");
+        }
 
         if (now >= reset)
         {
@@ -2858,7 +2921,9 @@ int HttpApp::luaWsBroadcast(lua_State* L)
     const char* raw = luaL_checklstring(L, 3, &length);
     const std::string message(raw, length);
 
-    int delivered = 0;
+    // a send to a peer that has stopped draining closes it, which erases its record, so the targets are snapshotted before any of them is written to
+    std::vector<std::shared_ptr<WebSocketConnection>> targets;
+    targets.reserve(app->state->wsConnections.size());
     for (const auto& [key, record] : app->state->wsConnections)
     {
         if (record.path != path)
@@ -2868,12 +2933,16 @@ int HttpApp::luaWsBroadcast(lua_State* L)
 
         if (auto conn = record.conn.lock())
         {
-            conn->send(message);
-            ++delivered;
+            targets.push_back(std::move(conn));
         }
     }
 
-    lua_pushinteger(L, delivered);
+    for (const auto& conn : targets)
+    {
+        conn->send(message);
+    }
+
+    lua_pushinteger(L, static_cast<lua_Integer>(targets.size()));
     return 1;
 }
 
@@ -2885,7 +2954,9 @@ int HttpApp::luaWsBroadcastRoom(lua_State* L)
     const char* raw = luaL_checklstring(L, 3, &length);
     const std::string message(raw, length);
 
-    int delivered = 0;
+    // the same snapshot rule as wsBroadcast, since closing a stalled peer erases the record the loop is walking
+    std::vector<std::shared_ptr<WebSocketConnection>> targets;
+    targets.reserve(app->state->wsConnections.size());
     for (const auto& [key, record] : app->state->wsConnections)
     {
         if (std::find(record.rooms.begin(), record.rooms.end(), room) == record.rooms.end())
@@ -2895,12 +2966,16 @@ int HttpApp::luaWsBroadcastRoom(lua_State* L)
 
         if (auto conn = record.conn.lock())
         {
-            conn->send(message);
-            ++delivered;
+            targets.push_back(std::move(conn));
         }
     }
 
-    lua_pushinteger(L, delivered);
+    for (const auto& conn : targets)
+    {
+        conn->send(message);
+    }
+
+    lua_pushinteger(L, static_cast<lua_Integer>(targets.size()));
     return 1;
 }
 
@@ -3360,7 +3435,9 @@ int HttpApp::luaAppListen(lua_State* L)
     started << "Listening on " << (tls ? "https" : "http") << "://" << host << ":" << port << ".";
     log::Log::line("HttpApp", started.str());
 
-    for (int ref : state->startHooks)
+    // the refs are copied so an onStart hook may register more without invalidating the loop
+    const std::vector<int> startHooks = state->startHooks;
+    for (int ref : startHooks)
     {
         lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
         lua_pushvalue(L, 1);
