@@ -69,10 +69,17 @@ Inside a handler `ctx` exposes, alongside `json`/`text`/`html`/`file`/`status`/`
   like `"application/json"` matches exactly. A missing or `*/*` Accept header returns the first type.
 - `ctx:sse()` — switch the response to `text/event-stream` with `Cache-Control: no-cache` and return
   a Server-Sent-Events writer:
-  - `stream:send(data)` — send a default-event message (multi-line data is split per line).
+  - `stream:send(data)` — send a default-event message. The payload may hold anything: a line break
+    of any kind (CR, LF or CRLF, all three of which end a line in the protocol) is escaped into its
+    own `data:` field, so text can never break out of the record.
   - `stream:send(event, data)` — send a named event.
   - `stream:comment(text)` — send a comment line, the conventional heartbeat that keeps proxies open.
   - `stream:close()` — end the stream.
+
+  An **event name** and a **comment** each occupy a whole line of the stream, so neither may contain a
+  line break — one would let the rest of the value forge `id:`, `retry:` or an entire further event on
+  the client. Passing one raises, the way an invalid header name does, rather than being silently
+  stripped. Payload data has no such restriction, since it is escaped.
 
   The writer builds on chunked transfer encoding, so frames flush progressively rather than buffering.
 

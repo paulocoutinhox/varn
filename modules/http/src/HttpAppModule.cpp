@@ -273,6 +273,8 @@ public:
     static int luaContextEtag(lua_State* L);
     static int luaContextAccepts(lua_State* L);
     static int luaContextSse(lua_State* L);
+    static void rejectSseLineBreak(const std::string& value, const char* what);
+    static void appendSseData(const std::string& data, std::string& frame);
     static int luaSseSend(lua_State* L);
     static int luaSseComment(lua_State* L);
     static int luaSseClose(lua_State* L);
@@ -1206,59 +1208,97 @@ int HttpApp::luaContextAccepts(lua_State* L)
     return 1;
 }
 
-int HttpApp::luaSseSend(lua_State* L)
+void HttpApp::rejectSseLineBreak(const std::string& value, const char* what)
 {
-    auto* writer = static_cast<SseUserdata*>(luaL_checkudata(L, 1, kSseMeta));
-    std::string event;
-    std::string data;
-
-    // the two-argument form names the event and the one-argument form sends a default-event message
-    if (lua_gettop(L) >= 3)
+    // this text occupies a whole line of the stream, so a line break in it would let the caller forge every field after it
+    if (value.find_first_of("\r\n") != std::string::npos)
     {
-        event = LuaHelpers::checkString(L, 2);
-        data = LuaHelpers::optionalString(L, 3, "");
+        throw std::runtime_error(std::string("[HttpApp] An sse ") + what + " must not contain a line break.");
     }
-    else
-    {
-        data = LuaHelpers::optionalString(L, 2, "");
-    }
+}
 
-    std::string frame;
-    if (!event.empty())
-    {
-        frame += "event: " + event + "\n";
-    }
-
-    // a multi-line payload is split so each physical line carries its own data field, as the spec requires
+void HttpApp::appendSseData(const std::string& data, std::string& frame)
+{
+    // the spec ends a line on cr, lf or crlf alike, so each one opens a fresh data field instead of escaping the frame
     std::size_t start = 0;
     for (;;)
     {
-        const std::size_t newline = data.find('\n', start);
-        const std::string line = data.substr(start, newline == std::string::npos ? std::string::npos : newline - start);
-        frame += "data: " + line + "\n";
-        if (newline == std::string::npos)
+        const std::size_t stop = data.find_first_of("\r\n", start);
+        frame += "data: ";
+        if (stop == std::string::npos)
         {
-            break;
+            frame.append(data, start, std::string::npos);
+            frame += '\n';
+            return;
         }
 
-        start = newline + 1;
-    }
+        frame.append(data, start, stop - start);
+        frame += '\n';
 
-    frame += "\n";
-    writer->response->writeChunk(frame);
-    lua_pushvalue(L, 1);
-    return 1;
+        start = stop + 1;
+        if (data[stop] == '\r' && start < data.size() && data[start] == '\n')
+        {
+            ++start;
+        }
+    }
+}
+
+int HttpApp::luaSseSend(lua_State* L)
+{
+    try
+    {
+        auto* writer = static_cast<SseUserdata*>(luaL_checkudata(L, 1, kSseMeta));
+        std::string event;
+        std::string data;
+
+        // the two-argument form names the event and the one-argument form sends a default-event message
+        if (lua_gettop(L) >= 3)
+        {
+            event = LuaHelpers::checkString(L, 2);
+            data = LuaHelpers::optionalString(L, 3, "");
+        }
+        else
+        {
+            data = LuaHelpers::optionalString(L, 2, "");
+        }
+
+        std::string frame;
+        if (!event.empty())
+        {
+            rejectSseLineBreak(event, "event name");
+            frame += "event: " + event + "\n";
+        }
+
+        appendSseData(data, frame);
+
+        frame += "\n";
+        writer->response->writeChunk(frame);
+        lua_pushvalue(L, 1);
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
 }
 
 int HttpApp::luaSseComment(lua_State* L)
 {
-    auto* writer = static_cast<SseUserdata*>(luaL_checkudata(L, 1, kSseMeta));
-    const std::string text = LuaHelpers::optionalString(L, 2, "");
+    try
+    {
+        auto* writer = static_cast<SseUserdata*>(luaL_checkudata(L, 1, kSseMeta));
+        const std::string text = LuaHelpers::optionalString(L, 2, "");
+        rejectSseLineBreak(text, "comment");
 
-    // a comment line is the conventional heartbeat that keeps the stream and any proxies alive
-    writer->response->writeChunk(": " + text + "\n\n");
-    lua_pushvalue(L, 1);
-    return 1;
+        // a comment line is the conventional heartbeat that keeps the stream and any proxies alive
+        writer->response->writeChunk(": " + text + "\n\n");
+        lua_pushvalue(L, 1);
+        return 1;
+    }
+    catch (const std::exception& ex)
+    {
+        return luaL_error(L, "%s", ex.what());
+    }
 }
 
 int HttpApp::luaSseClose(lua_State* L)
