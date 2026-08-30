@@ -32,6 +32,17 @@ _DB_ENV = {
     "VDO_PGSQL_USER": "varn",
     "VDO_PGSQL_PASS": "varnpass",
 }
+_COMPONENT_TESTS = (
+    "components/ai/tests/mock_test.lua",
+    "components/ai/tests/adapters_test.lua",
+    "components/validate/tests/integration.lua",
+    "components/retry/tests/integration.lua",
+    "components/pool/tests/integration.lua",
+    "components/test/tests/integration.lua",
+    "components/vdo/tests/sql_test.lua",
+    "components/vdo/tests/dsn_test.lua",
+    "components/env/tests/integration.lua",
+)
 _DB_TESTS = (
     "components/redis/tests/integration.lua",
     "components/mysql/tests/integration.lua",
@@ -100,20 +111,14 @@ def run(args: Namespace) -> None:
 
     # component tests with no external dependency run alongside the module tests.
     # ones needing a database or server (scheduler and vdo over sqlite/ffi, redis, mysql) are run separately where that backend exists.
-    for relative in (
-        "components/ai/tests/mock_test.lua",
-        "components/ai/tests/adapters_test.lua",
-        "components/validate/tests/integration.lua",
-        "components/retry/tests/integration.lua",
-        "components/pool/tests/integration.lua",
-        "components/test/tests/integration.lua",
-        "components/vdo/tests/sql_test.lua",
-        "components/vdo/tests/dsn_test.lua",
-        "components/env/tests/integration.lua",
-    ):
+    # the list is explicit, so a name that is not on disk is a missing file rather than a test to skip
+    for relative in _COMPONENT_TESTS:
         candidate = helper.PROJECT_DIR / relative
-        if candidate.exists():
-            tests.append(candidate)
+        if not candidate.exists():
+            print(f"component test not found: {relative}")
+            raise SystemExit(1)
+
+        tests.append(candidate)
 
     # each test receives a fresh scratch directory through VARN_TEST_DIR, created and cleaned here
     scratch = helper.PROJECT_DIR / build_dir / "test-scratch"
@@ -216,7 +221,8 @@ def run_db(args: Namespace) -> None:
     for relative in suite:
         test = helper.PROJECT_DIR / relative
         if not test.exists():
-            continue
+            print(f"backend test not found: {relative}")
+            raise SystemExit(1)
 
         if scratch.exists():
             shutil.rmtree(scratch)

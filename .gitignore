@@ -56,15 +56,15 @@ apps/wasm/public/wasm/*.wasm
 .pytest_cache
 poetry.lock
 
-# environments
+# environments, anchored to the repo root so they never swallow a source directory named env
 .env
-.venv
-env/
-venv/
-.venv*/
-ENV/
-env.bak/
-venv.bak/
+/.venv
+/env/
+/venv/
+/.venv*/
+/ENV/
+/env.bak/
+/venv.bak/
 
 # temp
 /temp
