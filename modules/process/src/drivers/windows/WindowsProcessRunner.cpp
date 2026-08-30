@@ -84,6 +84,18 @@ public:
         return out;
     }
 
+    // killing cmd.exe alone leaves its command running with the inherited pipe ends, so the job is terminated when there is one
+    static void killTree(HANDLE job, HANDLE fallback)
+    {
+        if (job != nullptr)
+        {
+            TerminateJobObject(job, 1);
+            return;
+        }
+
+        TerminateProcess(fallback, 1);
+    }
+
     static void closeHandle(HANDLE& handle)
     {
         if (handle != nullptr && handle != INVALID_HANDLE_VALUE)
@@ -115,6 +127,16 @@ ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutM
     // serialize handle creation and process start so a concurrent spawn cannot inherit these write handles
     static std::mutex spawnMutex;
     PROCESS_INFORMATION process{};
+
+    // terminating cmd.exe leaves the command it started alive, still holding the inherited pipe ends, so the child goes into a job and the whole tree is killed through that
+    HANDLE job = CreateJobObjectW(nullptr, nullptr);
+    if (job != nullptr)
+    {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+    }
+
     {
         std::lock_guard<std::mutex> lock(spawnMutex);
 
@@ -142,15 +164,24 @@ ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutM
         startup.hStdOutput = outWrite;
         startup.hStdError = errWrite;
 
-        const BOOL started = CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
+        // the child starts suspended so it joins the job before it can spawn anything outside it
+        const BOOL started = CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr, &startup, &process);
         if (!started)
         {
+            WindowsProcessHelpers::closeHandle(job);
             WindowsProcessHelpers::closeHandle(outRead);
             WindowsProcessHelpers::closeHandle(outWrite);
             WindowsProcessHelpers::closeHandle(errRead);
             WindowsProcessHelpers::closeHandle(errWrite);
             throw std::runtime_error("[ProcessRunner] The process could not be started.");
         }
+
+        if (job != nullptr)
+        {
+            AssignProcessToJobObject(job, process.hProcess);
+        }
+
+        ResumeThread(process.hThread);
 
         // close the parent copies of the write ends inside the lock so the reads terminate and no later spawn inherits them
         WindowsProcessHelpers::closeHandle(outWrite);
@@ -165,12 +196,12 @@ ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutM
     if (timeoutMs > 0)
     {
         // clang-format off
-        watchdog = std::thread([&timedOut, handle = process.hProcess, timeoutMs]
+        watchdog = std::thread([&timedOut, handle = process.hProcess, tree = job, timeoutMs]
         {
             if (WaitForSingleObject(handle, static_cast<DWORD>(std::min<long long>(timeoutMs, MAXDWORD - 1))) == WAIT_TIMEOUT)
             {
                 timedOut.store(true);
-                TerminateProcess(handle, 1);
+                WindowsProcessHelpers::killTree(tree, handle);
             }
         });
         // clang-format on
@@ -212,7 +243,7 @@ ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutM
     // a child that overran the output cap is terminated so it cannot linger blocked on a full pipe
     if (captured.load() >= kMaxCaptureBytes)
     {
-        TerminateProcess(process.hProcess, 1);
+        WindowsProcessHelpers::killTree(job, process.hProcess);
     }
 
     WaitForSingleObject(process.hProcess, INFINITE);
@@ -223,6 +254,7 @@ ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutM
 
     WindowsProcessHelpers::closeHandle(process.hProcess);
     WindowsProcessHelpers::closeHandle(process.hThread);
+    WindowsProcessHelpers::closeHandle(job);
 
     return result;
 }

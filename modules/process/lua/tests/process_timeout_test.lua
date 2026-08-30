@@ -8,13 +8,13 @@ if not process.available then
     return
 end
 
--- a command that sleeps well past its deadline without ever writing, which is the case a drain alone would wait on forever
+-- the shell forks for these rather than exec'ing, so the process the deadline must reach is a grandchild holding the inherited pipe ends
 local function sleeper(seconds)
     if platform.os() == "windows" then
         return string.format("ping -n %d 127.0.0.1 > nul", seconds + 1)
     end
 
-    return string.format("sleep %d", seconds)
+    return string.format("sleep %d; echo finished", seconds)
 end
 
 async.run(function()
@@ -32,6 +32,16 @@ async.run(function()
     assert(err ~= nil, "an overrunning command must report an error")
     assert(err:find("timeout", 1, true), "the error should name the timeout, got " .. tostring(err))
     assert(elapsed < 20, "the deadline should end the wait promptly, took " .. elapsed .. "s")
+
+    -- the shell is not the only thing to kill: whatever it forked survives it and keeps running unless the deadline reaches the whole group
+    if platform.os() ~= "windows" then
+        local marker = "sleep 987"
+        local _, orphanErr = process.exec(marker .. "; echo finished", { timeoutMs = 300 }):await()
+        assert(orphanErr ~= nil, "the grandchild command should still hit the deadline")
+
+        local survivors = process.exec('pgrep -f "' .. marker .. '"'):await()
+        assert(survivors.code ~= 0, "the deadline must leave no orphan behind, found: " .. survivors.stdout)
+    end
 
     -- with no timeout the call still behaves exactly as before
     local unbounded = process.exec("echo unbounded"):await()

@@ -191,6 +191,9 @@ ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutM
 
         if (pid == 0)
         {
+            // lead a new process group so killing the shell also reaches anything it forked, which still holds the inherited pipe ends
+            ::setpgid(0, 0);
+
             // wire the write ends onto stdout and stderr, which clears their close-on-exec flag, then run the command through the shell
             ::dup2(outPipe[1], STDOUT_FILENO);
             ::dup2(errPipe[1], STDERR_FILENO);
@@ -220,7 +223,7 @@ ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutM
     // a child that overran the output cap or its deadline is killed so it cannot linger holding this thread
     if (drained != Drain::Complete)
     {
-        ::kill(pid, SIGKILL);
+        ::kill(-pid, SIGKILL);
     }
 
     result.timedOut = drained == Drain::TimedOut;
