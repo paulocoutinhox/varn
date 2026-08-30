@@ -61,6 +61,28 @@ assert(crypto.verifyPassword("correct horse battery staple", "garbage") == false
 -- two hashes of the same password differ because the salt is random
 assert(crypto.hashPassword("same") ~= crypto.hashPassword("same"), "password salt is random")
 
+-- the cost parameters of a stored hash decide how much memory verifying allocates, so an out-of-range set is refused instead of being handed to scrypt
+local saltField, hashField = hash:match("^scrypt%$[^$]+%$([^$]+)%$(.+)$")
+assert(saltField and hashField, "the hash fields should be readable")
+
+local function crafted(params)
+    return "scrypt$" .. params .. "$" .. saltField .. "$" .. hashField
+end
+
+local started = os.clock()
+assert(crypto.verifyPassword("correct horse battery staple", crafted("1073741824,8,1")) == false, "an oversized cost is refused")
+assert(crypto.verifyPassword("correct horse battery staple", crafted("32768,4294967296,1")) == false, "a block size past the cap is refused")
+assert(crypto.verifyPassword("correct horse battery staple", crafted("32768,8,4294967296")) == false, "a parallelism past the cap is refused")
+-- a 32-bit narrowing of these fields would turn each of these into the accepted parameter set, so they must be rejected on their full width
+assert(crypto.verifyPassword("correct horse battery staple", crafted("32768,4294967304,1")) == false, "a block size that narrows to a valid one is refused")
+assert(crypto.verifyPassword("correct horse battery staple", crafted("32768,8,4294967297")) == false, "a parallelism that narrows to a valid one is refused")
+assert(crypto.verifyPassword("correct horse battery staple", crafted("0,8,1")) == false, "a degenerate cost is refused")
+assert(crypto.verifyPassword("correct horse battery staple", crafted("32768,0,1")) == false, "a zero block size is refused")
+assert(os.clock() - started < 1.0, "refusing bad parameters must not do the work first")
+
+-- the parameters this build writes stay inside the accepted range
+assert(crypto.verifyPassword("correct horse battery staple", crafted("32768,8,1")) == true, "the shipped cost parameters remain valid")
+
 -- aes-256-gcm encrypt then decrypt recovers the plaintext
 local key = crypto.randomBytes(32)
 local message = "secret message with a \0 nul byte"

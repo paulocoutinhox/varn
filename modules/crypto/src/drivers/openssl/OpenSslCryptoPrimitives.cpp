@@ -278,6 +278,22 @@ public:
         return 128ULL * costN * static_cast<std::uint64_t>(blockR) * 2ULL;
     }
 
+    // the cost parameters of a stored hash decide how much memory verifying it allocates, so they are checked before scrypt is asked for anything
+    static bool scryptParamsAllowed(std::uint64_t costN, std::uint64_t blockR, std::uint64_t parallelP)
+    {
+        constexpr std::uint64_t kMaxScryptMemoryBytes = 1ULL << 30;
+        constexpr std::uint64_t kMaxBlockR = 64;
+        constexpr std::uint64_t kMaxParallelP = 16;
+
+        if (costN < 2 || blockR == 0 || blockR > kMaxBlockR || parallelP == 0 || parallelP > kMaxParallelP)
+        {
+            return false;
+        }
+
+        // divide rather than multiply so an oversized cost cannot overflow the estimate it is being checked against
+        return costN <= kMaxScryptMemoryBytes / (128ULL * blockR);
+    }
+
     static bool constantTimeEqual(const unsigned char* a, const unsigned char* b, std::size_t len)
     {
         // constant-time comparison so verifying a password or auth tag does not leak its bytes through timing
@@ -485,9 +501,14 @@ bool CryptoPrimitives::verifyPassword(std::string_view password, std::string_vie
     }
 
     unsigned long long costN = 0;
-    unsigned long blockR = 0;
-    unsigned long parallelP = 0;
-    if (std::sscanf(paramStr.c_str(), "%llu,%lu,%lu", &costN, &blockR, &parallelP) != 3)
+    unsigned long long blockR = 0;
+    unsigned long long parallelP = 0;
+    if (std::sscanf(paramStr.c_str(), "%llu,%llu,%llu", &costN, &blockR, &parallelP) != 3)
+    {
+        return false;
+    }
+
+    if (!OpenSslCryptoHelpers::scryptParamsAllowed(costN, blockR, parallelP))
     {
         return false;
     }
@@ -504,7 +525,8 @@ bool CryptoPrimitives::verifyPassword(std::string_view password, std::string_vie
         return false;
     }
 
-    if (expected.empty())
+    constexpr std::size_t kMaxPasswordHashBytes = 1024;
+    if (expected.empty() || expected.size() > kMaxPasswordHashBytes)
     {
         return false;
     }
