@@ -35,11 +35,11 @@ async.run(function()
 
     -- the shell is not the only thing to kill: whatever it forked survives it and keeps running unless the deadline reaches the whole group
     if platform.os() ~= "windows" then
-        local marker = "sleep 987"
-        local _, orphanErr = process.exec(marker .. "; echo finished", { timeoutMs = 300 }):await()
+        local _, orphanErr = process.exec("sleep 987; echo finished", { timeoutMs = 300 }):await()
         assert(orphanErr ~= nil, "the grandchild command should still hit the deadline")
 
-        local survivors = process.exec('pgrep -f "' .. marker .. '"'):await()
+        -- the bracket keeps the pattern from matching the shell that carries this very command line
+        local survivors = process.exec('pgrep -f "sle[e]p 987"'):await()
         assert(survivors.code ~= 0, "the deadline must leave no orphan behind, found: " .. survivors.stdout)
     end
 
