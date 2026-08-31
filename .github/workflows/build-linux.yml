@@ -20,6 +20,11 @@ on:
       - ".gitignore"
       - ".editorconfig"
 
+concurrency:
+  # a newer push supersedes this run, and a tag build carries its own ref so a release is never cancelled
+  group: build-linux-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   BUILD_TYPE: Release
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
