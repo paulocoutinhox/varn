@@ -128,14 +128,8 @@ ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutM
     static std::mutex spawnMutex;
     PROCESS_INFORMATION process{};
 
-    // terminating cmd.exe leaves the command it started alive, still holding the inherited pipe ends, so the child goes into a job and the whole tree is killed through that
+    // terminating cmd.exe leaves the command it started alive, still holding the inherited pipe ends, so the child goes into a job that gives the deadline and the output cap a handle on the whole tree
     HANDLE job = CreateJobObjectW(nullptr, nullptr);
-    if (job != nullptr)
-    {
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
-    }
 
     {
         std::lock_guard<std::mutex> lock(spawnMutex);
@@ -176,9 +170,10 @@ ProcessResult ProcessRunner::exec(const std::string& command, long long timeoutM
             throw std::runtime_error("[ProcessRunner] The process could not be started.");
         }
 
-        if (job != nullptr)
+        // a host that already runs this process inside a job can refuse the assignment, and terminating an empty job would kill nothing, so the handle is dropped and the child is killed directly instead
+        if (job != nullptr && !AssignProcessToJobObject(job, process.hProcess))
         {
-            AssignProcessToJobObject(job, process.hProcess);
+            WindowsProcessHelpers::closeHandle(job);
         }
 
         ResumeThread(process.hThread);
